@@ -1,12 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, KeyboardEvent } from "react"
-import { cn } from "@/lib/utils"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Separator } from "@/components/ui/separator"
-import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { Terminal as TerminalIcon, Settings, Bell, Megaphone, Code2, History } from "lucide-react"
 
 interface HistoryItem {
   command: string
@@ -14,50 +9,53 @@ interface HistoryItem {
   timestamp: Date
 }
 
-const PROMPT = "user@enterprise:~$"
+const PROMPT = "user@0x-terminal:~$"
 
 const commands = {
+  welcome: () => [
+    "Welcome to 0x Terminal. Type 'help' to see available commands."
+  ],
   help: () => [
-    "Available commands:",
-    "  help      - Show this help message",
-    "  clear     - Clear the terminal",
-    "  ls        - List directory contents",
-    "  pwd       - Print working directory",
-    "  whoami    - Display current user",
-    "  date      - Show current date and time",
-    "  echo      - Echo back the input",
-    "  version   - Show terminal version",
-    "  status    - Show system status",
-    "  exit      - Close terminal"
+    "market       - Get market overview",
+    "fees         - Show fee data",
+    "tvl          - Show TVL data",
+    "users        - Show user data",
+    "clear        - Clear the terminal"
   ],
-  clear: () => [],
-  ls: () => [
-    "drwxr-xr-x  2 user user 4096 Dec 29 10:30 📁 Documents",
-    "drwxr-xr-x  2 user user 4096 Dec 29 10:30 📁 Downloads",
-    "drwxr-xr-x  2 user user 4096 Dec 29 10:30 📁 Projects",
-    "-rw-r--r--  1 user user  256 Dec 29 10:30 📄 config.json",
-    "-rw-r--r--  1 user user 1024 Dec 29 10:30 📄 README.md"
+  market: () => [
+    "[Chart Data Placeholder]"
   ],
-  pwd: () => ["/home/user"],
-  whoami: () => ["user"],
-  date: () => [new Date().toString()],
-  version: () => ["Enterprise Terminal v1.0.0 - Built with shadcn/ui"],
-  status: () => [
-    "✅ System Status: Online",
-    "🔧 CPU Usage: 12%",
-    "💾 Memory: 2.1GB / 8GB",
-    "⏰ Uptime: 5 days, 3 hours",
-    "🌐 Network: Connected"
-  ]
+  fees: () => [
+    "[Fee Data Placeholder]"
+  ],
+  tvl: () => [
+    "[TVL Data Placeholder]"
+  ],
+  users: () => [
+    "[User Data Placeholder]"
+  ],
+  clear: () => []
 }
 
 export function Terminal() {
+  const [mounted, setMounted] = useState(false)
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [currentInput, setCurrentInput] = useState("")
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const terminalRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setMounted(true)
+    setHistory([
+      {
+        command: "welcome",
+        output: commands.welcome(),
+        timestamp: new Date()
+      }
+    ])
+  }, [])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -79,10 +77,10 @@ export function Terminal() {
     const [cmd, ...args] = trimmedCommand.split(" ")
     let output: string[] = []
 
-    if (cmd === "echo") {
-      output = [args.join(" ")]
-    } else if (cmd === "clear") {
+    if (cmd === "clear") {
       setHistory([])
+      setCurrentInput("")
+      setHistoryIndex(-1)
       return
     } else if (cmd in commands) {
       output = (commands as any)[cmd]()
@@ -140,103 +138,108 @@ export function Terminal() {
     }
   }
 
+  if (!mounted) {
+    return null
+  }
+
   return (
-    <div className="h-screen w-full bg-background text-foreground p-4">
-      <Card className="h-full flex flex-col">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <h2 className="text-lg font-semibold tracking-tight">Enterprise Terminal</h2>
-              <Badge variant="outline" className="text-xs">
-                v1.0.0
-              </Badge>
-              <Separator orientation="vertical" className="h-4" />
-              <span className="text-xs text-muted-foreground">Type 'help' for available commands</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Badge variant="default" className="text-xs">
-                Online
-              </Badge>
-              <div className="text-xs text-muted-foreground font-mono tabular-nums">
-                {new Date().toLocaleTimeString()}
-              </div>
-            </div>
+    <div className="flex h-screen flex-col bg-[#0A0A0A]">
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <aside className="w-20 flex flex-col items-center bg-[#141414] py-6 border-r border-[#262626]">
+          <div className="p-2 mb-10">
+            <svg fill="none" height="32" viewBox="0 0 32 32" width="32" xmlns="http://www.w3.org/2000/svg">
+              <path d="M16 0L32 9.2376L16 18.4752L0 9.2376L16 0Z" fill="#FFFFFF"></path>
+              <path d="M0 22.7624L16 32V18.4752L0 9.2376V22.7624Z" fill="#FFFFFF" fillOpacity="0.6"></path>
+              <path d="M32 22.7624L16 32V18.4752L32 9.2376V22.7624Z" fill="#FFFFFF" fillOpacity="0.8"></path>
+            </svg>
           </div>
-        </CardHeader>
+          <nav className="flex flex-col items-center space-y-8 flex-1">
+            <a href="#" className="text-white">
+              <TerminalIcon className="w-6 h-6" />
+            </a>
+          </nav>
+          <div className="mt-auto">
+            <a href="#" className="text-[#737373] hover:text-white transition-colors">
+              <Settings className="w-6 h-6" />
+            </a>
+          </div>
+        </aside>
 
-        <Separator />
+        {/* Main Content */}
+        <main className="flex-1 flex flex-col overflow-hidden">
+          {/* Header */}
+          <header className="flex items-center justify-between h-20 px-8 border-b border-[#262626] flex-shrink-0">
+            <div className="flex items-center space-x-8 text-base">
+              <h1 className="text-xl font-semibold text-white">0x Terminal</h1>
+              <a href="#" className="text-white font-semibold">CLI</a>
+              <a href="#" className="text-[#737373] hover:text-white transition-colors">GUI</a>
+            </div>
+            <div className="flex items-center space-x-4">
+              <button className="bg-[#141414] border border-[#262626] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#262626] transition-colors">
+                Connect Wallet
+              </button>
+            </div>
+          </header>
 
-        <CardContent className="flex-1 overflow-hidden p-0">
-          <ScrollArea className="h-full">
-            <div
-              ref={terminalRef}
-              className="p-6 font-mono text-sm terminal-text cursor-text"
-              onClick={handleTerminalClick}
-            >
-              {/* Command History */}
-              {history.map((item, index) => (
-                <div key={index} className="mb-4 space-y-1">
-                  <div className="flex items-center">
-                    <span className="text-primary font-medium mr-2">{PROMPT}</span>
-                    <span className="text-foreground">{item.command}</span>
+          {/* Terminal Area */}
+          <div className="flex-1 bg-[#0A0A0A] p-8 flex flex-col">
+            <div className="flex-1 bg-[#141414] rounded-xl border border-[#262626] p-4 flex flex-col overflow-hidden">
+              <div
+                ref={terminalRef}
+                className="flex-1 p-4 font-mono text-lg overflow-y-auto"
+                onClick={handleTerminalClick}
+              >
+                {/* Command History */}
+                {history.map((item, index) => (
+                  <div key={index} className="mb-2">
+                    {item.command !== "welcome" && (
+                      <div className="flex">
+                        <span className="text-green-400 font-semibold">{PROMPT}</span>
+                        <span className="text-blue-400 ml-2 font-semibold">{item.command}</span>
+                      </div>
+                    )}
+                    {item.output.map((line, lineIndex) => {
+                      const parts = line.match(/^(\w+)\s+(.+)$/);
+                      if (parts && item.command === "help") {
+                        return (
+                          <p key={lineIndex} className="mt-1 text-gray-300">
+                            <span className="font-bold text-yellow-400 w-24 inline-block">{parts[1]}</span>
+                            <span className="ml-4">{parts[2]}</span>
+                          </p>
+                        );
+                      }
+                      return (
+                        <p key={lineIndex} className="mt-1 text-gray-300">
+                          {line}
+                        </p>
+                      );
+                    })}
                   </div>
-                  {item.output.map((line, lineIndex) => (
-                    <div key={lineIndex} className="text-muted-foreground pl-4 leading-relaxed">
-                      {line}
-                    </div>
-                  ))}
-                </div>
-              ))}
+                ))}
 
-              {/* Current Input Line */}
-              <div className="flex items-center">
-                <span className="text-primary font-medium mr-2">{PROMPT}</span>
-                <span className={cn("text-primary mr-1", currentInput.length === 0 ? "terminal-cursor" : "")}>█</span>
-                <div className="flex-1 relative">
-                  <Input
+                {/* Current Input */}
+                <div className="flex items-center">
+                  <span className="text-gray-100 font-semibold">{PROMPT}</span>
+                  <input
                     ref={inputRef}
                     type="text"
                     value={currentInput}
                     onChange={(e) => setCurrentInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    className="border-none bg-transparent p-0 text-foreground font-mono text-sm focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
+                    className="bg-transparent border-none text-gray-300 focus:ring-0 flex-grow ml-2 p-0 font-mono text-lg outline-none caret-gray-400"
+                    autoFocus
                     spellCheck={false}
                     autoComplete="off"
-                    placeholder="Enter command..."
                   />
                 </div>
               </div>
             </div>
-          </ScrollArea>
-        </CardContent>
-
-        <Separator />
-
-        {/* Status Bar */}
-        <div className="px-6 py-2 bg-muted/30">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center space-x-2">
-              <Badge variant="default" className="text-xs bg-green-600 hover:bg-green-600">
-                Ready
-              </Badge>
-              <Badge variant="outline" className="text-xs">
-                {history.length} commands
-              </Badge>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Badge variant="secondary" className="text-xs font-mono">
-                Ln 1, Col {currentInput.length + 1}
-              </Badge>
-              <Badge variant="outline" className="text-xs">
-                UTF-8
-              </Badge>
-              <Badge variant="outline" className="text-xs">
-                UNIX
-              </Badge>
-            </div>
           </div>
-        </div>
-      </Card>
+        </main>
+      </div>
+
+
     </div>
   )
 }
