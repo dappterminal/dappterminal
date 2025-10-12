@@ -15,31 +15,16 @@ interface TerminalTab {
   history: HistoryItem[]
 }
 
-const PROMPT = "user@x3>"
+const PROMPT = "user@defi>"
 
 const commands = {
   welcome: () => [
-    "Welcome to X3 Terminal. Type 'help' to see available commands."
+    "Welcome to The DeFi Terminal. Type 'help' to see available commands."
   ],
   help: () => [
-    "market       - Get market overview",
-    "fees         - Show fee data",
-    "tvl          - Show TVL data",
-    "users        - Show user data",
     "clear        - Clear the terminal"
   ],
-  market: () => [
-    "[Chart Data Placeholder]"
-  ],
-  fees: () => [
-    "[Fee Data Placeholder]"
-  ],
-  tvl: () => [
-    "[TVL Data Placeholder]"
-  ],
-  users: () => [
-    "[User Data Placeholder]"
-  ],
+
   clear: () => []
 }
 
@@ -50,14 +35,17 @@ export function Terminal() {
   const [currentInput, setCurrentInput] = useState("")
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
+  const [showSettings, setShowSettings] = useState(false)
+  const [fontSize, setFontSize] = useState(20)
   const terminalRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const settingsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setMounted(true)
     const initialTab: TerminalTab = {
       id: "1",
-      name: "x3",
+      name: "defi",
       history: [
         {
           command: "welcome",
@@ -77,6 +65,22 @@ export function Terminal() {
     }
   }, [])
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
+        setShowSettings(false)
+      }
+    }
+
+    if (showSettings) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showSettings])
+
   const activeTab = tabs.find(tab => tab.id === activeTabId)
   const history = activeTab?.history || []
 
@@ -90,7 +94,7 @@ export function Terminal() {
     const newId = (tabs.length + 1).toString()
     const newTab: TerminalTab = {
       id: newId,
-      name: "x3",
+      name: "defi",
       history: [
         {
           command: "welcome",
@@ -220,7 +224,7 @@ export function Terminal() {
           {/* Header */}
           <header className="flex items-center justify-between h-20 px-8 border-b border-[#262626] flex-shrink-0">
             <div className="flex items-center space-x-8 text-base">
-              <h1 className="text-xl font-semibold text-white">X³ Terminal</h1>
+              <h1 className="text-xl font-semibold text-white">The DeFi Terminal</h1>
               {/* <a href="#" className="text-white font-semibold">Docs</a> */}
               <a href="#" className="text-[#737373] hover:text-white transition-colors">Docs</a>
             </div>
@@ -232,7 +236,7 @@ export function Terminal() {
           </header>
 
           {/* Terminal Area */}
-          <div className="flex-1 bg-[#0A0A0A] p-8 flex flex-col">
+          <div className="flex-1 bg-[#0A0A0A] p-8 flex flex-col relative">
             <div className="flex-1 bg-[#141414] rounded-xl border border-[#262626] flex flex-col overflow-hidden">
               {/* Window Management Bar with Tabs */}
               <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center gap-2 rounded-t-xl">
@@ -270,12 +274,21 @@ export function Terminal() {
                 >
                   <Plus className="w-4 h-4" />
                 </button>
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    onClick={() => setShowSettings(!showSettings)}
+                    className="p-1.5 text-[#737373] hover:text-white transition-colors"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               {/* Terminal Content */}
               <div
                 ref={terminalRef}
-                className="flex-1 p-6 font-mono text-xl overflow-y-auto"
+                className="flex-1 p-6 font-mono overflow-y-auto"
+                style={{ fontSize: `${fontSize}px` }}
                 onClick={handleTerminalClick}
               >
                 {/* Command History */}
@@ -315,7 +328,8 @@ export function Terminal() {
                     value={currentInput}
                     onChange={(e) => setCurrentInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono text-xl outline-none caret-gray-400 font-bold"
+                    className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono outline-none caret-gray-400 font-bold"
+                    style={{ fontSize: `${fontSize}px` }}
                     autoFocus
                     spellCheck={false}
                     autoComplete="off"
@@ -323,6 +337,28 @@ export function Terminal() {
                 </div>
               </div>
             </div>
+
+            {/* Settings Panel */}
+            {showSettings && (
+              <div ref={settingsRef} className="absolute top-24 right-12 bg-black/40 backdrop-blur-sm border border-white/10 rounded-lg px-6 py-4 z-20">
+                <div className="w-80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-white/50 text-sm">
+                      Text Size
+                    </label>
+                    <span className="text-white/70 text-sm">{fontSize}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="20"
+                    max="32"
+                    value={fontSize}
+                    onChange={(e) => setFontSize(Number(e.target.value))}
+                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white/70"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </main>
       </div>
