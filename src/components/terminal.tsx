@@ -1,7 +1,9 @@
 "use client"
 
 import { useState, useEffect, useRef, KeyboardEvent } from "react"
-import { Terminal as TerminalIcon, Settings, Bell, Megaphone, Code2, History, Plus, X } from "lucide-react"
+import { Terminal as TerminalIcon, Settings, Plus, X } from "lucide-react"
+import { registry, registerCoreCommands, createExecutionContext, updateExecutionContext } from "@/core"
+import type { ExecutionContext, CommandResult } from "@/core"
 
 interface HistoryItem {
   command: string
@@ -17,15 +19,104 @@ interface TerminalTab {
 
 const PROMPT = "user@defi>"
 
-const commands = {
-  welcome: () => [
-    "Welcome to The DeFi Terminal. Type 'help' to see available commands."
-  ],
-  help: () => [
-    "clear        - Clear the terminal"
-  ],
+// Format command result for terminal display
+function formatCommandResult(result: CommandResult): string[] {
+  if (!result.success) {
+    return [`Error: ${result.error.message}`]
+  }
 
-  clear: () => []
+  const value = result.value
+
+  // Handle special cases
+  if (typeof value === 'object' && value !== null) {
+    // Handle cleared flag
+    if ('cleared' in value && value.cleared) {
+      return []
+    }
+
+    // Handle help command output
+    if ('message' in value && 'core' in value) {
+      const helpOutput = value as any
+      const lines: string[] = [helpOutput.message as string, '']
+
+      // Core commands
+      if (Array.isArray(helpOutput.core) && helpOutput.core.length > 0) {
+        lines.push('Core Commands:')
+        for (const cmd of helpOutput.core) {
+          const aliases = cmd.aliases?.length ? ` (${cmd.aliases.join(', ')})` : ''
+          lines.push(`  ${cmd.id.padEnd(12)} - ${cmd.description}${aliases}`)
+        }
+        lines.push('')
+      }
+
+      // Aliased commands
+      if (Array.isArray(helpOutput.aliases) && helpOutput.aliases.length > 0) {
+        lines.push('Aliased Commands:')
+        for (const cmd of helpOutput.aliases) {
+          const aliases = cmd.aliases?.length ? ` (${cmd.aliases.join(', ')})` : ''
+          lines.push(`  ${cmd.id.padEnd(12)} - ${cmd.description}${aliases}`)
+        }
+        lines.push('')
+      }
+
+      // Protocols
+      if (Array.isArray(helpOutput.protocols) && helpOutput.protocols.length > 0) {
+        lines.push('Available Protocols:')
+        for (const protocol of helpOutput.protocols) {
+          lines.push(`  ${protocol.id} - ${protocol.name}`)
+          if (protocol.commands && protocol.commands.length > 0) {
+            for (const cmd of protocol.commands) {
+              lines.push(`    ${cmd.id.padEnd(12)} - ${cmd.description}`)
+            }
+          }
+        }
+      }
+
+      return lines
+    }
+
+    // Handle arrays - need to check specific types first
+    if (Array.isArray(value) && value.length > 0) {
+      const firstItem = value[0]
+
+      // Handle history (has command and timestamp)
+      if ('command' in firstItem && 'timestamp' in firstItem) {
+        return value.map((item: any) => `  ${item.command}`)
+      }
+
+      // Handle protocols list (has id, name, commandCount)
+      if ('id' in firstItem && 'commandCount' in firstItem) {
+        return value.map((item: any) => {
+          return `  ${item.id.padEnd(15)} ${item.name || ''} ${item.description ? `- ${item.description}` : ''} ${item.commandCount !== undefined ? `(${item.commandCount} commands)` : ''}`
+        })
+      }
+
+      // Handle generic arrays
+      return value.map((item: any) => JSON.stringify(item, null, 2))
+    }
+
+    // Handle empty arrays
+    if (Array.isArray(value)) {
+      return []
+    }
+
+    // Handle message objects
+    if ('message' in value) {
+      const lines = [value.message as string]
+      Object.entries(value).forEach(([key, val]) => {
+        if (key !== 'message') {
+          lines.push(`${key}: ${JSON.stringify(val)}`)
+        }
+      })
+      return lines
+    }
+
+    // Default: JSON stringify
+    return [JSON.stringify(value, null, 2)]
+  }
+
+  // Primitive values
+  return [String(value)]
 }
 
 export function Terminal() {
@@ -37,19 +128,41 @@ export function Terminal() {
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [showSettings, setShowSettings] = useState(false)
   const [fontSize, setFontSize] = useState(15)
+  const [executionContext, setExecutionContext] = useState<ExecutionContext | null>(null)
   const terminalRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setMounted(true)
+
+    // Register core commands
+    registerCoreCommands()
+
+    // Create execution context
+    const context = createExecutionContext()
+    setExecutionContext(context)
+
+    // Load command history from localStorage
+    const savedHistory = localStorage.getItem('defi-terminal-command-history')
+    if (savedHistory) {
+      try {
+        const parsed = JSON.parse(savedHistory)
+        if (Array.isArray(parsed)) {
+          setCommandHistory(parsed)
+        }
+      } catch {
+        // Invalid JSON, ignore
+      }
+    }
+
     const initialTab: TerminalTab = {
       id: "1",
       name: "defi",
       history: [
         {
           command: "welcome",
-          output: commands.welcome(),
+          output: ["Welcome to The DeFi Terminal. Type 'help' to see available commands."],
           timestamp: new Date()
         }
       ]
@@ -103,6 +216,13 @@ export function Terminal() {
     }
   }, [fontSize, mounted])
 
+  // Save command history to localStorage whenever it changes
+  useEffect(() => {
+    if (mounted) {
+      localStorage.setItem('defi-terminal-command-history', JSON.stringify(commandHistory))
+    }
+  }, [commandHistory, mounted])
+
   const addNewTab = () => {
     const newId = (tabs.length + 1).toString()
     const newTab: TerminalTab = {
@@ -111,7 +231,7 @@ export function Terminal() {
       history: [
         {
           command: "welcome",
-          output: commands.welcome(),
+          output: ["Welcome to The DeFi Terminal. Type 'help' to see available commands."],
           timestamp: new Date()
         }
       ]
@@ -131,29 +251,69 @@ export function Terminal() {
     }
   }
 
-  const executeCommand = (command: string) => {
-    const trimmedCommand = command.trim()
+  const executeCommand = async (input: string) => {
+    const trimmedInput = input.trim()
 
-    if (!trimmedCommand) return
+    if (!trimmedInput || !executionContext) return
 
-    const [cmd] = trimmedCommand.split(" ")
+    // Parse command and arguments
+    const parts = trimmedInput.split(' ')
+    const commandName = parts[0]
+    const args = parts.slice(1).join(' ')
+
+    // Check for --protocol flag
+    const protocolMatch = args.match(/--protocol\s+(\S+)/)
+    const explicitProtocol = protocolMatch ? protocolMatch[1] : undefined
+
+    // Resolve command using ρ (exact resolver)
+    const resolved = registry.ρ({
+      input: commandName,
+      explicitProtocol,
+      preferences: {
+        defaults: executionContext.protocolPreferences,
+        priority: [],
+      },
+      executionContext,
+    })
+
     let output: string[] = []
 
-    if (cmd === "clear") {
-      setTabs(tabs.map(tab =>
-        tab.id === activeTabId ? { ...tab, history: [] } : tab
-      ))
-      setCurrentInput("")
-      setHistoryIndex(-1)
-      return
-    } else if (cmd in commands) {
-      output = (commands as any)[cmd]()
+    if (!resolved) {
+      output = [`Command not found: ${commandName}. Type 'help' for available commands.`]
     } else {
-      output = [`Command not found: ${cmd}. Type 'help' for available commands.`]
+      try {
+        // Execute command
+        const result = await resolved.command.run(args, executionContext)
+
+        // Format output
+        output = formatCommandResult(result)
+
+        // Update execution context
+        const updatedContext = updateExecutionContext(
+          executionContext,
+          resolved.command,
+          args,
+          result,
+          resolved.protocol
+        )
+        setExecutionContext(updatedContext)
+
+        // Handle clear command
+        if (output.length === 0 && result.success && 'cleared' in (result.value as any)) {
+          setTabs(tabs.map(tab =>
+            tab.id === activeTabId ? { ...tab, history: [] } : tab
+          ))
+          setCurrentInput("")
+          setHistoryIndex(-1)
+          return
+        }
+      } catch (error) {
+        output = [`Error executing command: ${error instanceof Error ? error.message : String(error)}`]
+      }
     }
 
     const newHistoryItem: HistoryItem = {
-      command: trimmedCommand,
+      command: trimmedInput,
       output,
       timestamp: new Date()
     }
@@ -163,7 +323,7 @@ export function Terminal() {
         ? { ...tab, history: [...tab.history, newHistoryItem] }
         : tab
     ))
-    setCommandHistory(prev => [...prev, trimmedCommand])
+    setCommandHistory(prev => [...prev, trimmedInput])
     setCurrentInput("")
     setHistoryIndex(-1)
   }
@@ -192,8 +352,11 @@ export function Terminal() {
       }
     } else if (e.key === "Tab") {
       e.preventDefault()
-      const availableCommands = Object.keys(commands)
-      const matches = availableCommands.filter(cmd => cmd.startsWith(currentInput))
+      // Get all commands for autocomplete
+      const allCommands = registry.getAllCommands()
+      const matches = allCommands
+        .map(cmd => cmd.id)
+        .filter(id => id.startsWith(currentInput))
       if (matches.length === 1) {
         setCurrentInput(matches[0])
       }
@@ -201,8 +364,12 @@ export function Terminal() {
   }
 
   const handleTerminalClick = () => {
-    if (inputRef.current) {
-      inputRef.current.focus()
+    // Only focus input if user isn't selecting text
+    const selection = window.getSelection()
+    if (!selection || selection.toString().length === 0) {
+      if (inputRef.current) {
+        inputRef.current.focus()
+      }
     }
   }
 
@@ -238,7 +405,6 @@ export function Terminal() {
           <header className="flex items-center justify-between h-20 px-8 border-b border-[#262626] flex-shrink-0">
             <div className="flex items-center space-x-8 text-base">
               <h1 className="text-xl font-semibold text-white">The DeFi Terminal</h1>
-              {/* <a href="#" className="text-white font-semibold">Docs</a> */}
               <a href="#" className="text-[#737373] hover:text-white transition-colors">Docs</a>
             </div>
             <div className="flex items-center space-x-4">
@@ -300,7 +466,7 @@ export function Terminal() {
               {/* Terminal Content */}
               <div
                 ref={terminalRef}
-                className="flex-1 p-6 font-mono overflow-y-auto"
+                className="flex-1 p-6 font-mono overflow-y-auto select-text"
                 style={{ fontSize: `${fontSize}px` }}
                 onClick={handleTerminalClick}
               >
@@ -308,27 +474,16 @@ export function Terminal() {
                 {history.map((item, index) => (
                   <div key={index} className="mb-2">
                     {item.command !== "welcome" && (
-                      <div className="flex">
+                      <div className="flex select-text">
                         <span className="text-white-400 font-semibold">{PROMPT}</span>
                         <span className="text-whiteMa-400 ml-2 font-semibold">{item.command}</span>
                       </div>
                     )}
-                    {item.output.map((line, lineIndex) => {
-                      const parts = line.match(/^(\w+)\s+(.+)$/);
-                      if (parts && item.command === "help") {
-                        return (
-                          <p key={lineIndex} className="mt-1 text-gray-300">
-                            <span className="font-bold text-yellow-400 w-24 inline-block">{parts[1]}</span>
-                            <span className="ml-4">{parts[2]}</span>
-                          </p>
-                        );
-                      }
-                      return (
-                        <p key={lineIndex} className="mt-1 text-gray-300">
-                          {line}
-                        </p>
-                      );
-                    })}
+                    {item.output.map((line, lineIndex) => (
+                      <p key={lineIndex} className="mt-1 text-gray-300 select-text whitespace-pre-wrap">
+                        {line}
+                      </p>
+                    ))}
                   </div>
                 ))}
 

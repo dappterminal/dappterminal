@@ -5,3 +5,4 @@
 export * from './types'
 export * from './monoid'
 export * from './command-registry'
+export * from './commands'
