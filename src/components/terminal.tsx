@@ -425,9 +425,17 @@ export function Terminal() {
         setFuzzyMatches([])
       } else {
         // Multiple matches - show suggestions
-        const matches = fuzzyResults.map(r => r.command.id)
-        setFuzzyMatches(matches)
-        setSelectedMatchIndex(0)
+        // Deduplicate matches (in case aliases match the same command)
+        const matches = Array.from(new Set(fuzzyResults.map(r => r.command.id)))
+
+        if (matches.length === 1) {
+          // After deduplication, only one unique command
+          setCurrentInput(matches[0])
+          setFuzzyMatches([])
+        } else {
+          setFuzzyMatches(matches)
+          setSelectedMatchIndex(0)
+        }
       }
     }
   }
@@ -579,7 +587,7 @@ export function Terminal() {
                     <div className="absolute bottom-full left-0 mb-1 bg-[#1a1a1a] border border-[#262626] rounded-md shadow-lg max-h-48 overflow-y-auto z-10">
                       {fuzzyMatches.map((match, index) => (
                         <div
-                          key={match}
+                          key={`fuzzy-${index}`}
                           className={`px-3 py-1.5 font-mono cursor-pointer ${
                             index === selectedMatchIndex
                               ? 'bg-[#262626] text-yellow-400'
