@@ -18,6 +18,7 @@ interface TerminalTab {
 }
 
 const PROMPT = "user@defi>"
+const MAX_COMMAND_HISTORY = 1000 // Maximum commands to keep in history
 
 // Format command result for terminal display
 function formatCommandResult(result: CommandResult): string[] {
@@ -129,6 +130,8 @@ export function Terminal() {
   const [showSettings, setShowSettings] = useState(false)
   const [fontSize, setFontSize] = useState(15)
   const [executionContext, setExecutionContext] = useState<ExecutionContext | null>(null)
+  const [fuzzyMatches, setFuzzyMatches] = useState<string[]>([])
+  const [selectedMatchIndex, setSelectedMatchIndex] = useState(0)
   const terminalRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
@@ -149,7 +152,11 @@ export function Terminal() {
       try {
         const parsed = JSON.parse(savedHistory)
         if (Array.isArray(parsed)) {
-          setCommandHistory(parsed)
+          // Apply sliding window in case saved history exceeds limit
+          const limitedHistory = parsed.length > MAX_COMMAND_HISTORY
+            ? parsed.slice(-MAX_COMMAND_HISTORY)
+            : parsed
+          setCommandHistory(limitedHistory)
         }
       } catch {
         // Invalid JSON, ignore
@@ -323,20 +330,60 @@ export function Terminal() {
         ? { ...tab, history: [...tab.history, newHistoryItem] }
         : tab
     ))
-    setCommandHistory(prev => [...prev, trimmedInput])
+
+    // Add to command history with sliding window
+    setCommandHistory(prev => {
+      const newHistory = [...prev, trimmedInput]
+      // Keep only the last MAX_COMMAND_HISTORY commands
+      if (newHistory.length > MAX_COMMAND_HISTORY) {
+        return newHistory.slice(-MAX_COMMAND_HISTORY)
+      }
+      return newHistory
+    })
+
     setCurrentInput("")
     setHistoryIndex(-1)
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // Handle fuzzy match navigation
+    if (fuzzyMatches.length > 0) {
+      if (e.key === "ArrowUp") {
+        e.preventDefault()
+        setSelectedMatchIndex((prev) => Math.max(0, prev - 1))
+        return
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault()
+        setSelectedMatchIndex((prev) => Math.min(fuzzyMatches.length - 1, prev + 1))
+        return
+      } else if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault()
+        setCurrentInput(fuzzyMatches[selectedMatchIndex])
+        setFuzzyMatches([])
+        setSelectedMatchIndex(0)
+        if (e.key === "Enter") {
+          executeCommand(fuzzyMatches[selectedMatchIndex])
+        }
+        return
+      } else if (e.key === "Escape") {
+        e.preventDefault()
+        setFuzzyMatches([])
+        setSelectedMatchIndex(0)
+        return
+      }
+    }
+
     if (e.key === "Enter") {
       executeCommand(currentInput)
+      setFuzzyMatches([])
+      setSelectedMatchIndex(0)
     } else if (e.key === "ArrowUp") {
       e.preventDefault()
       if (commandHistory.length > 0) {
         const newIndex = historyIndex === -1 ? commandHistory.length - 1 : Math.max(0, historyIndex - 1)
         setHistoryIndex(newIndex)
         setCurrentInput(commandHistory[newIndex])
+        setFuzzyMatches([])
       }
     } else if (e.key === "ArrowDown") {
       e.preventDefault()
@@ -349,16 +396,38 @@ export function Terminal() {
           setHistoryIndex(newIndex)
           setCurrentInput(commandHistory[newIndex])
         }
+        setFuzzyMatches([])
       }
     } else if (e.key === "Tab") {
       e.preventDefault()
-      // Get all commands for autocomplete
-      const allCommands = registry.getAllCommands()
-      const matches = allCommands
-        .map(cmd => cmd.id)
-        .filter(id => id.startsWith(currentInput))
-      if (matches.length === 1) {
-        setCurrentInput(matches[0])
+
+      if (!currentInput.trim() || !executionContext) return
+
+      // Use ρ_f (fuzzy resolver) for autocomplete
+      const fuzzyResults = registry.ρ_f(
+        {
+          input: currentInput,
+          preferences: {
+            defaults: executionContext.protocolPreferences,
+            priority: [],
+          },
+          executionContext,
+        },
+        0.3 // Lower threshold for more suggestions
+      )
+
+      if (fuzzyResults.length === 0) {
+        // No matches
+        setFuzzyMatches([])
+      } else if (fuzzyResults.length === 1) {
+        // Single match - autocomplete immediately
+        setCurrentInput(fuzzyResults[0].command.id)
+        setFuzzyMatches([])
+      } else {
+        // Multiple matches - show suggestions
+        const matches = fuzzyResults.map(r => r.command.id)
+        setFuzzyMatches(matches)
+        setSelectedMatchIndex(0)
       }
     }
   }
@@ -488,20 +557,49 @@ export function Terminal() {
                 ))}
 
                 {/* Current Input */}
-                <div className="flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded">
-                  <span className="text-gray-100 font-semibold">{PROMPT}</span>
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={currentInput}
-                    onChange={(e) => setCurrentInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono outline-none caret-gray-400 font-bold"
-                    style={{ fontSize: `${fontSize}px` }}
-                    autoFocus
-                    spellCheck={false}
-                    autoComplete="off"
-                  />
+                <div className="relative">
+                  <div className="flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded">
+                    <span className="text-gray-100 font-semibold">{PROMPT}</span>
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={currentInput}
+                      onChange={(e) => setCurrentInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono outline-none caret-gray-400 font-bold"
+                      style={{ fontSize: `${fontSize}px` }}
+                      autoFocus
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                  </div>
+
+                  {/* Fuzzy match suggestions */}
+                  {fuzzyMatches.length > 0 && (
+                    <div className="absolute bottom-full left-0 mb-1 bg-[#1a1a1a] border border-[#262626] rounded-md shadow-lg max-h-48 overflow-y-auto z-10">
+                      {fuzzyMatches.map((match, index) => (
+                        <div
+                          key={match}
+                          className={`px-3 py-1.5 font-mono cursor-pointer ${
+                            index === selectedMatchIndex
+                              ? 'bg-[#262626] text-yellow-400'
+                              : 'text-gray-300 hover:bg-[#202020]'
+                          }`}
+                          style={{ fontSize: `${fontSize}px` }}
+                          onClick={() => {
+                            setCurrentInput(match)
+                            setFuzzyMatches([])
+                            setSelectedMatchIndex(0)
+                          }}
+                        >
+                          {match}
+                        </div>
+                      ))}
+                      <div className="px-3 py-1 text-xs text-gray-500 border-t border-[#262626]">
+                        ↑↓ navigate • Tab/Enter select • Esc cancel
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
