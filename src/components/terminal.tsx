@@ -36,7 +36,7 @@ export function Terminal() {
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [showSettings, setShowSettings] = useState(false)
-  const [fontSize, setFontSize] = useState(20)
+  const [fontSize, setFontSize] = useState(15)
   const terminalRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
@@ -56,6 +56,12 @@ export function Terminal() {
     }
     setTabs([initialTab])
     setActiveTabId("1")
+
+    // Load fontSize from localStorage
+    const savedFontSize = localStorage.getItem('defi-terminal-font-size')
+    if (savedFontSize) {
+      setFontSize(Number(savedFontSize))
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -89,6 +95,13 @@ export function Terminal() {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight
     }
   }, [history])
+
+  // Save fontSize to localStorage whenever it changes
+  useEffect(() => {
+    if (mounted) {
+      localStorage.setItem('defi-terminal-font-size', fontSize.toString())
+    }
+  }, [fontSize, mounted])
 
   const addNewTab = () => {
     const newId = (tabs.length + 1).toString()
@@ -204,7 +217,7 @@ export function Terminal() {
         <aside className="w-20 flex flex-col items-center bg-[#141414] py-6 border-r border-[#262626]">
           <div className="p-2 mb-10">
             <div className="text-white text-2xl font-bold">
-              X<sup className="text-lg">3</sup>
+              D<sup className="text-lg">3</sup>
             </div>
           </div>
           <nav className="flex flex-col items-center space-y-8 flex-1">
@@ -350,7 +363,7 @@ export function Terminal() {
                   </div>
                   <input
                     type="range"
-                    min="20"
+                    min="15"
                     max="32"
                     value={fontSize}
                     onChange={(e) => setFontSize(Number(e.target.value))}

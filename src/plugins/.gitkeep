@@ -1,0 +1,8 @@
+# Plugin directories will be created here
+# Each protocol gets its own subdirectory:
+# - uniswap-v4/
+# - aave-v3/
+# - wormhole/
+# - lifi/
+# - stargate/
+# etc.
