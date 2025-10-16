@@ -239,10 +239,317 @@ sw<Tab>  → suggests: swap, swapCommand, etc.
 - ENS resolution via `useEnsName` hook
 - Wallet state synced to ExecutionContext
 
+## Transaction Signing Flow
+
+Commands that require wallet signatures follow an asynchronous pattern with state updates.
+
+### Pattern Overview
+
+```
+┌──────────┐
+│ Command  │  Returns { success: true, value: { signRequest: true, ... } }
+│  Run     │
+└────┬─────┘
+     │
+     ↓
+┌──────────┐
+│ Terminal │  Detects signRequest → creates temp history item
+│ Intercept│
+└────┬─────┘
+     │
+     ↓
+┌──────────┐
+│  Wallet  │  User signs transaction
+│  Sign    │
+└────┬─────┘
+     │
+     ↓
+┌──────────┐
+│ Terminal │  Updates history item with tx hash/result
+│  Update  │
+└──────────┘
+```
+
+### Example: Transfer Command
+
+```typescript
+// src/core/commands.ts
+export const transferCommand: Command = {
+  id: 'transfer',
+  scope: 'G_core',
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    // Validate wallet connection
+    if (!context.wallet.isConnected || !context.wallet.address) {
+      return {
+        success: false,
+        error: new Error('No wallet connected')
+      }
+    }
+
+    // Parse and validate arguments
+    const { amount, toAddress } = parseTransferArgs(args)
+
+    // Return signature request (doesn't sign yet)
+    return {
+      success: true,
+      value: {
+        transferRequest: true,  // Flag for terminal to intercept
+        amount,
+        toAddress,
+        fromAddress: context.wallet.address,
+        chainId: context.wallet.chainId
+      }
+    }
+  }
+}
+```
+
+### Terminal Handling
+
+```typescript
+// src/components/terminal.tsx
+if ('transferRequest' in result.value) {
+  // Create temporary history item with "Waiting for signature..."
+  const transferTimestamp = new Date()
+  setTabs(prev => prev.map(tab => {
+    if (tab.id === activeTabId) {
+      return {
+        ...tab,
+        history: [...tab.history, {
+          command: inputValue,
+          output: ['Waiting for wallet signature...'],
+          timestamp: transferTimestamp
+        }]
+      }
+    }
+    return tab
+  }))
+
+  // Sign transaction
+  const hash = await sendTransaction(config, {
+    to: valueData.toAddress,
+    value: parseEther(valueData.amount)
+  })
+
+  // Update history item with result using timestamp
+  setTabs(prev => prev.map(tab => {
+    if (tab.id === activeTabId) {
+      const updatedHistory = tab.history.map(item =>
+        item.timestamp === transferTimestamp
+          ? { ...item, output: [
+              'Transaction sent successfully!',
+              `Tx Hash: ${hash}`
+            ]}
+          : item
+      )
+      return { ...tab, history: updatedHistory }
+    }
+    return tab
+  }))
+}
+```
+
+### Key Patterns
+
+1. **Timestamp-based tracking**: Use `timestamp` to identify and update correct history item
+2. **Two-phase execution**: Command prepares request → Terminal executes with wallet
+3. **Progressive UI updates**: Show "Waiting..." → Update with result
+4. **Error handling**: Catch signature rejection and update history accordingly
+
+### Implementing in Plugins
+
+For protocol-specific transactions (swaps, supplies, etc.):
+
+```typescript
+export const swapCommand: Command = {
+  id: 'swap',
+  scope: 'G_p',
+  protocol: 'uniswap-v4',
+
+  async run(args, context) {
+    // 1. Get quote from API
+    const quote = await callProtocolApi('uniswap-v4', 'quote', { body: args })
+
+    // 2. Return transaction request
+    return {
+      success: true,
+      value: {
+        transactionRequest: true,  // Generic flag
+        tx: quote.data.tx,         // Transaction data
+        description: `Swap ${args.amountIn} ${args.tokenIn} → ${args.tokenOut}`
+      }
+    }
+  }
+}
+```
+
+Terminal checks for `transactionRequest` flag and handles signing flow.
+
+---
+
+## Testing
+
+### Unit Testing Commands
+
+Test commands independently with mock contexts:
+
+```typescript
+import { swapCommand } from '@/plugins/uniswap-v4/commands'
+import { createExecutionContext } from '@/core/monoid'
+
+describe('swapCommand', () => {
+  it('should return error if wallet not connected', async () => {
+    const context = createExecutionContext()
+    context.wallet.isConnected = false
+
+    const result = await swapCommand.run(
+      { from: 'ETH', to: 'USDC', amount: '1' },
+      context
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error?.message).toContain('wallet')
+  })
+
+  it('should call API and return quote', async () => {
+    const context = createExecutionContext()
+    context.wallet.isConnected = true
+    context.wallet.address = '0x1234...'
+
+    const result = await swapCommand.run(
+      { from: 'ETH', to: 'USDC', amount: '1' },
+      context
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.value).toHaveProperty('transactionRequest')
+  })
+})
+```
+
+### Testing Monoid Laws
+
+Verify commands satisfy algebraic properties:
+
+```typescript
+import { verifyMonoidLaws } from '@/core/monoid'
+import { createExecutionContext } from '@/core/monoid'
+
+describe('Monoid laws', () => {
+  it('should satisfy associativity', async () => {
+    const context = createExecutionContext()
+    const testInput = { amount: '1', token: 'ETH' }
+
+    const result = await verifyMonoidLaws(
+      swapCommand,
+      testInput,
+      context,
+      addLiquidityCommand,   // g
+      removeLiquidityCommand // h
+    )
+
+    expect(result.leftIdentity).toBe(true)
+    expect(result.rightIdentity).toBe(true)
+    expect(result.associativity).toBe(true)
+  })
+})
+```
+
+### Testing Protocol Fibers
+
+Verify submonoid closure:
+
+```typescript
+import { composeCommands } from '@/core/monoid'
+
+describe('Protocol fiber closure', () => {
+  it('should preserve protocol when composing same-fiber commands', () => {
+    const swap = { id: 'swap', scope: 'G_p', protocol: 'uniswap-v4', run: async () => ({}) }
+    const addLiq = { id: 'addLiquidity', scope: 'G_p', protocol: 'uniswap-v4', run: async () => ({}) }
+
+    const composed = composeCommands(swap, addLiq)
+
+    expect(composed.scope).toBe('G_p')
+    expect(composed.protocol).toBe('uniswap-v4')
+  })
+
+  it('should default to G_core for cross-fiber composition', () => {
+    const uniswap = { id: 'swap', scope: 'G_p', protocol: 'uniswap-v4', run: async () => ({}) }
+    const aave = { id: 'supply', scope: 'G_p', protocol: 'aave-v3', run: async () => ({}) }
+
+    const composed = composeCommands(uniswap, aave)
+
+    expect(composed.scope).toBe('G_core')
+    expect(composed.protocol).toBeUndefined()
+  })
+})
+```
+
+### Integration Testing
+
+Test full command resolution flow:
+
+```typescript
+import { registry } from '@/core/command-registry'
+import { createExecutionContext } from '@/core/monoid'
+
+describe('Command resolution', () => {
+  it('should resolve protocol-local alias with active protocol', () => {
+    const context = createExecutionContext()
+    context.activeProtocol = 'uniswap-v4'
+
+    const resolved = registry.ρ({
+      input: 's',  // Alias for 'swap'
+      executionContext: context,
+      preferences: { defaults: {}, priority: [] }
+    })
+
+    expect(resolved).toBeDefined()
+    expect(resolved?.command.id).toBe('swap')
+    expect(resolved?.protocol).toBe('uniswap-v4')
+  })
+})
+```
+
+### Test Setup
+
+Create `/src/core/__tests__/setup.ts`:
+
+```typescript
+import { beforeAll } from '@jest/globals'
+import { registerCoreCommands } from '@/core'
+
+beforeAll(() => {
+  // Register core commands
+  registerCoreCommands()
+
+  // Load test plugins
+  // ...
+})
+```
+
+---
+
+## Formal Specification
+
+For detailed mathematical foundation and algebraic compliance, see:
+
+**[FIBERED-MONOID-SPEC.md](./FIBERED-MONOID-SPEC.md)**
+
+Covers:
+- Monoid structure and laws
+- Protocol fibers as submonoids
+- Algebraic operators (π, σ, ρ, ρ_f)
+- Implementation compliance matrix
+- Recent fixes and enhancements
+
+---
+
 ## Next Steps
 
-1. Implement first real protocol plugin (e.g., Uniswap v4)
-2. Add G_alias commands (swap, lend, bridge)
-3. Implement cross-chain balance queries
-4. Add transaction signing flow
-5. Build protocol SDK integrations
+1. **Implement first protocol plugin** - 1inch aggregator (migrate from `.draft-plugin-system/`)
+2. **Add G_alias commands** - Defer until 2+ protocols implement same function
+3. **Enhanced testing** - Set up Jest/Vitest for unit and integration tests
+4. **Transaction batching** - Compose multiple operations in single tx
+5. **Cross-chain support** - Extend protocol fibers to support multi-chain operations
