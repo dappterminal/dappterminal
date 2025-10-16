@@ -170,6 +170,79 @@ export const bridgeCommand: Command = {
 }
 
 /**
+ * Chains command - List all supported networks on Stargate
+ *
+ * Usage: chains
+ * Example: chains
+ */
+export const chainsCommand: Command = {
+  id: 'chains',
+  scope: 'G_p',
+  protocol: 'stargate',
+  description: 'List all supported networks on Stargate',
+  aliases: ['networks', 'c'],
+
+  async run(_args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      // Fetch supported chains from Stargate API
+      const response = await fetch('https://stargate.finance/api/v1/chains', {
+        method: 'GET',
+        headers: {
+          'accept': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: new Error(`Failed to fetch chains from Stargate API (status: ${response.status})`),
+        }
+      }
+
+      const data = await response.json()
+
+      // Format the chains data for display
+      if (!data || !data.chains || !Array.isArray(data.chains)) {
+        return {
+          success: false,
+          error: new Error('Invalid response format from Stargate API'),
+        }
+      }
+
+      const chains = data.chains
+
+      // Build formatted output
+      const output: string[] = ['Stargate Supported Networks:', '']
+
+      chains.forEach((chain: any) => {
+        const name = chain.name || 'Unknown'
+        const chainId = chain.chainId || 'N/A'
+        const chainKey = chain.chainKey || 'N/A'
+        const chainType = chain.chainType || 'N/A'
+
+        output.push(`  ${name}`)
+        output.push(`    Chain ID: ${chainId}`)
+        output.push(`    Chain Key: ${chainKey}`)
+        output.push(`    Type: ${chainType}`)
+        output.push('')
+      })
+
+      output.push(`Total: ${chains.length} networks`)
+
+      return {
+        success: true,
+        value: output.join('\n'),
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
  * Parse chain input - accepts both chain ID (number) and chain name (string)
  */
 function parseChainInput(input: string): number | undefined {

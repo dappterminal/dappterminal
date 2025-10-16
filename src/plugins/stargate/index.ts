@@ -5,7 +5,7 @@
 import type { Plugin, PluginConfig } from '@/plugins'
 import type { ProtocolFiber, ExecutionContext } from '@/core'
 import { createProtocolFiber, addCommandToFiber } from '@/core'
-import { bridgeCommand } from './commands'
+import { bridgeCommand, chainsCommand } from './commands'
 
 /**
  * Stargate Bridge Plugin
@@ -40,8 +40,9 @@ export const stargatePlugin: Plugin = {
       'Cross-chain stablecoin bridge via LayerZero'
     )
 
-    // Add bridge command to the fiber
+    // Add commands to the fiber
     addCommandToFiber(fiber, bridgeCommand)
+    addCommandToFiber(fiber, chainsCommand)
 
     return fiber
   },
