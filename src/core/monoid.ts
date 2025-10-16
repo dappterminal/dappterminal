@@ -134,16 +134,25 @@ export function addCommandToFiber(
 }
 
 /**
- * Verify monoid laws for a command
+ * Verify monoid laws for commands
  *
  * 1. Left identity: identity ∘ f = f
  * 2. Right identity: f ∘ identity = f
  * 3. Associativity: (f ∘ g) ∘ h = f ∘ (g ∘ h)
+ *
+ * @param f - First command to test
+ * @param testInput - Test input for command execution
+ * @param context - Execution context
+ * @param g - Optional second command for associativity test (defaults to identity)
+ * @param h - Optional third command for associativity test (defaults to identity)
+ * @returns Object indicating which monoid laws hold
  */
 export async function verifyMonoidLaws<T>(
-  command: Command<T, T>,
+  f: Command<T, T>,
   testInput: T,
-  context: ExecutionContext
+  context: ExecutionContext,
+  g?: Command<T, T>,
+  h?: Command<T, T>
 ): Promise<{
   leftIdentity: boolean
   rightIdentity: boolean
@@ -152,20 +161,24 @@ export async function verifyMonoidLaws<T>(
   const monoid = createMonoid()
 
   // Test left identity: identity ∘ f = f
-  const leftComposed = monoid.compose(identityCommand, command)
+  const leftComposed = monoid.compose(identityCommand as Command<T, T>, f)
   const leftResult = await leftComposed.run(testInput, context)
-  const directResult = await command.run(testInput, context)
+  const directResult = await f.run(testInput, context)
   const leftIdentity = JSON.stringify(leftResult) === JSON.stringify(directResult)
 
   // Test right identity: f ∘ identity = f
-  const rightComposed = monoid.compose(command, identityCommand)
+  const rightComposed = monoid.compose(f, identityCommand as Command<T, T>)
   const rightResult = await rightComposed.run(testInput, context)
   const rightIdentity = JSON.stringify(rightResult) === JSON.stringify(directResult)
 
   // Test associativity: (f ∘ g) ∘ h = f ∘ (g ∘ h)
-  // Using identity as g and h for simplicity
-  const leftAssoc = monoid.compose(monoid.compose(command, identityCommand), identityCommand)
-  const rightAssoc = monoid.compose(command, monoid.compose(identityCommand, identityCommand))
+  // If g and h are not provided, use identity (trivial but safe default)
+  // For rigorous testing, callers should provide independent g and h samples
+  const gCommand = g || (identityCommand as Command<T, T>)
+  const hCommand = h || (identityCommand as Command<T, T>)
+
+  const leftAssoc = monoid.compose(monoid.compose(f, gCommand), hCommand)
+  const rightAssoc = monoid.compose(f, monoid.compose(gCommand, hCommand))
   const leftAssocResult = await leftAssoc.run(testInput, context)
   const rightAssocResult = await rightAssoc.run(testInput, context)
   const associativity = JSON.stringify(leftAssocResult) === JSON.stringify(rightAssocResult)

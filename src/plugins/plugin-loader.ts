@@ -59,6 +59,16 @@ export class PluginLoader {
       // Initialize plugin and get fiber
       const fiber = await plugin.initialize(context)
 
+      // Invariant: fiber.id MUST match plugin.metadata.id
+      // This ensures the fibered monoid structure is preserved
+      if (fiber.id !== plugin.metadata.id) {
+        throw new Error(
+          `Plugin invariant violated: fiber.id (${fiber.id}) !== plugin.metadata.id (${plugin.metadata.id}). ` +
+          `The fiber returned by plugin.initialize() must have the same ID as the plugin metadata. ` +
+          `This is required to maintain the fibered monoid structure where π(M_P) = P.`
+        )
+      }
+
       // Register fiber with command registry
       registry.registerProtocolFiber(fiber)
 

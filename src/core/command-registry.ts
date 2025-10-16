@@ -130,8 +130,18 @@ export class CommandRegistry {
   ρ(context: ResolutionContext): ResolvedCommand | undefined {
     const input = context.input.trim()
 
-    // Check if this is an alias
-    const resolvedId = this.aliases.get(input) || input
+    // Check if this is a global alias
+    let resolvedId = this.aliases.get(input) || input
+
+    // Also check for protocol-local alias if active protocol is set
+    // This allows 's' to resolve to 'swap' when inside uniswap-v4 context
+    if (!this.aliases.has(input) && context.executionContext.activeProtocol) {
+      const protocolAlias = `${context.executionContext.activeProtocol}:${input}`
+      const protocolResolvedId = this.aliases.get(protocolAlias)
+      if (protocolResolvedId) {
+        resolvedId = protocolResolvedId
+      }
+    }
 
     // 1. Check G_core
     const coreCommand = this.coreCommands.get(resolvedId)
