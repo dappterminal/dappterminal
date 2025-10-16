@@ -41,10 +41,12 @@ export const helpCommand: Command = {
           return {
             id: protocolId,
             name: fiber?.name || protocolId,
-            commands: Array.from(fiber?.commands.values() || []).map(cmd => ({
-              id: cmd.id,
-              description: cmd.description || 'No description',
-            })),
+            commands: Array.from(fiber?.commands.values() || [])
+              .filter(cmd => cmd.id !== 'identity') // Hide protocol-specific identity from help
+              .map(cmd => ({
+                id: cmd.id,
+                description: cmd.description || 'No description',
+              })),
           }
         }),
       }
@@ -138,6 +140,48 @@ export const useProtocolCommand: Command = {
         value: {
           message: `Active protocol set to: ${fiber.name}`,
           protocol: protocolId,
+        },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
+ * Exit protocol command - clear active protocol
+ */
+export const exitProtocolCommand: Command = {
+  id: 'exit',
+  scope: 'G_core',
+  description: 'Exit the current protocol context',
+  aliases: ['unuse', 'leave'],
+
+  async run(_args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      const previousProtocol = context.activeProtocol
+
+      if (!previousProtocol) {
+        return {
+          success: true,
+          value: {
+            message: 'Not currently in a protocol context',
+          },
+        }
+      }
+
+      // Clear active protocol
+      context.activeProtocol = undefined
+      console.log('[exit command] Cleared activeProtocol, was:', previousProtocol)
+
+      return {
+        success: true,
+        value: {
+          message: `Exited protocol context`,
+          previousProtocol,
         },
       }
     } catch (error) {
@@ -381,6 +425,7 @@ export const coreCommands = [
   helpCommand,
   listProtocolsCommand,
   useProtocolCommand,
+  exitProtocolCommand,
   historyCommand,
   clearCommand,
   versionCommand,

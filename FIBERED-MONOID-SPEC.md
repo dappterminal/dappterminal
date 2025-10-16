@@ -228,18 +228,30 @@ if (f.scope === 'G_p' && g.scope === 'G_p' && f.protocol === g.protocol) {
 ### Fiber Creation
 
 ```typescript
-// src/core/monoid.ts:99
+// src/core/monoid.ts:128
 export function createProtocolFiber(
   id: ProtocolId,
   name: string,
   description?: string
 ): ProtocolFiber {
-  return {
+  const fiber = {
     id,
     name,
     description,
     commands: new Map()
   }
+
+  // Automatically add protocol-specific identity
+  const protocolIdentity: Command = {
+    id: 'identity',
+    scope: 'G_p',
+    protocol: id,
+    description: `Identity operation for ${name}`,
+    run: async <T>(args: T) => ({ success: true, value: args })
+  }
+
+  fiber.commands.set('identity', protocolIdentity)
+  return fiber
 }
 ```
 
@@ -515,24 +527,26 @@ verifyAmbientIdentity(f, testInput, context): Promise<{ leftIdentity: boolean, r
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| Monoid M (identity, composition) | ✅ Complete | `src/core/monoid.ts:23,39` |
+| Monoid M (identity, composition) | ✅ Complete | `src/core/monoid.ts:45,55` |
 | Command scopes (G_core, G_alias, G_p) | ✅ Complete | `src/core/types.ts` |
-| Protocol fibers (M_P) | ✅ Complete | `src/core/monoid.ts:99` |
-| Fiber closure property | ✅ Fixed 2025-10-16 | `src/core/monoid.ts:48` |
+| Protocol fibers (M_P) as submonoids | ✅ Complete | `src/core/monoid.ts:128-157` |
+| Protocol-specific identity injection | ✅ Complete | `src/core/monoid.ts:142-154` |
+| Fiber closure property | ✅ Complete | `src/core/monoid.ts:58-61` |
 | π (projection) | ✅ Complete | `src/core/command-registry.ts:102` |
 | σ (section) | ✅ Pragmatic | `src/core/command-registry.ts:118` |
 | ρ (exact resolver) | ✅ Complete | `src/core/command-registry.ts:130` |
 | ρ_f (fuzzy resolver) | ✅ Complete | `src/core/command-registry.ts:208` |
-| Protocol-local aliases | ✅ Fixed 2025-10-16 | `src/core/command-registry.ts:138` |
-| Plugin validation | ✅ Added 2025-10-16 | `src/plugins/plugin-loader.ts:64` |
-| Monoid law verification | ✅ Enhanced 2025-10-16 | `src/core/monoid.ts:150` |
+| Protocol-local aliases | ✅ Complete | `src/core/command-registry.ts:138` |
+| Plugin validation | ✅ Complete | `src/plugins/plugin-loader.ts:64` |
+| Fiber closure verification | ✅ Added 2025-10-16 | `src/core/monoid.ts:147-196` |
+| Monoid law verification | ✅ Complete | `src/core/monoid.ts:260-301` |
 
 ### ⚠️ Pragmatic Implementation
 
 | Component | Spec | Implementation | Rationale |
 |-----------|------|---------------|-----------|
 | σ (section) | `Protocols → P(M)` | `Protocols → M_P` | Power set semantics deferred to v2.0 for workflow discovery |
-| Fiber structure | Strict submonoids | Semigroups with ambient identity | Identity is in G_core, accessible to all fibers via composition |
+| Identity injection | Manual by plugin author | Automatic in createProtocolFiber | Prevents plugin authors from forgetting identity; ensures all fibers are proper submonoids |
 
 ### ❌ Deferred to Future Versions
 

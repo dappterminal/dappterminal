@@ -298,10 +298,13 @@ export async function verifyAmbientIdentity<T>(
  * 2. Right identity: f ∘ identity = f
  * 3. Associativity: (f ∘ g) ∘ h = f ∘ (g ∘ h)
  *
- * Note: Identity is ambient (exists in G_core) and composes with all commands,
- * including those in protocol fibers. This is the "ambient identity pattern"
- * where fibers inherit identity from the global monoid M rather than containing
- * an explicit copy.
+ * Note: This tests with the global identity (G_core scope). For protocol-specific
+ * commands, each fiber M_P has its own identity element with scope G_p that should
+ * be used for intra-fiber composition. The global identity is for cross-protocol
+ * operations and will result in compositions defaulting to G_core scope.
+ *
+ * To test protocol-specific identity, retrieve it from the fiber:
+ * `const protocolIdentity = fiber.commands.get('identity')`
  *
  * @param f - First command to test
  * @param testInput - Test input for command execution
