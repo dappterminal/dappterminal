@@ -3,6 +3,41 @@
  * Maps token symbols to their contract addresses on different chains
  */
 
+/**
+ * Token decimals for common tokens
+ */
+export const TOKEN_DECIMALS: Record<string, number> = {
+  // Native tokens
+  eth: 18,
+  matic: 18,
+  bnb: 18,
+  avax: 18,
+  // Wrapped native
+  weth: 18,
+  wmatic: 18,
+  wbnb: 18,
+  wavax: 18,
+  // Stablecoins
+  usdc: 6,
+  'usdc.e': 6,
+  usdbc: 6,
+  usdt: 6,
+  'usdt.e': 6,
+  dai: 18,
+  'dai.e': 18,
+  busd: 18,
+  // BTC
+  wbtc: 8,
+  'wbtc.e': 8,
+  btcb: 18,
+  // Other tokens
+  arb: 18,
+  op: 18,
+  link: 18,
+  uni: 18,
+  aave: 18,
+}
+
 export const TOKEN_ADDRESSES: Record<number, Record<string, string>> = {
   // Ethereum Mainnet (Chain ID 1)
   1: {
@@ -108,4 +143,14 @@ export function resolveTokenAddress(symbol: string, chainId: number): string {
 
   // Not found - return original, API will return error if invalid
   return symbol
+}
+
+/**
+ * Get token decimals
+ * @param symbol - Token symbol (e.g., 'eth', 'usdc')
+ * @returns Number of decimals (defaults to 18 if unknown)
+ */
+export function getTokenDecimals(symbol: string): number {
+  const normalizedSymbol = symbol.toLowerCase()
+  return TOKEN_DECIMALS[normalizedSymbol] ?? 18
 }

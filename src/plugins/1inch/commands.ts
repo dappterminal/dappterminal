@@ -3,7 +3,7 @@
  */
 
 import type { Command, CommandResult, ExecutionContext } from '@/core'
-import { resolveTokenAddress } from './tokens'
+import { resolveTokenAddress, getTokenDecimals } from './tokens'
 
 /**
  * Price command - Get token price
@@ -145,7 +145,7 @@ export const swapCommand: Command = {
         }
       }
 
-      const amount = parts[0]
+      const amountInput = parts[0]
       const fromToken = parts[1]
       const toToken = parts[2]
 
@@ -161,6 +161,13 @@ export const swapCommand: Command = {
       // Resolve token symbols to addresses
       const srcAddress = resolveTokenAddress(fromToken, chainId)
       const dstAddress = resolveTokenAddress(toToken, chainId)
+
+      // Get the correct decimals for the source token
+      const srcDecimals = getTokenDecimals(fromToken)
+
+      // Convert decimal amount to base units using correct decimals
+      const { parseUnits } = await import('viem')
+      const amount = parseUnits(amountInput, srcDecimals).toString()
 
       // Get swap quote first
       const quoteResponse = await fetch(
@@ -184,12 +191,16 @@ export const swapCommand: Command = {
           swapRequest: true,
           fromToken,
           toToken,
+          srcAddress,
+          dstAddress,
+          amount,
           amountIn: amount,
           amountOut: quote.dstAmount,
           gas: quote.gas,
           slippage,
           chainId,
           walletAddress: context.wallet.address,
+          protocols: quote.protocols, // Include routing information
         },
       }
     } catch (error) {

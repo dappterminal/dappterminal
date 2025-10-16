@@ -361,57 +361,18 @@ export function Terminal() {
 
   const activeTab = tabs.find(tab => tab.id === activeTabId)
   const history = activeTab?.history || []
-  const [isUserScrolling, setIsUserScrolling] = useState(false)
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Auto-scroll to bottom when history changes (unless user is scrolling)
+  // Simple, reliable auto-scroll to bottom when history changes
   useEffect(() => {
-    if (terminalRef.current && !isUserScrolling) {
-      terminalRef.current.scrollTo({
-        top: terminalRef.current.scrollHeight,
-        behavior: 'smooth'
+    if (terminalRef.current) {
+      // Use requestAnimationFrame to ensure DOM has updated
+      requestAnimationFrame(() => {
+        if (terminalRef.current) {
+          terminalRef.current.scrollTop = terminalRef.current.scrollHeight
+        }
       })
     }
-  }, [history, isUserScrolling])
-
-  // Detect user scroll
-  useEffect(() => {
-    const terminal = terminalRef.current
-    if (!terminal) return
-
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = terminal
-      const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50
-
-      // If user scrolls away from bottom, pause auto-scroll
-      if (!isAtBottom) {
-        setIsUserScrolling(true)
-      } else {
-        setIsUserScrolling(false)
-      }
-
-      // Clear existing timeout
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current)
-      }
-
-      // Reset after 2 seconds of no scrolling
-      scrollTimeoutRef.current = setTimeout(() => {
-        if (isAtBottom) {
-          setIsUserScrolling(false)
-        }
-      }, 2000)
-    }
-
-    terminal.addEventListener('scroll', handleScroll, { passive: true })
-
-    return () => {
-      terminal.removeEventListener('scroll', handleScroll)
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current)
-      }
-    }
-  }, [])
+  }, [history])
 
   // Save fontSize to localStorage whenever it changes
   useEffect(() => {
@@ -669,6 +630,173 @@ export function Terminal() {
             }
 
             // Add to command history and return early
+            setCommandHistory(prev => {
+              const newHistory = [...prev, trimmedInput]
+              if (newHistory.length > MAX_COMMAND_HISTORY) {
+                return newHistory.slice(-MAX_COMMAND_HISTORY)
+              }
+              return newHistory
+            })
+            setCurrentInput("")
+            setHistoryIndex(-1)
+            return
+          }
+          // Handle swap command - execute swap transaction
+          else if (resolved.command.id === 'swap' && resolved.protocol === '1inch' && 'swapRequest' in result.value) {
+            const swapData = result.value as any
+
+            // Show preparing swap message
+            output = [
+              `📊 Swap Quote:`,
+              `  ${swapData.fromToken.toUpperCase()} → ${swapData.toToken.toUpperCase()}`,
+              `  Input: ${swapData.amountIn}`,
+              `  Output: ${swapData.amountOut}`,
+              `  Gas: ${swapData.gas}`,
+              `  Slippage: ${swapData.slippage}%`,
+              ``,
+              `⏳ Checking token approval...`,
+            ]
+
+            const swapTimestamp = new Date()
+            const tempHistoryItem: HistoryItem = {
+              command: trimmedInput,
+              output,
+              timestamp: swapTimestamp
+            }
+
+            setTabs(tabs.map(tab =>
+              tab.id === activeTabId
+                ? { ...tab, history: [...tab.history, tempHistoryItem] }
+                : tab
+            ))
+
+            // Helper function to update history
+            const updateHistory = (lines: string[]) => {
+              setTabs(prevTabs => prevTabs.map(tab => {
+                if (tab.id === activeTabId) {
+                  const updatedHistory = tab.history.map(item =>
+                    item.timestamp === swapTimestamp
+                      ? { ...item, output: lines }
+                      : item
+                  )
+                  return { ...tab, history: updatedHistory }
+                }
+                return tab
+              }))
+            }
+
+            // Execute swap flow with approval check
+            try {
+              const { sendTransaction } = await import('wagmi/actions')
+              const { config } = await import('@/lib/wagmi-config')
+
+              // Skip allowance check for native ETH
+              const isNativeEth = swapData.srcAddress === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
+
+              if (!isNativeEth) {
+                // Check allowance
+                const allowanceResponse = await fetch(
+                  `/api/1inch/approve/allowance?chainId=${swapData.chainId}&tokenAddress=${swapData.srcAddress}&walletAddress=${swapData.walletAddress}`
+                )
+
+                if (!allowanceResponse.ok) {
+                  throw new Error('Failed to check token allowance')
+                }
+
+                const allowanceData = await allowanceResponse.json()
+                const allowance = BigInt(allowanceData.allowance || '0')
+                const requiredAmount = BigInt(swapData.amount)
+
+                // If allowance is insufficient, request approval
+                if (allowance < requiredAmount) {
+                  updateHistory([
+                    `📊 Swap Quote:`,
+                    `  ${swapData.fromToken.toUpperCase()} → ${swapData.toToken.toUpperCase()}`,
+                    `  Input: ${swapData.amountIn}`,
+                    `  Output: ${swapData.amountOut}`,
+                    `  Gas: ${swapData.gas}`,
+                    `  Slippage: ${swapData.slippage}%`,
+                    ``,
+                    `⚠️  Insufficient allowance`,
+                    `  Current: ${allowance.toString()}`,
+                    `  Required: ${requiredAmount.toString()}`,
+                    ``,
+                    `📝 Requesting token approval...`,
+                  ])
+
+                  // Get approve transaction
+                  const approveResponse = await fetch(
+                    `/api/1inch/approve/transaction?chainId=${swapData.chainId}&tokenAddress=${swapData.srcAddress}`
+                  )
+
+                  if (!approveResponse.ok) {
+                    throw new Error('Failed to get approval transaction')
+                  }
+
+                  const approveTx = await approveResponse.json()
+
+                  console.log('[Swap] Approval transaction data:', approveTx)
+
+                  // Send approval transaction
+                  const approveHash = await sendTransaction(config, {
+                    to: approveTx.to as `0x${string}`,
+                    data: approveTx.data as `0x${string}`,
+                    value: BigInt(0),
+                    gas: approveTx.gas ? BigInt(approveTx.gas) : approveTx.gasLimit ? BigInt(approveTx.gasLimit) : undefined,
+                  })
+
+                  console.log('[Swap] Approval transaction hash:', approveHash)
+
+                  updateHistory([
+                    `📊 Swap Quote:`,
+                    `  ${swapData.fromToken.toUpperCase()} → ${swapData.toToken.toUpperCase()}`,
+                    `  Input: ${swapData.amountIn}`,
+                    `  Output: ${swapData.amountOut}`,
+                    `  Gas: ${swapData.gas}`,
+                    `  Slippage: ${swapData.slippage}%`,
+                    ``,
+                    `✅ Token approved!`,
+                    `  Approval Tx: ${approveHash}`,
+                    ``,
+                    `⏳ Executing swap...`,
+                  ])
+                }
+              }
+
+              // Now execute the swap
+              const swapResponse = await fetch(
+                `/api/1inch/swap/classic/swap?chainId=${swapData.chainId}&src=${swapData.srcAddress}&dst=${swapData.dstAddress}&amount=${swapData.amount}&from=${swapData.walletAddress}&slippage=${swapData.slippage}`
+              )
+
+              if (!swapResponse.ok) {
+                const errorData = await swapResponse.json()
+                throw new Error(errorData.error || 'Failed to get swap transaction')
+              }
+
+              const swapTx = await swapResponse.json()
+
+              // Send the swap transaction
+              const hash = await sendTransaction(config, {
+                to: swapTx.tx.to as `0x${string}`,
+                data: swapTx.tx.data as `0x${string}`,
+                value: BigInt(swapTx.tx.value || '0'),
+                gas: BigInt(swapTx.tx.gas || '0'),
+              })
+
+              // Update with success
+              updateHistory([
+                `✅ Swap executed successfully!`,
+                `  ${swapData.fromToken.toUpperCase()} → ${swapData.toToken.toUpperCase()}`,
+                `  Input: ${swapData.amountIn}`,
+                `  Output: ${swapData.amountOut}`,
+                `  Tx Hash: ${hash}`,
+              ])
+            } catch (error) {
+              // Update with error
+              const errorMsg = error instanceof Error ? error.message : String(error)
+              updateHistory([`❌ Swap failed: ${errorMsg}`])
+            }
+
             setCommandHistory(prev => {
               const newHistory = [...prev, trimmedInput]
               if (newHistory.length > MAX_COMMAND_HISTORY) {
@@ -977,10 +1105,10 @@ export function Terminal() {
           </header>
 
           {/* Terminal Area */}
-          <div className="flex-1 bg-[#0A0A0A] p-8 flex flex-col relative">
-            <div className="flex-1 bg-[#141414] rounded-xl border border-[#262626] flex flex-col overflow-hidden">
+          <div className="flex-1 bg-[#0A0A0A] p-8 flex flex-col relative overflow-hidden">
+            <div className="h-full bg-[#141414] rounded-xl border border-[#262626] flex flex-col overflow-hidden">
               {/* Window Management Bar with Tabs */}
-              <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center gap-2 rounded-t-xl">
+              <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center gap-2 rounded-t-xl flex-shrink-0">
                 {tabs.map(tab => (
                   <div
                     key={tab.id}
@@ -1028,8 +1156,8 @@ export function Terminal() {
               {/* Terminal Content */}
               <div
                 ref={terminalRef}
-                className="flex-1 p-6 font-mono overflow-y-auto select-text scroll-smooth [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-gray-500"
-                style={{ fontSize: `${fontSize}px`, scrollBehavior: 'smooth' }}
+                className="flex-1 p-6 font-mono overflow-y-scroll select-text min-h-0 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-gray-500"
+                style={{ fontSize: `${fontSize}px` }}
                 onClick={handleTerminalClick}
               >
                 {/* Command History */}

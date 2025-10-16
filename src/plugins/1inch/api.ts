@@ -154,7 +154,7 @@ export class OneInchAPI {
   }): Promise<any> {
     const { chainId, tokenAddress, walletAddress } = params
     const data = await this.makeRequest(
-      `/approve/v1.1/${chainId}/allowance`,
+      `/swap/v6.0/${chainId}/approve/allowance`,
       {
         tokenAddress,
         walletAddress,
@@ -173,7 +173,7 @@ export class OneInchAPI {
   }): Promise<any> {
     const { chainId, tokenAddress, amount } = params
     const data = await this.makeRequest(
-      `/approve/v1.1/${chainId}/approve/transaction`,
+      `/swap/v6.0/${chainId}/approve/transaction`,
       {
         tokenAddress,
         ...(amount && { amount }),
