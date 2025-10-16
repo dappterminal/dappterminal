@@ -18,6 +18,13 @@ This is a template for creating new protocol plugins.
 ├── commands.ts    # Protocol commands (G_p scope)
 ├── types.ts       # Protocol-specific types
 └── README.md      # Plugin documentation
+
+src/app/api/<protocol-name>/
+├── quote/
+│   └── route.ts   # Read-only API endpoint (GET quote)
+├── swap/
+│   └── route.ts   # Write API endpoint (POST swap)
+└── types.ts       # API request/response types
 ```
 
 ## Example
@@ -42,6 +49,52 @@ Commands are automatically namespaced by protocol ID and can be accessed via:
 - `<protocol>:command` (explicit)
 - `command --protocol <protocol>` (flag-based)
 - `command` (when protocol is active or preferred)
+
+## API Integration
+
+Protocol commands typically call backend API endpoints for data fetching and transaction building.
+
+### Setting up API Routes
+
+1. Create API directory: `src/app/api/<protocol-id>/`
+2. Add endpoint directories (e.g., `quote/`, `swap/`)
+3. Each endpoint has a `route.ts` file with Next.js route handlers
+
+### Calling APIs from Commands
+
+Use the `callProtocolApi` helper in your commands:
+
+```typescript
+import { callProtocolApi, apiToCommandResult } from '@/lib/api-client'
+
+export const quoteCommand: Command = {
+  id: 'quote',
+  scope: 'G_p',
+  protocol: 'your-protocol',
+
+  async run(args, context) {
+    const response = await callProtocolApi<QuoteResponse>(
+      'your-protocol',
+      'quote',
+      { body: { /* params */ } }
+    )
+
+    return apiToCommandResult(response)
+  }
+}
+```
+
+### API Response Format
+
+All API routes must return:
+
+```typescript
+// Success
+{ success: true, data: T }
+
+// Error
+{ success: false, error: string }
+```
 
 ## Loading the Plugin
 

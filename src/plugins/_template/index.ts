@@ -8,7 +8,7 @@
 import type { Plugin, PluginConfig } from '@/plugins'
 import type { ProtocolFiber, ExecutionContext, Command } from '@/core'
 import { createProtocolFiber, addCommandToFiber } from '@/core'
-import { swapCommand, liquidityCommand } from './commands'
+import { quoteCommand, swapCommand, liquidityCommand } from './commands'
 
 /**
  * Plugin metadata
@@ -50,6 +50,7 @@ export const templatePlugin: Plugin = {
     )
 
     // Add commands to the fiber
+    addCommandToFiber(fiber, quoteCommand)
     addCommandToFiber(fiber, swapCommand)
     addCommandToFiber(fiber, liquidityCommand)
 
