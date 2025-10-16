@@ -312,6 +312,68 @@ export const balanceCommand: Command = {
 }
 
 /**
+ * Transfer command - send ETH to an address
+ * Transaction will be built and signed client-side
+ */
+export const transferCommand: Command = {
+  id: 'transfer',
+  scope: 'G_core',
+  description: 'Send ETH to an address',
+  aliases: ['send', 'tx'],
+
+  async run(_args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    if (!context.wallet.isConnected || !context.wallet.address) {
+      return {
+        success: false,
+        error: new Error('No wallet connected. Please connect your wallet first.'),
+      }
+    }
+
+    // Parse arguments: transfer <amount> <address>
+    const argsStr = typeof _args === 'string' ? _args.trim() : ''
+    const parts = argsStr.split(/\s+/)
+
+    if (parts.length !== 2) {
+      return {
+        success: false,
+        error: new Error('Usage: transfer <amount> <address>'),
+      }
+    }
+
+    const amount = parts[0]
+    const toAddress = parts[1]
+
+    // Validate amount
+    if (isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+      return {
+        success: false,
+        error: new Error('Invalid amount. Must be a positive number.'),
+      }
+    }
+
+    // Validate address format
+    if (!/^0x[a-fA-F0-9]{40}$/.test(toAddress)) {
+      return {
+        success: false,
+        error: new Error('Invalid address format. Must be a valid Ethereum address (0x...).'),
+      }
+    }
+
+    // Return transfer request - terminal will handle signing and sending
+    return {
+      success: true,
+      value: {
+        transferRequest: true, // Signal to terminal
+        amount,
+        toAddress,
+        fromAddress: context.wallet.address,
+        chainId: context.wallet.chainId,
+      },
+    }
+  },
+}
+
+/**
  * All core commands
  */
 export const coreCommands = [
@@ -324,6 +386,7 @@ export const coreCommands = [
   walletCommand,
   whoamiCommand,
   balanceCommand,
+  transferCommand,
 ]
 
 /**

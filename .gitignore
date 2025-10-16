@@ -9,14 +9,16 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-
+.gitignore
 # testing
 /coverage
 
 # next.js
 /.next/
 /out/
-
+.draft-plugin-system/
+.draft-plugin-system
+.draft-plugin-system/** */
 # production
 /build
 

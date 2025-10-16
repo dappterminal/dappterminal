@@ -40,9 +40,25 @@ export function composeCommands<A, B, C>(
   f: Command<A, B>,
   g: Command<B, C>
 ): Command<A, C> {
+  // Preserve scope/protocol to maintain submonoid closure
+  // If both commands are in the same fiber M_P, their composition must also be in M_P
+  let scope: import('./types').CommandScope = 'G_core'
+  let protocol: ProtocolId | undefined
+
+  if (f.scope === 'G_p' && g.scope === 'G_p' && f.protocol === g.protocol) {
+    // Both in same protocol fiber → composition stays in fiber (maintains closure)
+    scope = 'G_p'
+    protocol = f.protocol
+  } else if (f.scope === 'G_alias' && g.scope === 'G_alias') {
+    // Both are aliases → composition is alias
+    scope = 'G_alias'
+  }
+  // Otherwise default to G_core (cross-fiber or mixed-scope composition)
+
   return {
     id: `${f.id}_then_${g.id}`,
-    scope: 'G_core', // Composed commands live in global scope
+    scope,
+    ...(protocol && { protocol }),
     description: `${f.description || f.id} then ${g.description || g.id}`,
 
     run: async (args: A, context: ExecutionContext): Promise<CommandResult<C>> => {

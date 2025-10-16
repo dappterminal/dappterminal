@@ -351,6 +351,91 @@ export function Terminal() {
             }
             output = lines
           }
+          // Handle transfer command - send ETH transaction
+          else if (resolved.command.id === 'transfer' && 'transferRequest' in result.value) {
+            const valueData = result.value as {
+              transferRequest: boolean
+              amount: string
+              toAddress: string
+              fromAddress: `0x${string}`
+              chainId: number
+            }
+
+            // Show preparing transaction message
+            output = ['Preparing transaction...']
+
+            // Add temporary history item
+            const transferTimestamp = new Date()
+            const tempHistoryItem: HistoryItem = {
+              command: trimmedInput,
+              output,
+              timestamp: transferTimestamp
+            }
+
+            setTabs(tabs.map(tab =>
+              tab.id === activeTabId
+                ? { ...tab, history: [...tab.history, tempHistoryItem] }
+                : tab
+            ))
+
+            // Send transaction using wagmi
+            try {
+              const { sendTransaction } = await import('wagmi/actions')
+              const { config } = await import('@/lib/wagmi-config')
+              const { parseEther } = await import('viem')
+
+              // Send the transaction
+              const hash = await sendTransaction(config, {
+                to: valueData.toAddress as `0x${string}`,
+                value: parseEther(valueData.amount),
+              })
+
+              // Update with success
+              const successLines: string[] = []
+              successLines.push(`Transaction sent successfully!`)
+              successLines.push(`  Amount: ${valueData.amount} ETH`)
+              successLines.push(`  To: ${valueData.toAddress}`)
+              successLines.push(`  Tx Hash: ${hash}`)
+
+              setTabs(prevTabs => prevTabs.map(tab => {
+                if (tab.id === activeTabId) {
+                  const updatedHistory = tab.history.map(item =>
+                    item.timestamp === transferTimestamp
+                      ? { ...item, output: successLines }
+                      : item
+                  )
+                  return { ...tab, history: updatedHistory }
+                }
+                return tab
+              }))
+            } catch (error) {
+              // Update with error
+              const errorMsg = error instanceof Error ? error.message : String(error)
+              setTabs(prevTabs => prevTabs.map(tab => {
+                if (tab.id === activeTabId) {
+                  const updatedHistory = tab.history.map(item =>
+                    item.timestamp === transferTimestamp
+                      ? { ...item, output: [`Error sending transaction: ${errorMsg}`] }
+                      : item
+                  )
+                  return { ...tab, history: updatedHistory }
+                }
+                return tab
+              }))
+            }
+
+            // Add to command history and return early
+            setCommandHistory(prev => {
+              const newHistory = [...prev, trimmedInput]
+              if (newHistory.length > MAX_COMMAND_HISTORY) {
+                return newHistory.slice(-MAX_COMMAND_HISTORY)
+              }
+              return newHistory
+            })
+            setCurrentInput("")
+            setHistoryIndex(-1)
+            return
+          }
           // Handle balance command - fetch balance client-side
           else if (resolved.command.id === 'balance' && 'fetchBalance' in result.value) {
             const valueData = result.value as { fetchBalance: boolean; address: `0x${string}`; chainId: number }
@@ -598,12 +683,13 @@ export function Terminal() {
         {/* Sidebar */}
         <aside className="w-20 flex flex-col items-center bg-[#141414] py-6 border-r border-[#262626]">
           <div className="p-2 mb-10">
-            <div className="text-white text-2xl font-bold">
+            {/* <div className="text-white text-2xl font-bold">
               D<sup className="text-lg">3</sup>
-            </div>
+            </div> */}
           </div>
           <nav className="flex flex-col items-center space-y-8 flex-1">
-            <a href="#" className="text-white">
+            <a href="#" className="text-white pt-5
+            ">
               <TerminalIcon className="w-6 h-6" />
             </a>
           </nav>
