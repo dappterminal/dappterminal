@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, KeyboardEvent } from "react"
 import { Terminal as TerminalIcon, Settings, Plus, X } from "lucide-react"
+import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { useAccount } from 'wagmi'
 import { registry, registerCoreCommands, createExecutionContext, updateExecutionContext } from "@/core"
 import type { ExecutionContext, CommandResult } from "@/core"
 
@@ -136,6 +138,9 @@ export function Terminal() {
   const inputRef = useRef<HTMLInputElement>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
 
+  // Get wallet state from wagmi
+  const { address, chainId, isConnected, isConnecting } = useAccount()
+
   useEffect(() => {
     setMounted(true)
 
@@ -229,6 +234,23 @@ export function Terminal() {
       localStorage.setItem('defi-terminal-command-history', JSON.stringify(commandHistory))
     }
   }, [commandHistory, mounted])
+
+  // Sync wallet state to execution context
+  useEffect(() => {
+    if (executionContext) {
+      setExecutionContext({
+        ...executionContext,
+        wallet: {
+          address,
+          chainId,
+          isConnected,
+          isConnecting,
+          isDisconnecting: false, // wagmi v2 doesn't expose this
+        }
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, chainId, isConnected, isConnecting])
 
   const addNewTab = () => {
     const newId = (tabs.length + 1).toString()
@@ -485,9 +507,98 @@ export function Terminal() {
               <a href="#" className="text-[#737373] hover:text-white transition-colors">Docs</a>
             </div>
             <div className="flex items-center space-x-4">
-              <button className="bg-[#141414] border border-[#262626] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#262626] transition-colors">
-                Connect Wallet
-              </button>
+              <ConnectButton.Custom>
+                {({
+                  account,
+                  chain,
+                  openAccountModal,
+                  openChainModal,
+                  openConnectModal,
+                  mounted,
+                }) => {
+                  const ready = mounted
+                  const connected = ready && account && chain
+
+                  return (
+                    <div
+                      {...(!ready && {
+                        'aria-hidden': true,
+                        style: {
+                          opacity: 0,
+                          pointerEvents: 'none',
+                          userSelect: 'none',
+                        },
+                      })}
+                    >
+                      {(() => {
+                        if (!connected) {
+                          return (
+                            <button
+                              onClick={openConnectModal}
+                              className="bg-[#141414] border border-[#262626] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#262626] transition-colors"
+                            >
+                              Connect Wallet
+                            </button>
+                          )
+                        }
+
+                        if (chain.unsupported) {
+                          return (
+                            <button
+                              onClick={openChainModal}
+                              className="bg-[#141414] border border-red-500/50 text-red-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-500/10 transition-colors"
+                            >
+                              Wrong network
+                            </button>
+                          )
+                        }
+
+                        return (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={openChainModal}
+                              className="bg-[#141414] border border-[#262626] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#262626] transition-colors flex items-center gap-2"
+                            >
+                              {chain.hasIcon && (
+                                <div
+                                  style={{
+                                    background: chain.iconBackground,
+                                    width: 16,
+                                    height: 16,
+                                    borderRadius: 999,
+                                    overflow: 'hidden',
+                                  }}
+                                >
+                                  {chain.iconUrl && (
+                                    <img
+                                      alt={chain.name ?? 'Chain icon'}
+                                      src={chain.iconUrl}
+                                      style={{ width: 16, height: 16 }}
+                                    />
+                                  )}
+                                </div>
+                              )}
+                              {chain.name}
+                            </button>
+
+                            <button
+                              onClick={openAccountModal}
+                              className="bg-[#141414] border border-[#262626] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#262626] transition-colors"
+                            >
+                              {account.displayName}
+                              {account.displayBalance && (
+                                <span className="ml-2 text-[#737373]">
+                                  {account.displayBalance}
+                                </span>
+                              )}
+                            </button>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  )
+                }}
+              </ConnectButton.Custom>
             </div>
           </header>
 

@@ -207,13 +207,46 @@ export const versionCommand: Command = {
   description: 'Show DeFi Terminal version',
   aliases: ['v', 'ver'],
 
-  async run(_args: unknown, _context: ExecutionContext): Promise<CommandResult> {
+  async run(_args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    const chainName = context.wallet.chainId
+      ? `Chain ID: ${context.wallet.chainId}`
+      : 'Not connected to chain'
+
     return {
       success: true,
       value: {
         name: 'The DeFi Terminal',
         version: '0.1.0',
         architecture: 'Fibered Monoid',
+        chain: chainName,
+      },
+    }
+  },
+}
+
+/**
+ * Wallet command - show wallet information
+ */
+export const walletCommand: Command = {
+  id: 'wallet',
+  scope: 'G_core',
+  description: 'Show wallet information',
+  aliases: ['w', 'account'],
+
+  async run(_args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    if (!context.wallet.isConnected) {
+      return {
+        success: false,
+        error: new Error('No wallet connected. Please connect your wallet first.'),
+      }
+    }
+
+    return {
+      success: true,
+      value: {
+        address: context.wallet.address,
+        chainId: context.wallet.chainId,
+        isConnected: context.wallet.isConnected,
       },
     }
   },
@@ -229,6 +262,7 @@ export const coreCommands = [
   historyCommand,
   clearCommand,
   versionCommand,
+  walletCommand,
 ]
 
 /**

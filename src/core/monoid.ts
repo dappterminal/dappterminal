@@ -167,6 +167,11 @@ export async function verifyMonoidLaws<T>(
 export function createExecutionContext(): ExecutionContext {
   return {
     protocolPreferences: {},
+    wallet: {
+      isConnected: false,
+      isConnecting: false,
+      isDisconnecting: false,
+    },
     globalState: {},
     protocolState: new Map(),
     history: [],

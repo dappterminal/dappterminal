@@ -1,0 +1,85 @@
+/**
+ * Custom RainbowKit modal styling to match terminal theme
+ */
+
+/* Modal backdrop */
+[data-rk] .iekbcc0 {
+  backdrop-filter: blur(8px);
+}
+
+/* Modal container */
+[data-rk] .ju367v9 {
+  font-family: var(--font-inter);
+}
+
+/* Wallet option hover */
+[data-rk] button[data-testid]:hover {
+  background: #1a1a1a !important;
+}
+
+/* Selected wallet option */
+[data-rk] button[data-testid][data-selected="true"] {
+  background: #262626 !important;
+  border-color: #404040 !important;
+}
+
+/* Let RainbowKit handle wallet icons naturally - don't override */
+
+/* Scrollbar styling for modal */
+[data-rk] ::-webkit-scrollbar {
+  width: 8px;
+}
+
+[data-rk] ::-webkit-scrollbar-track {
+  background: #0A0A0A;
+}
+
+[data-rk] ::-webkit-scrollbar-thumb {
+  background: #262626;
+  border-radius: 4px;
+}
+
+[data-rk] ::-webkit-scrollbar-thumb:hover {
+  background: #404040;
+}
+
+/* Button focus states */
+[data-rk] button:focus-visible {
+  outline: 2px solid #404040;
+  outline-offset: 2px;
+}
+
+/* Recent transactions */
+[data-rk] .ju367va1 {
+  background: #141414 !important;
+  border-color: #262626 !important;
+}
+
+/* Network switch button */
+[data-rk] .ju367va2 {
+  background: #141414 !important;
+  border-color: #262626 !important;
+}
+
+/* Copy address button */
+[data-rk] .ju367va3 {
+  background: #141414 !important;
+  border-color: #262626 !important;
+  color: #E5E5E5 !important;
+}
+
+[data-rk] .ju367va3:hover {
+  background: #262626 !important;
+}
+
+/* Disconnect button */
+[data-rk] button[aria-label="Disconnect"] {
+  background: #141414 !important;
+  border-color: #262626 !important;
+  color: #EF4444 !important;
+}
+
+[data-rk] button[aria-label="Disconnect"]:hover {
+  background: rgba(239, 68, 68, 0.1) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}

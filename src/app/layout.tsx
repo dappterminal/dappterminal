@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter, Fira_Code } from "next/font/google";
+import { Providers } from "./providers";
 import "./globals.css";
+import "./rainbowkit.css";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -27,7 +29,9 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${firaCode.variable} antialiased font-sans`}
       >
-        {children}
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );

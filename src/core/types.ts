@@ -20,6 +20,26 @@ export type CommandScope = 'G_core' | 'G_alias' | 'G_p'
 export type ProtocolId = string
 
 /**
+ * Wallet connection state
+ */
+export interface WalletState {
+  /** Connected wallet address */
+  address?: `0x${string}`
+
+  /** Connected chain ID */
+  chainId?: number
+
+  /** Whether wallet is connected */
+  isConnected: boolean
+
+  /** Whether wallet is connecting */
+  isConnecting: boolean
+
+  /** Whether wallet is disconnecting */
+  isDisconnecting: boolean
+}
+
+/**
  * Execution context passed through command execution
  */
 export interface ExecutionContext {
@@ -28,6 +48,9 @@ export interface ExecutionContext {
 
   /** User preferences for protocol selection */
   protocolPreferences: Record<string, ProtocolId>
+
+  /** Wallet connection state */
+  wallet: WalletState
 
   /** Global state shared across all commands */
   globalState: Record<string, unknown>
