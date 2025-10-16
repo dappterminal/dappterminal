@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef, KeyboardEvent } from "react"
 import { Terminal as TerminalIcon, Settings, Plus, X } from "lucide-react"
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { useAccount } from 'wagmi'
+import { useAccount, useEnsName, useBalance } from 'wagmi'
+import { mainnet } from 'wagmi/chains'
+import { formatUnits } from 'viem'
 import { registry, registerCoreCommands, createExecutionContext, updateExecutionContext } from "@/core"
 import type { ExecutionContext, CommandResult } from "@/core"
 
@@ -19,8 +21,20 @@ interface TerminalTab {
   history: HistoryItem[]
 }
 
-const PROMPT = "user@defi>"
 const MAX_COMMAND_HISTORY = 1000 // Maximum commands to keep in history
+
+// Helper to format terminal prompt based on wallet state
+function formatPrompt(ensName?: string | null, address?: `0x${string}`): string {
+  if (ensName) {
+    return `${ensName}@defi>`
+  }
+  if (address) {
+    // Truncate address: 0x1234...5678
+    const truncated = `${address.slice(0, 6)}...${address.slice(-4)}`
+    return `${truncated}@defi>`
+  }
+  return "user@defi>"
+}
 
 // Format command result for terminal display
 function formatCommandResult(result: CommandResult): string[] {
@@ -140,6 +154,13 @@ export function Terminal() {
 
   // Get wallet state from wagmi
   const { address, chainId, isConnected, isConnecting } = useAccount()
+  const { data: ensName } = useEnsName({
+    address,
+    chainId: mainnet.id,
+  })
+
+  // Generate prompt based on wallet state
+  const prompt = formatPrompt(ensName, address)
 
   useEffect(() => {
     setMounted(true)
@@ -314,8 +335,103 @@ export function Terminal() {
         // Execute command
         const result = await resolved.command.run(args, executionContext)
 
-        // Format output
-        output = formatCommandResult(result)
+        // Handle special client-side commands
+        if (result.success && typeof result.value === 'object' && result.value !== null) {
+          // Handle whoami command - enhance with ENS
+          if (resolved.command.id === 'whoami' && 'address' in result.value) {
+            const valueData = result.value as { address: `0x${string}`; chainId?: number }
+            const lines: string[] = []
+            lines.push('Wallet Identity:')
+            lines.push(`  Address: ${valueData.address}`)
+            if (ensName) {
+              lines.push(`  ENS: ${ensName}`)
+            }
+            if (valueData.chainId) {
+              lines.push(`  Chain ID: ${valueData.chainId}`)
+            }
+            output = lines
+          }
+          // Handle balance command - fetch balance client-side
+          else if (resolved.command.id === 'balance' && 'fetchBalance' in result.value) {
+            const valueData = result.value as { fetchBalance: boolean; address: `0x${string}`; chainId: number }
+
+            // Async balance fetch - we'll show loading state then update
+            output = ['Fetching balance...']
+
+            // Add temporary history item and capture its timestamp for identification
+            const balanceTimestamp = new Date()
+            const tempHistoryItem: HistoryItem = {
+              command: trimmedInput,
+              output,
+              timestamp: balanceTimestamp
+            }
+
+            setTabs(tabs.map(tab =>
+              tab.id === activeTabId
+                ? { ...tab, history: [...tab.history, tempHistoryItem] }
+                : tab
+            ))
+
+            // Fetch balance using wagmi (we'll need to import the config)
+            try {
+              const { getBalance } = await import('wagmi/actions')
+              const { config } = await import('@/lib/wagmi-config')
+
+              const balance = await getBalance(config, {
+                address: valueData.address,
+              })
+
+              // Update the specific history item by finding it via timestamp
+              const balanceLines: string[] = []
+              balanceLines.push(`Balance on Chain ${valueData.chainId}:`)
+              balanceLines.push(`  ${formatUnits(balance.value, balance.decimals)} ${balance.symbol}`)
+
+              setTabs(prevTabs => prevTabs.map(tab => {
+                if (tab.id === activeTabId) {
+                  const updatedHistory = tab.history.map(item =>
+                    item.timestamp === balanceTimestamp
+                      ? { ...item, output: balanceLines }
+                      : item
+                  )
+                  return { ...tab, history: updatedHistory }
+                }
+                return tab
+              }))
+            } catch (error) {
+              // Update with error using timestamp to find the correct item
+              setTabs(prevTabs => prevTabs.map(tab => {
+                if (tab.id === activeTabId) {
+                  const updatedHistory = tab.history.map(item =>
+                    item.timestamp === balanceTimestamp
+                      ? { ...item, output: [`Error fetching balance: ${error instanceof Error ? error.message : String(error)}`] }
+                      : item
+                  )
+                  return { ...tab, history: updatedHistory }
+                }
+                return tab
+              }))
+            }
+
+            // Add to command history and return early
+            setCommandHistory(prev => {
+              const newHistory = [...prev, trimmedInput]
+              if (newHistory.length > MAX_COMMAND_HISTORY) {
+                return newHistory.slice(-MAX_COMMAND_HISTORY)
+              }
+              return newHistory
+            })
+            setCurrentInput("")
+            setHistoryIndex(-1)
+            return
+          }
+          else {
+            // Normal formatting
+            output = formatCommandResult(result)
+          }
+        } else {
+          // Format output
+          output = formatCommandResult(result)
+        }
 
         // Update execution context
         const updatedContext = updateExecutionContext(
@@ -663,7 +779,7 @@ export function Terminal() {
                   <div key={index} className="mb-2">
                     {item.command !== "welcome" && (
                       <div className="flex select-text">
-                        <span className="text-white-400 font-semibold">{PROMPT}</span>
+                        <span className="text-white-400 font-semibold">{prompt}</span>
                         <span className="text-whiteMa-400 ml-2 font-semibold">{item.command}</span>
                       </div>
                     )}
@@ -678,7 +794,7 @@ export function Terminal() {
                 {/* Current Input */}
                 <div className="relative">
                   <div className="flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded">
-                    <span className="text-gray-100 font-semibold">{PROMPT}</span>
+                    <span className="text-gray-100 font-semibold">{prompt}</span>
                     <input
                       ref={inputRef}
                       type="text"

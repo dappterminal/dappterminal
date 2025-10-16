@@ -253,6 +253,65 @@ export const walletCommand: Command = {
 }
 
 /**
+ * WhoAmI command - display current wallet address and ENS
+ * Client-side data (ENS, balance) will be injected by terminal component
+ */
+export const whoamiCommand: Command = {
+  id: 'whoami',
+  scope: 'G_core',
+  description: 'Display current wallet address and ENS name',
+  aliases: ['who'],
+
+  async run(_args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    if (!context.wallet.isConnected || !context.wallet.address) {
+      return {
+        success: true,
+        value: 'No wallet connected',
+      }
+    }
+
+    // Simple response - terminal will enhance with ENS name
+    return {
+      success: true,
+      value: {
+        address: context.wallet.address,
+        chainId: context.wallet.chainId,
+      },
+    }
+  },
+}
+
+/**
+ * Balance command - query balances for the connected address
+ * Balance data will be injected by terminal component via client-side fetch
+ */
+export const balanceCommand: Command = {
+  id: 'balance',
+  scope: 'G_core',
+  description: 'Show native token balance on connected network',
+  aliases: ['bal', 'b'],
+
+  async run(_args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    if (!context.wallet.isConnected || !context.wallet.address) {
+      return {
+        success: false,
+        error: new Error('No wallet connected. Please connect your wallet first.'),
+      }
+    }
+
+    // Return placeholder - terminal will fetch and display actual balance
+    return {
+      success: true,
+      value: {
+        fetchBalance: true, // Signal to fetch balance
+        address: context.wallet.address,
+        chainId: context.wallet.chainId,
+      },
+    }
+  },
+}
+
+/**
  * All core commands
  */
 export const coreCommands = [
@@ -263,6 +322,8 @@ export const coreCommands = [
   clearCommand,
   versionCommand,
   walletCommand,
+  whoamiCommand,
+  balanceCommand,
 ]
 
 /**
