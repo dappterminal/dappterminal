@@ -126,6 +126,10 @@ export class CommandRegistry {
    * 1. Check G_core (core global commands)
    * 2. Check G_alias (aliased commands, bind protocol at runtime)
    * 3. Check protocol-scoped commands (G_p)
+   *
+   * Fiber isolation: When activeProtocol is set, only commands from
+   * that fiber + global commands are accessible. Cross-fiber access
+   * is blocked to maintain mathematical submonoid structure.
    */
   ρ(context: ResolutionContext): ResolvedCommand | undefined {
     const input = context.input.trim()
@@ -165,29 +169,39 @@ export class CommandRegistry {
     }
 
     // 3. Check protocol-scoped commands (G_p)
-    // First try explicit protocol from flag
-    if (context.explicitProtocol) {
-      const fiber = this.σ(context.explicitProtocol)
-      const command = fiber?.commands.get(resolvedId)
-      if (command) {
-        return {
-          command,
-          protocol: context.explicitProtocol,
-          resolutionMethod: 'protocol-scoped',
-        }
-      }
-    }
 
-    // Try namespaced command (protocol:command)
+    // FIBER ISOLATION: When inside a fiber, block cross-fiber access
+    // Check for namespace syntax (protocol:command)
     const namespacedMatch = input.match(/^([^:]+):(.+)$/)
     if (namespacedMatch) {
       const [, protocol, commandId] = namespacedMatch
+
+      // If we're in a fiber and trying to access a different fiber, block it
+      if (context.executionContext.activeProtocol &&
+          protocol !== context.executionContext.activeProtocol) {
+        // Cross-fiber access blocked
+        return undefined
+      }
+
       const fiber = this.σ(protocol)
       const command = fiber?.commands.get(commandId)
       if (command) {
         return {
           command,
           protocol,
+          resolutionMethod: 'protocol-scoped',
+        }
+      }
+    }
+
+    // First try explicit protocol from flag (only if not in a fiber)
+    if (context.explicitProtocol && !context.executionContext.activeProtocol) {
+      const fiber = this.σ(context.explicitProtocol)
+      const command = fiber?.commands.get(resolvedId)
+      if (command) {
+        return {
+          command,
+          protocol: context.explicitProtocol,
           resolutionMethod: 'protocol-scoped',
         }
       }
@@ -214,6 +228,9 @@ export class CommandRegistry {
    *
    * Uses string similarity to find closest matching command
    * Returns all matches above a confidence threshold
+   *
+   * Fiber isolation: When activeProtocol is set, only suggests commands
+   * from that fiber + global commands. Cross-fiber suggestions are blocked.
    */
   ρ_f(
     context: ResolutionContext,
@@ -236,21 +253,40 @@ export class CommandRegistry {
     // Check all command sources
     const allCommands: Array<{ id: string; command: Command; protocol?: ProtocolId }> = []
 
-    // Add core commands
+    // Add core commands (always available)
     for (const [id, command] of this.coreCommands) {
       allCommands.push({ id, command })
     }
 
-    // Add aliased commands
-    for (const [id, command] of this.aliasedCommands) {
-      const protocol = this.resolveProtocol(id, context)
-      allCommands.push({ id, command, protocol })
+    // Add aliased commands (if not in a fiber)
+    if (!context.executionContext.activeProtocol) {
+      for (const [id, command] of this.aliasedCommands) {
+        const protocol = this.resolveProtocol(id, context)
+        allCommands.push({ id, command, protocol })
+      }
     }
 
-    // Add protocol commands
-    for (const [protocolId, fiber] of this.protocolFibers) {
-      for (const [id, command] of fiber.commands) {
-        allCommands.push({ id, command, protocol: protocolId })
+    // Add protocol commands - respecting fiber isolation
+    if (context.executionContext.activeProtocol) {
+      // Inside a fiber: only show current fiber's commands
+      const activeFiber = this.σ(context.executionContext.activeProtocol)
+      if (activeFiber) {
+        for (const [id, command] of activeFiber.commands) {
+          // Skip identity command from suggestions
+          if (id !== 'identity') {
+            allCommands.push({ id, command, protocol: context.executionContext.activeProtocol })
+          }
+        }
+      }
+    } else {
+      // In M_G: show all protocol commands
+      for (const [protocolId, fiber] of this.protocolFibers) {
+        for (const [id, command] of fiber.commands) {
+          // Skip identity commands from suggestions
+          if (id !== 'identity') {
+            allCommands.push({ id, command, protocol: protocolId })
+          }
+        }
       }
     }
 

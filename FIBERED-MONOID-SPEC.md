@@ -697,6 +697,108 @@ await verifyMonoidLaws(swapCommand, testInput, context, addLiqCommand, removeLiq
 
 ---
 
+### 2025-10-16: Fiber Isolation Enforcement
+
+**Problem:** Command resolution allowed cross-fiber access via namespace syntax, violating mathematical isolation of submonoids.
+
+**Example violation:**
+
+```bash
+user@uniswap> 1inch:swap 1 eth usdc  # ❌ Should be blocked
+user@uniswap> swap 1 eth usdc         # ✅ Uniswap swap
+```
+
+**Why This Violates Math:**
+- Fibers M_P are **submonoids** - self-contained algebraic structures
+- Cross-fiber access breaks isolation: you're "reaching into" another submonoid
+- Composition should only happen within a fiber or with global commands
+- To switch protocols, you must exit to M_G (global monoid) first
+
+**Fixes:**
+
+**1. Exact Resolver (ρ) Isolation** (`src/core/command-registry.ts:173-184`):
+
+```typescript
+// Check for namespace syntax (protocol:command)
+const namespacedMatch = input.match(/^([^:]+):(.+)$/)
+if (namespacedMatch) {
+  const [, protocol, commandId] = namespacedMatch
+
+  // FIBER ISOLATION: Block cross-fiber access
+  if (context.executionContext.activeProtocol &&
+      protocol !== context.executionContext.activeProtocol) {
+    return undefined  // Cross-fiber access blocked
+  }
+  // ... rest of resolution ...
+}
+```
+
+**2. Fuzzy Resolver (ρ_f) Isolation** (`src/core/command-registry.ts:270-291`):
+
+```typescript
+// Add protocol commands - respecting fiber isolation
+if (context.executionContext.activeProtocol) {
+  // Inside a fiber: only show current fiber's commands
+  const activeFiber = this.σ(context.executionContext.activeProtocol)
+  if (activeFiber) {
+    for (const [id, command] of activeFiber.commands) {
+      if (id !== 'identity') {  // Skip identity from suggestions
+        allCommands.push({ id, command, protocol: context.executionContext.activeProtocol })
+      }
+    }
+  }
+} else {
+  // In M_G: show all protocol commands
+  // ...
+}
+```
+
+**3. Fiber-Aware Help** (`src/core/commands.ts:22-64`):
+
+When in M_p, help shows:
+- Commands from current fiber
+- Essential global commands (help, exit, clear, history, wallet, whoami, balance)
+- Exit hint to return to M_G
+
+```typescript
+// Essential global commands always available
+const essentialGlobals = ['help', 'exit', 'clear', 'history', 'wallet', 'whoami', 'balance']
+```
+
+**Correct Behavior:**
+
+```bash
+# In M_G (global monoid)
+user@defi> 1inch:swap 1 eth usdc      # ✅ Can access any fiber
+user@defi> uniswap:swap 1 eth usdc    # ✅ Can access any fiber
+user@defi> use 1inch                  # ✅ Enter 1inch fiber
+
+# In M_p (1inch fiber)
+user@1inch> swap 1 eth usdc           # ✅ 1inch swap (in current fiber)
+user@1inch> 1inch:swap 1 eth usdc     # ✅ Explicit namespace to same fiber
+user@1inch> uniswap:swap 1 eth usdc   # ❌ BLOCKED - cross-fiber access
+user@1inch> help                      # ✅ Core command
+user@1inch> exit                      # ✅ Exit to M_G
+
+# Back in M_G
+user@defi> uniswap:swap 1 eth usdc    # ✅ Can access any fiber again
+```
+
+**Mathematical Justification:**
+
+Fibers M_P are **submonoids** with these properties:
+1. **Closure**: f, g ∈ M_P ⇒ f ∘ g ∈ M_P
+2. **Identity**: e_P ∈ M_P
+3. **Isolation**: M_P ∩ M_Q = ∅ for P ≠ Q (except global identity)
+
+Allowing cross-fiber access would violate isolation and create dependencies between independent submonoids. The correct pattern is:
+- **Within M_P**: Compose commands from M_P + global commands
+- **Switch protocols**: Exit to M_G, then enter new fiber
+
+**Impact:** Proper mathematical isolation of protocol fibers. Each M_P is truly independent.
+
+---
+
 ## References
 
 - **Algebraic Specification:** [github.com/nickmura/defi-terminal-research](https://github.com/nickmura/defi-terminal-research/blob/main/algebra/algebraic-specification.md)

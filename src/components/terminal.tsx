@@ -56,10 +56,35 @@ function formatCommandResult(result: CommandResult): string[] {
     }
 
     // Handle help command output
-    if ('message' in value && 'core' in value) {
+    if ('message' in value && ('core' in value || 'fiber' in value)) {
       const helpOutput = value as any
       const lines: string[] = [helpOutput.message as string, '']
 
+      // Fiber help (when in M_p)
+      if (helpOutput.fiber && Array.isArray(helpOutput.commands)) {
+        for (const cmd of helpOutput.commands) {
+          const aliases = cmd.aliases?.length ? ` (${cmd.aliases.join(', ')})` : ''
+          lines.push(`  ${cmd.id.padEnd(12)} - ${cmd.description}${aliases}`)
+        }
+
+        // Show essential globals
+        if (Array.isArray(helpOutput.globals) && helpOutput.globals.length > 0) {
+          lines.push('')
+          lines.push('Global Commands:')
+          for (const cmd of helpOutput.globals) {
+            const aliases = cmd.aliases?.length ? ` (${cmd.aliases.join(', ')})` : ''
+            lines.push(`  ${cmd.id.padEnd(12)} - ${cmd.description}${aliases}`)
+          }
+        }
+
+        if (helpOutput.exitHint) {
+          lines.push('')
+          lines.push(`💡 ${helpOutput.exitHint}`)
+        }
+        return lines
+      }
+
+      // Global help (when in M_G)
       // Core commands
       if (Array.isArray(helpOutput.core) && helpOutput.core.length > 0) {
         lines.push('Core Commands:')
@@ -420,6 +445,14 @@ export function Terminal() {
     }
     setTabs([...tabs, newTab])
     setActiveTabId(newId)
+
+    // Exit protocol fiber - new tabs start in M_G (global monoid)
+    if (executionContext) {
+      setExecutionContext({
+        ...executionContext,
+        activeProtocol: undefined
+      })
+    }
   }
 
   const closeTab = (tabId: string) => {

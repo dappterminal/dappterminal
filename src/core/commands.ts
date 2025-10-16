@@ -9,6 +9,7 @@ import { registry } from './command-registry'
 
 /**
  * Help command - displays available commands
+ * Fiber-aware: shows only fiber commands when in M_p, all commands when in M_G
  */
 export const helpCommand: Command = {
   id: 'help',
@@ -18,6 +19,51 @@ export const helpCommand: Command = {
 
   async run(_args: unknown, context: ExecutionContext): Promise<CommandResult> {
     try {
+      // If in a protocol fiber (M_p), show only that fiber's commands + essential globals
+      if (context.activeProtocol) {
+        const fiber = registry.σ(context.activeProtocol)
+
+        if (!fiber) {
+          return {
+            success: false,
+            error: new Error(`Active protocol '${context.activeProtocol}' not found`),
+          }
+        }
+
+        const fiberCommands = Array.from(fiber.commands.values())
+          .filter(cmd => cmd.id !== 'identity') // Hide protocol-specific identity
+          .map(cmd => ({
+            id: cmd.id,
+            description: cmd.description || 'No description',
+            aliases: cmd.aliases || [],
+          }))
+
+        // Essential global commands always available
+        const essentialGlobals = ['help', 'exit', 'clear', 'history', 'wallet', 'whoami', 'balance']
+        const allCommands = registry.getAllCommands()
+        const essentialCommands = allCommands
+          .filter(cmd => cmd.scope === 'G_core' && essentialGlobals.includes(cmd.id))
+          .map(cmd => ({
+            id: cmd.id,
+            description: cmd.description || 'No description',
+            aliases: cmd.aliases || [],
+          }))
+
+        return {
+          success: true,
+          value: {
+            message: `${fiber.name} Commands`,
+            fiber: true,
+            protocol: context.activeProtocol,
+            protocolName: fiber.name,
+            commands: fiberCommands,
+            globals: essentialCommands,
+            exitHint: 'Use "exit" to return to global context',
+          },
+        }
+      }
+
+      // In global context (M_G), show all commands
       const allCommands = registry.getAllCommands()
 
       const coreCommands = allCommands.filter(cmd => cmd.scope === 'G_core')
