@@ -4,7 +4,7 @@
 
 /* Modal backdrop */
 [data-rk] .iekbcc0 {
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.8);
 }
 
 /* Modal container */
@@ -23,7 +23,11 @@
   border-color: #404040 !important;
 }
 
-/* Let RainbowKit handle wallet icons naturally - don't override */
+/* Ensure wallet icons display normally without interference */
+[data-rk] button[data-testid] img,
+[data-rk] button img {
+  /* Don't apply any filters - let RainbowKit handle icon rendering */
+}
 
 /* Scrollbar styling for modal */
 [data-rk] ::-webkit-scrollbar {

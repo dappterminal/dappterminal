@@ -18,25 +18,21 @@ const customTheme = darkTheme({
   accentColorForeground: 'white',
   borderRadius: 'medium',
   fontStack: 'system',
-  overlayBlur: 'small',
+  overlayBlur: 'none', // Changed from 'small' to 'none'
 })
 
-// Override specific theme properties
+// Override only essential theme properties - don't touch wallet icon backgrounds
 customTheme.colors.modalBackground = '#0A0A0A'
 customTheme.colors.modalBorder = '#262626'
 customTheme.colors.modalText = '#E5E5E5'
 customTheme.colors.modalTextDim = '#737373'
 customTheme.colors.modalTextSecondary = '#A3A3A3'
 customTheme.colors.profileForeground = '#141414'
-customTheme.colors.selectedOptionBorder = '#262626'
 customTheme.colors.actionButtonBorder = '#262626'
 customTheme.colors.actionButtonBorderMobile = '#262626'
-customTheme.colors.actionButtonSecondaryBackground = '#141414'
 customTheme.colors.closeButton = '#737373'
 customTheme.colors.closeButtonBackground = '#141414'
 customTheme.colors.connectButtonBackground = '#141414'
-customTheme.colors.connectButtonBackgroundError = '#141414'
-customTheme.colors.connectButtonInnerBackground = '#262626'
 customTheme.colors.connectButtonText = 'white'
 customTheme.colors.connectButtonTextError = '#EF4444'
 
