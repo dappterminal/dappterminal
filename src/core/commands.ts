@@ -131,6 +131,7 @@ export const useProtocolCommand: Command = {
 
       // Update context
       context.activeProtocol = protocolId
+      console.log('[use command] Set activeProtocol to:', protocolId, 'context:', context)
 
       return {
         success: true,

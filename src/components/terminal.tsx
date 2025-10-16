@@ -8,6 +8,8 @@ import { mainnet } from 'wagmi/chains'
 import { formatUnits } from 'viem'
 import { registry, registerCoreCommands, createExecutionContext, updateExecutionContext } from "@/core"
 import type { ExecutionContext, CommandResult } from "@/core"
+import { pluginLoader } from "@/plugins/plugin-loader"
+import { oneInchPlugin } from "@/plugins/1inch"
 
 interface HistoryItem {
   command: string
@@ -23,17 +25,19 @@ interface TerminalTab {
 
 const MAX_COMMAND_HISTORY = 1000 // Maximum commands to keep in history
 
-// Helper to format terminal prompt based on wallet state
-function formatPrompt(ensName?: string | null, address?: `0x${string}`): string {
+// Helper to format terminal prompt based on wallet state and active protocol
+function formatPrompt(ensName?: string | null, address?: `0x${string}`, activeProtocol?: string): string {
+  const protocolSuffix = activeProtocol || 'defi'
+
   if (ensName) {
-    return `${ensName}@defi>`
+    return `${ensName}@${protocolSuffix}>`
   }
   if (address) {
     // Truncate address: 0x1234...5678
     const truncated = `${address.slice(0, 6)}...${address.slice(-4)}`
-    return `${truncated}@defi>`
+    return `${truncated}@${protocolSuffix}>`
   }
-  return "user@defi>"
+  return `user@${protocolSuffix}>`
 }
 
 // Format command result for terminal display
@@ -117,6 +121,99 @@ function formatCommandResult(result: CommandResult): string[] {
       return []
     }
 
+    // Handle 1inch token price
+    if ('tokenPrice' in value) {
+      const priceData = value as any
+      const networkNames: Record<number, string> = {
+        1: 'Ethereum',
+        10: 'Optimism',
+        137: 'Polygon',
+        42161: 'Arbitrum',
+        8453: 'Base',
+        56: 'BSC',
+        43114: 'Avalanche',
+      }
+      const networkName = networkNames[priceData.chainId] || `Chain ${priceData.chainId}`
+
+      // Map token symbols to their unicode symbols
+      const tokenSymbols: Record<string, string> = {
+        eth: 'Ξ',
+        weth: 'Ξ',
+        btc: '₿',
+        wbtc: '₿',
+        bnb: 'BNB',
+        matic: 'MATIC',
+        avax: 'AVAX',
+      }
+
+      const tokenSymbol = tokenSymbols[priceData.token.toLowerCase()] || priceData.token.toUpperCase()
+
+      // Format price - with currency=USD, the API returns price directly in USD
+      const priceInUsd = typeof priceData.price === 'string' ? parseFloat(priceData.price) : priceData.price
+      const formattedPrice = priceInUsd.toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+
+      return [
+        `${tokenSymbol} ${priceData.token.toUpperCase()} Price:`,
+        `  Price: $${formattedPrice} USD`,
+        `  Network: ${networkName}`,
+        `  Address: ${priceData.tokenAddress}`,
+      ]
+    }
+
+    // Handle 1inch gas prices
+    if ('gasPrices' in value) {
+      const gasData = value as any
+      const networkNames: Record<number, string> = {
+        1: 'Ethereum',
+        10: 'Optimism',
+        137: 'Polygon',
+        42161: 'Arbitrum',
+        8453: 'Base',
+        56: 'BSC',
+        43114: 'Avalanche',
+      }
+      const networkName = networkNames[gasData.chainId] || `Chain ${gasData.chainId}`
+
+      const formatGwei = (value: string) => (parseInt(value) / 1e9).toFixed(2)
+      const lines = [`⛽ Gas Prices on ${networkName}:`]
+
+      if (gasData.low) {
+        const lowGwei = formatGwei(gasData.low.maxFeePerGas)
+        lines.push(`  🟢 Low: ${lowGwei} Gwei`)
+      }
+      if (gasData.medium) {
+        const mediumGwei = formatGwei(gasData.medium.maxFeePerGas)
+        lines.push(`  🟡 Medium: ${mediumGwei} Gwei`)
+      }
+      if (gasData.high) {
+        const highGwei = formatGwei(gasData.high.maxFeePerGas)
+        lines.push(`  🔴 High: ${highGwei} Gwei`)
+      }
+      if (gasData.baseFee) {
+        lines.push(`  📊 Base Fee: ${formatGwei(gasData.baseFee)} Gwei`)
+      }
+
+      return lines
+    }
+
+    // Handle 1inch swap request
+    if ('swapRequest' in value) {
+      const swapData = value as any
+      return [
+        `📊 Swap Quote:`,
+        `  ${swapData.fromToken.toUpperCase()} → ${swapData.toToken.toUpperCase()}`,
+        `  Input: ${swapData.amountIn}`,
+        `  Output: ${swapData.amountOut}`,
+        `  Gas: ${swapData.gas || 'estimating...'}`,
+        `  Slippage: ${swapData.slippage}%`,
+        ``,
+        `⚠️  Swap execution not yet implemented - coming soon!`,
+      ]
+    }
+
     // Handle message objects
     if ('message' in value) {
       const lines = [value.message as string]
@@ -159,8 +256,28 @@ export function Terminal() {
     chainId: mainnet.id,
   })
 
-  // Generate prompt based on wallet state
-  const prompt = formatPrompt(ensName, address)
+  // Generate prompt based on wallet state and active protocol
+  const activeProtocol = executionContext?.activeProtocol
+  const prompt = formatPrompt(ensName, address, activeProtocol)
+
+  // Debug: log active protocol changes
+  useEffect(() => {
+    if (activeProtocol) {
+      console.log('Active protocol changed to:', activeProtocol)
+    }
+  }, [activeProtocol])
+
+  // Update active tab name when protocol changes
+  useEffect(() => {
+    if (activeTabId) {
+      const newTabName = activeProtocol || 'defi'
+      setTabs(prevTabs => prevTabs.map(tab =>
+        tab.id === activeTabId
+          ? { ...tab, name: newTabName }
+          : tab
+      ))
+    }
+  }, [activeProtocol, activeTabId])
 
   useEffect(() => {
     setMounted(true)
@@ -171,6 +288,15 @@ export function Terminal() {
     // Create execution context
     const context = createExecutionContext()
     setExecutionContext(context)
+
+    // Load 1inch plugin
+    pluginLoader.loadPlugin(oneInchPlugin, undefined, context).then(result => {
+      if (result.success) {
+        console.log('1inch plugin loaded successfully')
+      } else {
+        console.error('Failed to load 1inch plugin:', result.error)
+      }
+    })
 
     // Load command history from localStorage
     const savedHistory = localStorage.getItem('defi-terminal-command-history')
@@ -235,12 +361,57 @@ export function Terminal() {
 
   const activeTab = tabs.find(tab => tab.id === activeTabId)
   const history = activeTab?.history || []
+  const [isUserScrolling, setIsUserScrolling] = useState(false)
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Auto-scroll to bottom when history changes (unless user is scrolling)
   useEffect(() => {
-    if (terminalRef.current) {
-      terminalRef.current.scrollTop = terminalRef.current.scrollHeight
+    if (terminalRef.current && !isUserScrolling) {
+      terminalRef.current.scrollTo({
+        top: terminalRef.current.scrollHeight,
+        behavior: 'smooth'
+      })
     }
-  }, [history])
+  }, [history, isUserScrolling])
+
+  // Detect user scroll
+  useEffect(() => {
+    const terminal = terminalRef.current
+    if (!terminal) return
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = terminal
+      const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50
+
+      // If user scrolls away from bottom, pause auto-scroll
+      if (!isAtBottom) {
+        setIsUserScrolling(true)
+      } else {
+        setIsUserScrolling(false)
+      }
+
+      // Clear existing timeout
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current)
+      }
+
+      // Reset after 2 seconds of no scrolling
+      scrollTimeoutRef.current = setTimeout(() => {
+        if (isAtBottom) {
+          setIsUserScrolling(false)
+        }
+      }, 2000)
+    }
+
+    terminal.addEventListener('scroll', handleScroll, { passive: true })
+
+    return () => {
+      terminal.removeEventListener('scroll', handleScroll)
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // Save fontSize to localStorage whenever it changes
   useEffect(() => {
@@ -526,6 +697,7 @@ export function Terminal() {
           result,
           resolved.protocol
         )
+        console.log('[executeCommand] Updated context activeProtocol:', updatedContext.activeProtocol)
         setExecutionContext(updatedContext)
 
         // Handle clear command
@@ -856,8 +1028,8 @@ export function Terminal() {
               {/* Terminal Content */}
               <div
                 ref={terminalRef}
-                className="flex-1 p-6 font-mono overflow-y-auto select-text"
-                style={{ fontSize: `${fontSize}px` }}
+                className="flex-1 p-6 font-mono overflow-y-auto select-text scroll-smooth [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-gray-500"
+                style={{ fontSize: `${fontSize}px`, scrollBehavior: 'smooth' }}
                 onClick={handleTerminalClick}
               >
                 {/* Command History */}
