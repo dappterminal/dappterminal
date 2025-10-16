@@ -729,7 +729,7 @@ export function Terminal() {
               if (!isNativeEth) {
                 // Check allowance
                 const allowanceResponse = await fetch(
-                  `/api/1inch/approve/allowance?chainId=${swapData.chainId}&tokenAddress=${swapData.srcAddress}&walletAddress=${swapData.walletAddress}`
+                  `/api/1inch/swap/allowance?chainId=${swapData.chainId}&tokenAddress=${swapData.srcAddress}&walletAddress=${swapData.walletAddress}`
                 )
 
                 if (!allowanceResponse.ok) {
@@ -759,7 +759,7 @@ export function Terminal() {
 
                   // Get approve transaction for the exact swap amount
                   const approveResponse = await fetch(
-                    `/api/1inch/approve/transaction?chainId=${swapData.chainId}&tokenAddress=${swapData.srcAddress}&amount=${swapData.amount}`
+                    `/api/1inch/swap/approve/transaction?chainId=${swapData.chainId}&tokenAddress=${swapData.srcAddress}&amount=${swapData.amount}`
                   )
 
                   if (!approveResponse.ok) {
