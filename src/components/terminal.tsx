@@ -724,9 +724,9 @@ export function Terminal() {
                     `📝 Requesting token approval...`,
                   ])
 
-                  // Get approve transaction
+                  // Get approve transaction for the exact swap amount
                   const approveResponse = await fetch(
-                    `/api/1inch/approve/transaction?chainId=${swapData.chainId}&tokenAddress=${swapData.srcAddress}`
+                    `/api/1inch/approve/transaction?chainId=${swapData.chainId}&tokenAddress=${swapData.srcAddress}&amount=${swapData.amount}`
                   )
 
                   if (!approveResponse.ok) {
