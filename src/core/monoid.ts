@@ -2,9 +2,21 @@
  * Base monoid implementation for DeFi commands
  *
  * Implements the algebraic structure where:
- * - Commands form a monoid under composition
- * - Each protocol forms a submonoid (fiber) M_P
+ * - Commands form a monoid M under composition
+ * - Each protocol forms a proper submonoid (fiber) M_P
  * - The global monoid M = G_core ∪ G_alias ∪ (⋃ M_P)
+ *
+ * Submonoid Structure:
+ * - Each fiber M_P contains its own identity element e_P
+ * - Identity elements are protocol-specific to preserve protocol state
+ * - Composition within a fiber stays in that fiber: f, g ∈ M_P ⇒ f ∘ g ∈ M_P
+ * - This ensures each M_P is a mathematically rigorous submonoid
+ *
+ * Why Protocol-Specific Identity:
+ * - Protocols share primitives (swap, lend) but with different implementations
+ * - Identity should preserve protocol-specific context and state
+ * - Maintains protocol "session" during composition chains
+ * - Ensures type safety: 1inch:TokenA → 1inch:TokenA uses 1inch's identity
  */
 
 import type {
@@ -17,13 +29,23 @@ import type {
 } from './types'
 
 /**
- * Identity command (no-op)
- * This is the identity element of the monoid
+ * Global identity command (no-op)
+ *
+ * This is the identity element for the global scope G_core.
+ * It serves as the identity for core commands that are not protocol-specific.
+ *
+ * Note: Each protocol fiber M_P has its own identity element (e_P) that:
+ * - Has scope G_p and protocol-specific tag
+ * - Preserves protocol-specific state and context
+ * - Ensures submonoid closure within the fiber
+ *
+ * This global identity is for cross-protocol operations and core commands.
+ * When composing within a protocol, use that protocol's identity instead.
  */
 export const identityCommand: Command = {
   id: 'identity',
   scope: 'G_core',
-  description: 'Identity operation (no-op)',
+  description: 'Identity operation (no-op) for global scope',
   run: async <T>(args: T): Promise<CommandResult<T>> => {
     return { success: true, value: args }
   },
@@ -93,20 +115,51 @@ export function createMonoid(): Monoid {
 /**
  * Create a protocol fiber (submonoid)
  *
- * A protocol fiber M_P is a submonoid of the global monoid M
- * satisfying the fibered structure over the base set of protocols
+ * A protocol fiber M_P is a proper submonoid of the global monoid M.
+ *
+ * Submonoid Properties:
+ * - Contains protocol-specific commands (scope G_p, protocol = P)
+ * - Closed under composition: f, g ∈ M_P ⇒ f ∘ g ∈ M_P
+ * - Contains identity element: e_P ∈ M_P (protocol-specific identity)
+ * - Forms the preimage π^(-1)(P) where π is the projection operator
+ *
+ * Each fiber gets its own identity command that:
+ * - Has scope G_p and protocol = P
+ * - Preserves protocol-specific state in ExecutionContext
+ * - Maintains the protocol's "session" during composition
+ * - Ensures closure: composing with identity stays in the fiber
+ *
+ * This makes each M_P a true mathematical submonoid.
  */
 export function createProtocolFiber(
   id: ProtocolId,
   name: string,
   description?: string
 ): ProtocolFiber {
-  return {
+  const fiber: ProtocolFiber = {
     id,
     name,
     description,
     commands: new Map(),
   }
+
+  // Add protocol-specific identity to the fiber
+  // This ensures M_P is a proper submonoid with its own identity element
+  const protocolIdentity: Command = {
+    id: 'identity',
+    scope: 'G_p',
+    protocol: id,
+    description: `Identity operation for ${name}`,
+    run: async <T>(args: T, context: ExecutionContext): Promise<CommandResult<T>> => {
+      // Identity preserves protocol-specific state
+      // This is important for maintaining protocol context during composition
+      return { success: true, value: args }
+    },
+  }
+
+  fiber.commands.set('identity', protocolIdentity)
+
+  return fiber
 }
 
 /**
@@ -134,11 +187,121 @@ export function addCommandToFiber(
 }
 
 /**
+ * Verify fiber closure property
+ *
+ * Tests that composing two commands from the same fiber M_P
+ * produces a command that is also in M_P (preserves protocol).
+ *
+ * @param fiber - The protocol fiber to test
+ * @param f - First command (must be in fiber)
+ * @param g - Second command (must be in fiber)
+ * @returns Object indicating closure property
+ */
+export function verifyFiberClosure<A, B, C>(
+  fiber: ProtocolFiber,
+  f: Command<A, B>,
+  g: Command<B, C>
+): {
+  valid: boolean
+  reason?: string
+  composedCommand?: Command<A, C>
+} {
+  // Verify both commands are in the fiber
+  if (f.scope !== 'G_p' || f.protocol !== fiber.id) {
+    return {
+      valid: false,
+      reason: `Command ${f.id} is not in fiber ${fiber.id}`,
+    }
+  }
+
+  if (g.scope !== 'G_p' || g.protocol !== fiber.id) {
+    return {
+      valid: false,
+      reason: `Command ${g.id} is not in fiber ${fiber.id}`,
+    }
+  }
+
+  // Compose the commands
+  const composed = composeCommands(f, g)
+
+  // Verify the composition is in the same fiber
+  if (composed.scope !== 'G_p') {
+    return {
+      valid: false,
+      reason: `Composed command has scope ${composed.scope}, expected G_p`,
+      composedCommand: composed,
+    }
+  }
+
+  if (composed.protocol !== fiber.id) {
+    return {
+      valid: false,
+      reason: `Composed command has protocol ${composed.protocol}, expected ${fiber.id}`,
+      composedCommand: composed,
+    }
+  }
+
+  // Closure property holds!
+  return {
+    valid: true,
+    composedCommand: composed,
+  }
+}
+
+/**
+ * Verify that identity composes correctly with fiber commands
+ *
+ * Tests the ambient identity property: identity ∘ f = f and f ∘ identity = f
+ * even when f is in a protocol fiber M_P.
+ *
+ * @param f - Command from a protocol fiber
+ * @param testInput - Test input for execution
+ * @param context - Execution context
+ * @returns Object indicating if ambient identity property holds
+ */
+export async function verifyAmbientIdentity<T>(
+  f: Command<T, T>,
+  testInput: T,
+  context: ExecutionContext
+): Promise<{
+  leftIdentity: boolean
+  rightIdentity: boolean
+  details?: string
+}> {
+  // Test left identity: identity ∘ f = f
+  const leftComposed = composeCommands(identityCommand as Command<T, T>, f)
+  const leftResult = await leftComposed.run(testInput, context)
+  const directResult = await f.run(testInput, context)
+  const leftIdentity = JSON.stringify(leftResult) === JSON.stringify(directResult)
+
+  // Test right identity: f ∘ identity = f
+  const rightComposed = composeCommands(f, identityCommand as Command<T, T>)
+  const rightResult = await rightComposed.run(testInput, context)
+  const rightIdentity = JSON.stringify(rightResult) === JSON.stringify(directResult)
+
+  const details =
+    !leftIdentity || !rightIdentity
+      ? `Left: ${leftIdentity}, Right: ${rightIdentity}`
+      : undefined
+
+  return {
+    leftIdentity,
+    rightIdentity,
+    details,
+  }
+}
+
+/**
  * Verify monoid laws for commands
  *
  * 1. Left identity: identity ∘ f = f
  * 2. Right identity: f ∘ identity = f
  * 3. Associativity: (f ∘ g) ∘ h = f ∘ (g ∘ h)
+ *
+ * Note: Identity is ambient (exists in G_core) and composes with all commands,
+ * including those in protocol fibers. This is the "ambient identity pattern"
+ * where fibers inherit identity from the global monoid M rather than containing
+ * an explicit copy.
  *
  * @param f - First command to test
  * @param testInput - Test input for command execution

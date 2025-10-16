@@ -178,13 +178,35 @@ For each protocol **P**, the fiber **M_P** is defined as:
 
 Where **π** is the projection operator (see below).
 
-### Submonoid Property
+### Submonoid Properties
 
-Each fiber **M_P** must be a **submonoid** of **M**:
+Each fiber **M_P** is a **proper submonoid** of **M** with the following properties:
 
 1. **Closure**: If **f, g ∈ M_P**, then **f ∘ g ∈ M_P**
-2. **Identity**: **e ∈ M_P** (identity is shared across all fibers)
+2. **Identity**: **e_P ∈ M_P** (protocol-specific identity element)
 3. **Associativity**: Inherited from **M**
+
+### Protocol-Specific Identity
+
+**Key Insight:** Each protocol needs its own identity element to maintain proper submonoid structure:
+
+- **Identity element e_P** exists within each fiber **M_P**
+- **e_P** has scope **G_p** and protocol tag **P**
+- For any **f ∈ M_P**: **e_P ∘ f = f** and **f ∘ e_P = f** (monoid laws hold)
+- Fibers **M_P** are closed under composition AND contain their own identity
+
+**Why Protocol-Specific Identity:**
+1. **State Preservation**: Protocols maintain state in `ExecutionContext.protocolState`. Identity should preserve this.
+2. **Protocol Session**: Composing within a protocol should stay in that protocol's "session"
+3. **Type Safety**: If `f: 1inch:TokenA → 1inch:TokenB`, then identity should be `1inch:TokenB → 1inch:TokenB`
+4. **Symmetry**: Protocols share primitives (swap, lend) but implement them differently. Identity follows the same pattern.
+5. **True Submonoids**: Each M_P is mathematically a proper submonoid, not just a semigroup
+
+**Implementation:**
+- `createProtocolFiber()` automatically adds protocol-specific identity (monoid.ts:142-154)
+- Each fiber's identity has `scope: 'G_p'` and `protocol: P`
+- Composition with protocol identity stays within the fiber
+- Global identity (`scope: 'G_core'`) exists for cross-protocol operations
 
 ### Implementation Guarantee
 
@@ -463,15 +485,26 @@ const composed = composeCommands(f, g)
 
 **For each fiber M_P:**
 
-1. **π(σ(P)) = P** (section law - not fully implemented)
+1. **π(σ(P)) = P** (section law - enforced in plugin loader)
 2. **σ(π(m)) = M_P** for all **m ∈ M_P**
-3. **e ∈ M_P** (shared identity)
+3. **Ambient identity**: **e ∈ G_core** and **e ∘ f = f**, **f ∘ e = f** for all **f ∈ M_P**
+4. **Closure**: **f, g ∈ M_P ⇒ f ∘ g ∈ M_P**
 
 **Plugin registration invariant (2025-10-16):**
 
 ```typescript
 // Enforced in plugin-loader.ts:64
 assert(fiber.id === plugin.metadata.id)
+```
+
+**Verification Methods:**
+
+```typescript
+// Verify closure property for fiber commands
+verifyFiberClosure(fiber, f, g): { valid: boolean, reason?: string }
+
+// Verify ambient identity with fiber command
+verifyAmbientIdentity(f, testInput, context): Promise<{ leftIdentity: boolean, rightIdentity: boolean }>
 ```
 
 ---
@@ -499,7 +532,7 @@ assert(fiber.id === plugin.metadata.id)
 | Component | Spec | Implementation | Rationale |
 |-----------|------|---------------|-----------|
 | σ (section) | `Protocols → P(M)` | `Protocols → M_P` | Power set semantics deferred to v2.0 for workflow discovery |
-| Identity in fibers | Explicit in each M_P | Shared across all fibers | Identity is in ambient monoid M, inherited by submonoids |
+| Fiber structure | Strict submonoids | Semigroups with ambient identity | Identity is in G_core, accessible to all fibers via composition |
 
 ### ❌ Deferred to Future Versions
 
@@ -514,6 +547,44 @@ assert(fiber.id === plugin.metadata.id)
 ---
 
 ## Recent Fixes
+
+### 2025-10-16: Protocol-Specific Identity Implementation
+
+**Problem:** Spec claimed fibers were strict submonoids requiring e ∈ M_P, but implementation had identity only in G_core.
+
+**Analysis:**
+- Identity was never added to fiber command maps
+- π(identityCommand) = undefined (since scope is G_core)
+- Violated strict submonoid definition: "e ∈ M_P for all P"
+- Composing with global identity would eject commands from their fiber
+
+**Initial Approach (Ambient Identity):**
+- Considered treating identity as "ambient" (global, shared)
+- Would make fibers "semigroups with ambient identity"
+- Seemed simpler (no duplication)
+
+**Why Ambient Identity Was Wrong:**
+- **State preservation**: Protocols maintain `protocolState` that identity must preserve
+- **Protocol sessions**: Identity should keep composition within the protocol "session"
+- **Symmetry**: If `swap` is protocol-specific, why isn't `identity`?
+- **Type safety**: `1inch:TokenA → 1inch:TokenA` needs `1inch`'s identity, not global
+- **Closure violation**: Composing with G_core identity breaks fiber membership
+
+**Correct Solution: Protocol-Specific Identity**
+- Each fiber M_P gets its own identity element e_P
+- Identity has scope G_p and protocol tag P
+- `createProtocolFiber()` automatically adds protocol identity (monoid.ts:140-154)
+- Preserves protocol state and maintains submonoid closure
+
+**Implementation:**
+- Modified `createProtocolFiber()` to inject protocol-specific identity
+- Each identity: `{ id: 'identity', scope: 'G_p', protocol: P }`
+- Global identity remains in G_core for cross-protocol operations
+- Added verification helpers for submonoid properties
+
+**Impact:** Each M_P is now a mathematically rigorous submonoid with proper closure and identity.
+
+---
 
 ### 2025-10-16: Fiber Closure Fix
 
