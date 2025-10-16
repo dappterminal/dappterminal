@@ -10,11 +10,13 @@ import { registry, registerCoreCommands, createExecutionContext, updateExecution
 import type { ExecutionContext, CommandResult } from "@/core"
 import { pluginLoader } from "@/plugins/plugin-loader"
 import { oneInchPlugin } from "@/plugins/1inch"
+import { stargatePlugin } from "@/plugins/stargate"
 
 interface HistoryItem {
   command: string
   output: string[]
   timestamp: Date
+  links?: { text: string; url: string }[] // Optional links to render
 }
 
 interface TerminalTab {
@@ -24,6 +26,13 @@ interface TerminalTab {
 }
 
 const MAX_COMMAND_HISTORY = 1000 // Maximum commands to keep in history
+
+// Protocol color mapping
+const PROTOCOL_COLORS: Record<string, string> = {
+  stargate: '#0FB983',
+  '1inch': '#94A6FF',
+  // Add more protocols here as needed
+}
 
 // Helper to format terminal prompt based on wallet state and active protocol
 function formatPrompt(ensName?: string | null, address?: `0x${string}`, activeProtocol?: string): string {
@@ -320,6 +329,15 @@ export function Terminal() {
         console.log('1inch plugin loaded successfully')
       } else {
         console.error('Failed to load 1inch plugin:', result.error)
+      }
+    })
+
+    // Load Stargate plugin
+    pluginLoader.loadPlugin(stargatePlugin, undefined, context).then(result => {
+      if (result.success) {
+        console.log('Stargate plugin loaded successfully')
+      } else {
+        console.error('Failed to load Stargate plugin:', result.error)
       }
     })
 
@@ -841,6 +859,141 @@ export function Terminal() {
             setHistoryIndex(-1)
             return
           }
+          // Handle bridge command - execute cross-chain bridge via Stargate
+          else if (resolved.command.id === 'bridge' && resolved.protocol === 'stargate' && 'bridgeRequest' in result.value) {
+            const bridgeData = result.value as any
+
+            // Get chain names for display
+            const chainNames: Record<number, string> = {
+              1: 'Ethereum',
+              10: 'Optimism',
+              137: 'Polygon',
+              42161: 'Arbitrum',
+              8453: 'Base',
+              56: 'BSC',
+              43114: 'Avalanche',
+            }
+            const fromChainName = chainNames[bridgeData.fromChain] || `Chain ${bridgeData.fromChain}`
+            const toChainName = chainNames[bridgeData.toChain] || `Chain ${bridgeData.toChain}`
+
+            // Show bridge quote
+            output = [
+              `🌉 Bridge Quote:`,
+              `  ${fromChainName} → ${toChainName}`,
+              `  Token: ${bridgeData.fromToken.toUpperCase()}`,
+              `  Amount: ${bridgeData.amountIn}`,
+              `  Receive: ${bridgeData.amountOut}`,
+              `  Slippage: ${bridgeData.slippage}%`,
+              ``,
+              `⏳ Executing bridge...`,
+            ]
+
+            const bridgeTimestamp = new Date()
+            const tempHistoryItem: HistoryItem = {
+              command: trimmedInput,
+              output,
+              timestamp: bridgeTimestamp
+            }
+
+            setTabs(tabs.map(tab =>
+              tab.id === activeTabId
+                ? { ...tab, history: [...tab.history, tempHistoryItem] }
+                : tab
+            ))
+
+            // Helper function to update history
+            const updateHistory = (lines: string[], links?: { text: string; url: string }[]) => {
+              setTabs(prevTabs => prevTabs.map(tab => {
+                if (tab.id === activeTabId) {
+                  const updatedHistory = tab.history.map(item =>
+                    item.timestamp === bridgeTimestamp
+                      ? { ...item, output: lines, links }
+                      : item
+                  )
+                  return { ...tab, history: updatedHistory }
+                }
+                return tab
+              }))
+            }
+
+            // Execute bridge flow - iterate through Stargate steps
+            try {
+              const { sendTransaction } = await import('wagmi/actions')
+              const { config } = await import('@/lib/wagmi-config')
+
+              const stargateSteps = bridgeData.stargateSteps || []
+              const txHashes: string[] = []
+
+              if (!stargateSteps.length) {
+                throw new Error('No bridge steps received from Stargate')
+              }
+
+              // Execute each step sequentially (approval + bridge)
+              for (let i = 0; i < stargateSteps.length; i++) {
+                const step = stargateSteps[i]
+                const stepNumber = i + 1
+
+                updateHistory([
+                  `🌉 Bridge Quote:`,
+                  `  ${fromChainName} → ${toChainName}`,
+                  `  Token: ${bridgeData.fromToken.toUpperCase()}`,
+                  `  Amount: ${bridgeData.amountIn}`,
+                  ``,
+                  `⏳ Executing step ${stepNumber}/${stargateSteps.length}: ${step.type}...`,
+                ])
+
+                if (!step.transaction) {
+                  console.warn(`Step ${stepNumber} has no transaction data, skipping`)
+                  continue
+                }
+
+                const tx = step.transaction
+                const txHash = await sendTransaction(config, {
+                  to: tx.to as `0x${string}`,
+                  data: tx.data as `0x${string}`,
+                  value: BigInt(tx.value || '0'),
+                  gas: tx.gas ? BigInt(tx.gas) : tx.gasLimit ? BigInt(tx.gasLimit) : undefined,
+                })
+
+                txHashes.push(txHash)
+                console.log(`[Bridge] Step ${stepNumber} tx hash:`, txHash)
+              }
+
+              // All steps complete - create LayerZeroScan link
+              const lastTxHash = txHashes[txHashes.length - 1]
+              const layerZeroScanLink = `https://layerzeroscan.com/tx/${lastTxHash}`
+
+              updateHistory(
+                [
+                  `✅ Bridge executed successfully!`,
+                  `  ${fromChainName} → ${toChainName}`,
+                  `  Token: ${bridgeData.fromToken.toUpperCase()}`,
+                  `  Amount: ${bridgeData.amountIn}`,
+                  ``,
+                  `Transaction Hashes:`,
+                  ...txHashes.map((hash, idx) => `  Step ${idx + 1}: ${hash}`),
+                  ``,
+                  `🔍 Track on LayerZeroScan:`,
+                ],
+                [{ text: layerZeroScanLink, url: layerZeroScanLink }]
+              )
+            } catch (error) {
+              // Update with error
+              const errorMsg = error instanceof Error ? error.message : String(error)
+              updateHistory([`❌ Bridge failed: ${errorMsg}`])
+            }
+
+            setCommandHistory(prev => {
+              const newHistory = [...prev, trimmedInput]
+              if (newHistory.length > MAX_COMMAND_HISTORY) {
+                return newHistory.slice(-MAX_COMMAND_HISTORY)
+              }
+              return newHistory
+            })
+            setCurrentInput("")
+            setHistoryIndex(-1)
+            return
+          }
           else {
             // Normal formatting
             output = formatCommandResult(result)
@@ -1142,34 +1295,50 @@ export function Terminal() {
             <div className="h-full bg-[#141414] rounded-xl border border-[#262626] flex flex-col overflow-hidden">
               {/* Window Management Bar with Tabs */}
               <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center gap-2 rounded-t-xl flex-shrink-0">
-                {tabs.map(tab => (
-                  <div
-                    key={tab.id}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
-                      activeTabId === tab.id
-                        ? "bg-[#262626] text-white"
-                        : "text-[#737373] hover:text-white hover:bg-[#242424]"
-                    }`}
-                  >
-                    <span
-                      className="text-sm"
-                      onClick={() => setActiveTabId(tab.id)}
+                {tabs.map(tab => {
+                  // Get protocol color if tab is in a protocol fiber
+                  const protocolColor = tab.name !== 'defi' && PROTOCOL_COLORS[tab.name]
+                    ? PROTOCOL_COLORS[tab.name]
+                    : undefined
+
+                  return (
+                    <div
+                      key={tab.id}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
+                        activeTabId === tab.id
+                          ? "bg-[#262626]"
+                          : "hover:bg-[#242424]"
+                      }`}
+                      style={{
+                        color: activeTabId === tab.id && protocolColor
+                          ? protocolColor
+                          : activeTabId === tab.id
+                            ? 'white'
+                            : protocolColor
+                              ? `${protocolColor}88` // Add opacity for inactive tabs
+                              : '#737373'
+                      }}
                     >
-                      {tab.name}
-                    </span>
-                    {tabs.length > 1 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          closeTab(tab.id)
-                        }}
-                        className="hover:text-red-400 transition-colors"
+                      <span
+                        className="text-sm"
+                        onClick={() => setActiveTabId(tab.id)}
                       >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                        {tab.name}
+                      </span>
+                      {tabs.length > 1 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            closeTab(tab.id)
+                          }}
+                          className="hover:text-red-400 transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
                 <button
                   onClick={addNewTab}
                   className="flex items-center justify-center w-7 h-7 rounded-md hover:bg-[#262626] text-[#737373] hover:text-white transition-colors"
@@ -1198,7 +1367,10 @@ export function Terminal() {
                   <div key={index} className="mb-2">
                     {item.command !== "welcome" && (
                       <div className="flex select-text">
-                        <span className="text-white-400 font-semibold">{prompt}</span>
+                        <span className="text-white-400">
+                          {prompt.split('@')[0]}
+                          <span className="font-semibold">@{prompt.split('@')[1]}</span>
+                        </span>
                         <span className="text-whiteMa-400 ml-2 font-semibold">{item.command}</span>
                       </div>
                     )}
@@ -1207,13 +1379,31 @@ export function Terminal() {
                         {line}
                       </p>
                     ))}
+                    {item.links && item.links.length > 0 && (
+                      <div className="mt-1">
+                        {item.links.map((link, linkIndex) => (
+                          <a
+                            key={linkIndex}
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 underline select-text block ml-2"
+                          >
+                            {link.text}
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
 
                 {/* Current Input */}
                 <div className="relative">
                   <div className="flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded">
-                    <span className="text-gray-100 font-semibold">{prompt}</span>
+                    <span className="text-gray-100">
+                      {prompt.split('@')[0]}
+                      <span className="font-semibold">@{prompt.split('@')[1]}</span>
+                    </span>
                     <input
                       ref={inputRef}
                       type="text"
