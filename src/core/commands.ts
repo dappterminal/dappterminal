@@ -465,6 +465,50 @@ export const transferCommand: Command = {
 }
 
 /**
+ * Bridge command - Global alias for cross-chain bridging
+ * This is a G_alias command that intelligently routes to the appropriate protocol
+ */
+export const bridgeAliasCommand: Command = {
+  id: 'bridge',
+  scope: 'G_alias',
+  description: 'Bridge tokens cross-chain (auto-routes to wormhole or stargate)',
+  aliases: ['br'],
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      // Default to wormhole for now
+      const defaultProtocol = 'wormhole'
+
+      // Check if protocol exists
+      const fiber = registry.σ(defaultProtocol)
+      if (!fiber) {
+        return {
+          success: false,
+          error: new Error(`Bridge protocol '${defaultProtocol}' not loaded`),
+        }
+      }
+
+      // Get the bridge command from the protocol
+      const bridgeCommand = fiber.commands.get('bridge')
+      if (!bridgeCommand) {
+        return {
+          success: false,
+          error: new Error(`No bridge command found in ${defaultProtocol} protocol`),
+        }
+      }
+
+      // Execute the protocol-specific bridge command
+      return await bridgeCommand.run(args, context)
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
  * All core commands
  */
 export const coreCommands = [
@@ -482,10 +526,22 @@ export const coreCommands = [
 ]
 
 /**
+ * Global alias commands
+ */
+export const aliasCommands = [
+  bridgeAliasCommand,
+]
+
+/**
  * Register all core commands with the registry
  */
 export function registerCoreCommands(): void {
   for (const command of coreCommands) {
     registry.registerCoreCommand(command)
+  }
+
+  // Register alias commands
+  for (const command of aliasCommands) {
+    registry.registerAliasedCommand(command)
   }
 }
