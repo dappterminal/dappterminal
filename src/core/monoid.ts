@@ -375,6 +375,9 @@ export function createExecutionContext(): ExecutionContext {
 
 /**
  * Update execution context after command execution
+ *
+ * NOTE: Commands may mutate the context object (e.g., 'use' sets activeProtocol).
+ * We must create a NEW object reference so React detects the state change.
  */
 export function updateExecutionContext(
   context: ExecutionContext,
@@ -393,8 +396,14 @@ export function updateExecutionContext(
     error: result.success ? undefined : result.error,
   }
 
+  // Create a NEW context object with all fields including any mutations
+  // This ensures React detects the state change (different object reference)
   return {
-    ...context,
+    activeProtocol: context.activeProtocol, // Explicitly copy (may have been mutated)
+    protocolPreferences: context.protocolPreferences,
+    wallet: context.wallet,
+    globalState: context.globalState,
+    protocolState: context.protocolState,
     history: [...context.history, execution],
   }
 }

@@ -134,6 +134,19 @@ export class CommandRegistry {
   ρ(context: ResolutionContext): ResolvedCommand | undefined {
     const input = context.input.trim()
 
+    // Check if input is a protocol name - if so, treat it as 'use <protocol>'
+    if (this.protocolFibers.has(input)) {
+      const useCommand = this.coreCommands.get('use')
+      if (useCommand) {
+        return {
+          command: useCommand,
+          resolutionMethod: 'exact',
+          // Pass the protocol name as the argument
+          protocolNameAsCommand: input,
+        }
+      }
+    }
+
     // Check if this is a global alias
     let resolvedId = this.aliases.get(input) || input
 

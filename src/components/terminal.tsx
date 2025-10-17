@@ -308,13 +308,20 @@ export function Terminal() {
 
   // Update active tab name when protocol changes
   useEffect(() => {
+    console.log('[Tab Update Effect] Triggered - activeProtocol:', activeProtocol, 'activeTabId:', activeTabId)
     if (activeTabId) {
       const newTabName = activeProtocol || 'defi'
-      setTabs(prevTabs => prevTabs.map(tab =>
-        tab.id === activeTabId
-          ? { ...tab, name: newTabName }
-          : tab
-      ))
+      console.log('[Tab Update Effect] Updating tab name to:', newTabName, 'for tab:', activeTabId)
+      setTabs(prevTabs => {
+        console.log('[Tab Update Effect] Current tabs:', prevTabs)
+        const updatedTabs = prevTabs.map(tab =>
+          tab.id === activeTabId
+            ? { ...tab, name: newTabName }
+            : tab
+        )
+        console.log('[Tab Update Effect] Updated tabs:', updatedTabs)
+        return updatedTabs
+      })
     }
   }, [activeProtocol, activeTabId])
 
@@ -448,8 +455,8 @@ export function Terminal() {
   // Sync wallet state to execution context
   useEffect(() => {
     if (executionContext) {
-      setExecutionContext({
-        ...executionContext,
+      setExecutionContext(prev => prev ? {
+        ...prev,
         wallet: {
           address,
           chainId,
@@ -457,7 +464,7 @@ export function Terminal() {
           isConnecting,
           isDisconnecting: false, // wagmi v2 doesn't expose this
         }
-      })
+      } : prev)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, chainId, isConnected, isConnecting])
@@ -540,7 +547,9 @@ export function Terminal() {
     } else {
       try {
         // Execute command
-        const result = await resolved.command.run(args, executionContext)
+        // If protocolNameAsCommand is set, use it as the argument instead
+        const commandArgs = resolved.protocolNameAsCommand || args
+        const result = await resolved.command.run(commandArgs, executionContext)
 
         // Handle special client-side commands
         if (result.success && typeof result.value === 'object' && result.value !== null) {
@@ -1593,7 +1602,9 @@ export function Terminal() {
           result,
           resolved.protocol
         )
-        console.log('[executeCommand] Updated context activeProtocol:', updatedContext.activeProtocol)
+        console.log('[executeCommand] Before update - context.activeProtocol:', executionContext.activeProtocol)
+        console.log('[executeCommand] After update - updatedContext.activeProtocol:', updatedContext.activeProtocol)
+        console.log('[executeCommand] Setting new execution context...')
         setExecutionContext(updatedContext)
 
         // Handle clear command
@@ -1616,7 +1627,7 @@ export function Terminal() {
       timestamp: new Date()
     }
 
-    setTabs(tabs.map(tab =>
+    setTabs(prevTabs => prevTabs.map(tab =>
       tab.id === activeTabId
         ? { ...tab, history: [...tab.history, newHistoryItem] }
         : tab

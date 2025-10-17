@@ -205,4 +205,7 @@ export interface ResolvedCommand {
 
   /** Confidence score (0-1) for fuzzy matches */
   confidence?: number
+
+  /** When a protocol name is used as a command (e.g., 'wormhole' instead of 'use wormhole') */
+  protocolNameAsCommand?: string
 }
