@@ -5,7 +5,7 @@
 import type { Plugin, PluginConfig } from '@/plugins'
 import type { ProtocolFiber, ExecutionContext } from '@/core'
 import { createProtocolFiber, addCommandToFiber } from '@/core'
-import { priceCommand, gasCommand, swapCommand } from './commands'
+import { priceCommand, gasCommand, swapCommand, limitorderCommand } from './commands'
 
 /**
  * 1inch Plugin
@@ -46,6 +46,7 @@ export const oneInchPlugin: Plugin = {
     addCommandToFiber(fiber, priceCommand)
     addCommandToFiber(fiber, gasCommand)
     addCommandToFiber(fiber, swapCommand)
+    addCommandToFiber(fiber, limitorderCommand)
 
     return fiber
   },

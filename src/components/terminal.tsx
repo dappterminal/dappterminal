@@ -859,6 +859,153 @@ export function Terminal() {
             setHistoryIndex(-1)
             return
           }
+          // Handle limit order command - create limit order on 1inch orderbook
+          else if (resolved.command.id === 'limitorder' && resolved.protocol === '1inch' && 'limitOrderRequest' in result.value) {
+            const limitOrderData = result.value as any
+
+            // Show creating limit order message
+            output = [
+              `📝 Creating Limit Order:`,
+              `  ${limitOrderData.fromToken.toUpperCase()} → ${limitOrderData.toToken.toUpperCase()}`,
+              `  Amount: ${limitOrderData.amount}`,
+              `  Rate: ${limitOrderData.rate}`,
+              ``,
+              `⏳ Preparing order...`,
+            ]
+
+            const limitOrderTimestamp = new Date()
+            const tempHistoryItem: HistoryItem = {
+              command: trimmedInput,
+              output,
+              timestamp: limitOrderTimestamp
+            }
+
+            setTabs(tabs.map(tab =>
+              tab.id === activeTabId
+                ? { ...tab, history: [...tab.history, tempHistoryItem] }
+                : tab
+            ))
+
+            // Helper function to update history
+            const updateHistory = (lines: string[]) => {
+              setTabs(prevTabs => prevTabs.map(tab => {
+                if (tab.id === activeTabId) {
+                  const updatedHistory = tab.history.map(item =>
+                    item.timestamp === limitOrderTimestamp
+                      ? { ...item, output: lines }
+                      : item
+                  )
+                  return { ...tab, history: updatedHistory }
+                }
+                return tab
+              }))
+            }
+
+            // Execute limit order flow
+            try {
+              const { signTypedData } = await import('wagmi/actions')
+              const { config } = await import('@/lib/wagmi-config')
+
+              // Call create endpoint to get EIP-712 typed data
+              const createResponse = await fetch('/api/1inch/orderbook/limit/create', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  fromChainId: limitOrderData.chainId,
+                  fromToken: {
+                    address: limitOrderData.fromAddress,
+                    decimals: limitOrderData.fromDecimals,
+                  },
+                  toToken: {
+                    address: limitOrderData.toAddress,
+                    decimals: limitOrderData.toDecimals,
+                  },
+                  amount: limitOrderData.amount,
+                  price: limitOrderData.rate,
+                  userAddress: limitOrderData.walletAddress,
+                }),
+              })
+
+              if (!createResponse.ok) {
+                const errorData = await createResponse.json()
+                throw new Error(errorData.error || 'Failed to create limit order')
+              }
+
+              const orderData = await createResponse.json()
+
+              updateHistory([
+                `📝 Creating Limit Order:`,
+                `  ${limitOrderData.fromToken.toUpperCase()} → ${limitOrderData.toToken.toUpperCase()}`,
+                `  Amount: ${limitOrderData.amount}`,
+                `  Rate: ${limitOrderData.rate}`,
+                ``,
+                `✍️  Requesting signature...`,
+              ])
+
+              // Sign the order with EIP-712 (off-chain signature, no gas)
+              const signature = await signTypedData(config, orderData.typedData)
+
+              console.log('[LimitOrder] Signature:', signature)
+
+              updateHistory([
+                `📝 Creating Limit Order:`,
+                `  ${limitOrderData.fromToken.toUpperCase()} → ${limitOrderData.toToken.toUpperCase()}`,
+                `  Amount: ${limitOrderData.amount}`,
+                `  Rate: ${limitOrderData.rate}`,
+                ``,
+                `⏳ Submitting order to 1inch orderbook...`,
+              ])
+
+              // Submit the signed order to 1inch orderbook
+              const submitResponse = await fetch('/api/1inch/orderbook/limit/submit', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  fromChainId: orderData.fromChainId,
+                  build: orderData.build,
+                  extension: orderData.extension,
+                  signature,
+                }),
+              })
+
+              if (!submitResponse.ok) {
+                const errorData = await submitResponse.json()
+                throw new Error(errorData.error || 'Failed to submit limit order')
+              }
+
+              await submitResponse.json()
+
+              // Update with success (no tx hash for limit orders)
+              updateHistory([
+                `✅ Limit Order Created!`,
+                `  ${limitOrderData.fromToken.toUpperCase()} → ${limitOrderData.toToken.toUpperCase()}`,
+                `  Amount: ${limitOrderData.amount}`,
+                `  Rate: ${limitOrderData.rate}`,
+                ``,
+                `📋 Order placed on 1inch orderbook`,
+                `  The order will execute when the target rate is reached`,
+              ])
+            } catch (error) {
+              // Update with error
+              const errorMsg = error instanceof Error ? error.message : String(error)
+              updateHistory([`❌ Limit order failed: ${errorMsg}`])
+            }
+
+            setCommandHistory(prev => {
+              const newHistory = [...prev, trimmedInput]
+              if (newHistory.length > MAX_COMMAND_HISTORY) {
+                return newHistory.slice(-MAX_COMMAND_HISTORY)
+              }
+              return newHistory
+            })
+            setCurrentInput("")
+            setHistoryIndex(-1)
+            return
+          }
           // Handle bridge command - execute cross-chain bridge via Stargate
           else if (resolved.command.id === 'bridge' && resolved.protocol === 'stargate' && 'bridgeRequest' in result.value) {
             const bridgeData = result.value as any

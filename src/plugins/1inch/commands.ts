@@ -211,3 +211,105 @@ export const swapCommand: Command = {
     }
   },
 }
+
+/**
+ * Limit Order command - Create limit order on 1inch orderbook
+ */
+export const limitorderCommand: Command = {
+  id: 'limitorder',
+  scope: 'G_p',
+  protocol: '1inch',
+  description: 'Create limit order on 1inch orderbook',
+  aliases: ['limit', 'lo'],
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      // Verify wallet is connected
+      if (!context.wallet.isConnected || !context.wallet.address) {
+        return {
+          success: false,
+          error: new Error('Wallet not connected. Please connect your wallet first.'),
+        }
+      }
+
+      // Parse arguments: limitorder <amount> <fromToken> <toToken> --rate <price>
+      const argsStr = typeof args === 'string' ? args.trim() : ''
+      const parts = argsStr.split(' ')
+
+      if (parts.length < 3) {
+        return {
+          success: false,
+          error: new Error(
+            'Usage: limitorder <amount> <fromToken> <toToken> --rate <price>\n' +
+            'Example: limitorder 100 usdc eth --rate 0.0003\n' +
+            'Example: limitorder 0.5 eth usdc --rate 3500'
+          ),
+        }
+      }
+
+      const amountInput = parts[0]
+      const fromToken = parts[1]
+      const toToken = parts[2]
+
+      // Parse rate flag (required)
+      const rateIndex = parts.indexOf('--rate')
+      if (rateIndex === -1 || rateIndex + 1 >= parts.length) {
+        return {
+          success: false,
+          error: new Error(
+            'Rate is required. Usage: limitorder <amount> <fromToken> <toToken> --rate <price>'
+          ),
+        }
+      }
+      const rate = parseFloat(parts[rateIndex + 1])
+
+      if (isNaN(rate) || rate <= 0) {
+        return {
+          success: false,
+          error: new Error('Invalid rate. Must be a positive number.'),
+        }
+      }
+
+      const chainId = context.wallet.chainId || 1
+
+      // Resolve token symbols to addresses
+      const fromAddress = resolveTokenAddress(fromToken, chainId)
+      const toAddress = resolveTokenAddress(toToken, chainId)
+
+      // Get decimals for both tokens
+      const fromDecimals = getTokenDecimals(fromToken)
+      const toDecimals = getTokenDecimals(toToken)
+
+      // Validate amount
+      if (isNaN(parseFloat(amountInput)) || parseFloat(amountInput) <= 0) {
+        return {
+          success: false,
+          error: new Error('Invalid amount. Must be a positive number.'),
+        }
+      }
+
+      // Return limit order request for terminal to handle
+      return {
+        success: true,
+        value: {
+          limitOrderRequest: true,
+          fromToken,
+          toToken,
+          fromAddress,
+          toAddress,
+          amount: amountInput,
+          rate,
+          chainId,
+          fromDecimals,
+          toDecimals,
+          walletAddress: context.wallet.address,
+        },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
