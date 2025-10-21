@@ -1,232 +1,359 @@
-# Stargate Fiber Plugin Architecture
+# Stargate Bridge Integration Architecture
 
-Prepared for integrating Stargate stablecoin bridging into The DeFi Terminal as an `M_p` submonoid plugin. This document distills the behaviour observed in `/home/nick/dev/li.fi-api` (Stargate bridge explorer) and maps it onto the terminal’s fibered monoid architecture.
+**Last Updated:** 2025-10-17
+**Status:** ✅ Implemented
 
----
-
-## 1. Goals & Scope
-
-- Expose Stargate (LayerZero) stablecoin bridges as a protocol fiber `M_stargate`.
-- Support multi-step cross-chain transfers (approval + bridge) driven by Stargate’s API.
-- Preserve the algebraic guarantees of the terminal (protocol-specific identity, closure, isolation).
-- Provide an ergonomic CLI workflow (`stargate:quote`, `stargate:bridge`, `stargate:status`) that mirrors the existing Next.js reference app.
-
-Out-of-scope for the first iteration:
-- Non-stablecoin assets (only the tokens Stargate quotes today).
-- Route batching or combining with other protocols (remains isolated to `M_stargate`).
-- Arbitrary LayerZero messaging — bridge-only.
+This document describes the Stargate/LayerZero bridge integration for The DeFi Terminal as an `M_stargate` submonoid plugin within the fibered monoid architecture.
 
 ---
 
-## 2. Reference Implementation (li.fi-api)
+## 1. Overview & Objectives
 
-Key observations from `/home/nick/dev/li.fi-api`:
+### Goals
 
-1. **API route** (`src/app/api/routes/route.ts`) maps Li.Fi-style requests to the official Stargate quote endpoint:
-   - Maintains a `CHAIN_KEY_MAP` converting EVM chain IDs → Stargate chain keys.
-   - Calculates `dstAmountMin` (currently 0.5% slippage buffer).
-   - Makes `GET https://stargate.finance/api/v1/quotes?...`.
-   - Returns a Li.Fi-shaped `routes` object with `stargateSteps` (array of transactions that must be executed sequentially).
+- Expose Stargate (LayerZero) stablecoin bridges as a protocol fiber plugin in the `G_p` scope
+- Support multi-step cross-chain transfers (approval + bridge) driven by Stargate's API
+- Preserve algebraic guarantees (protocol-specific identity, closure, isolation)
+- Provide ergonomic CLI workflow (`stargate:quote`, `stargate:bridge`, `stargate:chains`) mirroring the reference app
 
-2. **Frontend workflow** (`src/app/page.tsx`):
-   - Collects form data (tokens, chains, amount).
-   - Calls `/api/routes` to fetch a transformed quote.
-   - Stores `stargateSteps` and, upon execution, iterates each step:
-     ```ts
-     for const step of stargateSteps:
-       walletClient.sendTransaction(step.transaction)
-     ```
-   - Tracks hashes to generate LayerZeroScan links.
+### Reference Implementation
 
-3. **Token metadata** lives in `src/app/lib/tokens.ts` with per-chain static lists and 1inch fallbacks.
+Based on: `/home/nick/dev/li.fi-api` (Stargate bridge explorer)
 
-These are the behaviours we need to replicate behind terminal commands.
+Key components:
+- Li.Fi-style API route mapping to Stargate quote endpoint
+- Chain ID → Stargate chain key conversion (`CHAIN_KEY_MAP`)
+- Slippage calculation for `dstAmountMin`
+- Multi-step transaction execution (approve + bridge)
 
----
+### Current Scope
 
-## 3. Fiber Design (`M_stargate`)
-
-| Element                | Value / Notes                                                |
-|------------------------|--------------------------------------------------------------|
-| Protocol ID            | `stargate`                                                   |
-| Scope                  | `G_p` (protocol fiber)                                       |
-| Identity               | Added automatically via `createProtocolFiber('stargate', …)` |
-| Isolation              | Commands only callable inside `M_stargate` session           |
-| Tags                   | `['bridge', 'layerzero', 'stablecoins']`                     |
-
-### Command Set (initial)
-
-| Command ID      | Purpose                                                         | Aliases             |
-|-----------------|-----------------------------------------------------------------|---------------------|
-| `quote`         | Request bridge quote & expose estimated receive + steps         | `estimate`, `price` |
-| `bridge`        | Execute previously quoted steps sequentially                    | `transfer`          |
-| `status`        | Check LayerZeroScan / transaction hash status (polling helper)  | `track`             |
-| `tokens`        | List supported tokens per chain (optional helper)               | `assets`            |
-
-All commands live in `src/plugins/stargate/commands.ts` and must set `scope: 'G_p'` and `protocol: 'stargate'`.
+- ✅ Stablecoin bridging (USDC, USDT supported by Stargate)
+- ✅ Multi-step transaction workflow
+- ❌ Non-stablecoin assets (limited by Stargate API)
+- ❌ Cross-protocol compositions (fiber isolation maintained)
+- ❌ Arbitrary LayerZero messaging (bridge-only)
 
 ---
 
-## 4. API Surface
+## 2. Fiber Definition (`M_stargate`)
 
-### 4.1 Next.js Routes (under `src/app/api/stargate/`)
+| Field          | Value                                                            |
+|----------------|------------------------------------------------------------------|
+| Protocol ID    | `stargate`                                                       |
+| Name           | `Stargate Bridge`                                                |
+| Tags           | `['bridge', 'layerzero', 'stablecoins']`                         |
+| Identity       | Injected automatically via `createProtocolFiber('stargate', …)`  |
+| Isolation      | Only Stargate commands + essential globals visible in fiber      |
 
-1. **`/api/stargate/quote` (POST)**  
-   - Request body mirrors the reference app (`fromChainId`, `toChainId`, `fromTokenAddress`, `toTokenAddress`, `fromAmount`, addresses).  
-   - Performs the chain key lookup, slippage math, GET request to Stargate’s API.  
-   - Returns:
-     ```json
-     {
-       "success": true,
-       "data": {
-         "fromChainId": 8453,
-         "toChainId": 42161,
-         "fromAmount": "1000000",
-         "toAmount": "997500",
-         "stargateSteps": [...],
-         "fullQuote": {...}
-       }
-     }
-     ```
+### Command Set
 
-2. **`/api/stargate/bridge` (POST)**  
-   - Accepts the quote payload plus wallet metadata (address, chain).  
-   - Returns the ordered list of transaction envelopes along with recommended execution metadata.  
-   - This endpoint does *not* send transactions; it preps data for the CLI client.  
-   - Response shape consumed by `bridgeCommand`.
+| Command ID | Purpose                                                | Status         | Aliases             |
+|------------|--------------------------------------------------------|----------------|---------------------|
+| `quote`    | Request bridge quote & display estimated receive       | ✅ Implemented | `estimate`, `price` |
+| `bridge`   | Execute previously quoted steps sequentially           | ✅ Implemented | `transfer`          |
+| `chains`   | List supported chains with metadata                    | ✅ Implemented | `networks`          |
+| `status`   | Check LayerZeroScan transaction status                 | 🚧 Planned     | `track`             |
+| `tokens`   | List supported tokens per chain                        | 🚧 Planned     | `assets`            |
 
-3. **`/api/stargate/tokens` (GET)** (optional but helpful)  
-   - Serve a merged view of supported tokens per chain (from static list and/or 1inch fetch).
+Each command sets `scope: 'G_p'` and `protocol: 'stargate'`, registered via `addCommandToFiber` during plugin initialization.
 
-All handlers should return `apiToCommandResult`-friendly payloads (i.e., `{ success, data | error }`).
-
-### 4.2 Shared Utilities
-
-- `src/lib/stargate.ts` (to be created) centralises:
-  - `CHAIN_KEY_MAP`
-  - Token list / helper functions
-  - `transformQuoteToRoute` (aligns with the reference implementation)
-  - TypeScript types for `StargateStep`, `StargateQuote`, etc.
+**Implementation:** `src/plugins/stargate/commands.ts`
 
 ---
 
-## 5. Command Behaviour
+## 3. API Implementation
 
-### 5.1 `quoteCommand`
+API handlers under `src/app/api/stargate/`:
 
-- Parse CLI input: `quote <fromChain> <toChain> <token> <amount> [--destToken TOKEN]`.
-- Resolve token addresses/decimals (prefer cached map in `ExecutionContext.protocolState`).
-- Calculate amount in base units.
-- Call `/api/stargate/quote`.
-- Store returned quote (including `stargateSteps`) in `ExecutionContext.protocolState` keyed by session to avoid re-fetch before `bridge`.
-- Emit a nicely formatted summary:
-  ```
-  From: 1 USDC (Base)
-  To:   0.995 USDC (Arbitrum)  (-0.5% slippage)
-  Steps:
-    1. ERC20Approve → 0x... (gas estimate xx)
-    2. StargateBridge → 0x...
-  ```
+### **POST `/api/stargate/quote`** ✅ Implemented
 
-### 5.2 `bridgeCommand`
+Fetch bridge quote from Stargate/LayerZero API.
 
-- Require wallet connection (context wallet guard).
-- Fetch latest quote from `protocolState`; optionally accept a `--refresh` flag to re-query.
-- Iterate `stargateSteps`, constructing each `sendTransaction` payload (respecting `value`, `data`, `to`, chain).
-- Use `context.wallet.chainId` to verify source chain; prompt user if mismatched (`use <chain>` to switch).
-- For each transaction:
-  1. Present summary (type, gas estimation, call data snippet).
-  2. Ask for confirmation unless `--yes` flag provided.
-  3. Submit via `walletClient.sendTransaction`.
-  4. Collect hashes, push to `ExecutionContext.history`.
-- Return all hashes plus convenience URLs (`LayerZeroScan`, `Block Explorer`).
+**Request:**
+```json
+{
+  "fromChainId": 8453,
+  "toChainId": 42161,
+  "fromTokenAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "toTokenAddress": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+  "fromAmount": "1000000",
+  "fromAddress": "0x...",
+  "toAddress": "0x...",
+  "slippage": 0.5
+}
+```
 
-### 5.3 `statusCommand`
-
-- Input: `status <txHash>` or blank to use last hash from protocol state.
-- Query `https://layerzeroscan.com/api/tx/<hash>` (or official API if exposed).
-- Display cross-chain state (enqueued, executed, failed).
-- If API unavailable, instruct manual tracking.
-
-### 5.4 `tokensCommand` (optional helper)
-
-- Print tokens by chain using the shared token map.
-- Useful for discoverability inside the terminal.
-
----
-
-## 6. Execution Context Usage
-
-- `ExecutionContext.protocolState` should maintain:
-  ```ts
-  {
-    lastQuote?: StargateQuote,
-    lastTxHashes?: string[],
-    tokenCache?: Record<string, { address: string; decimals: number }>
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "fromChainId": 8453,
+    "toChainId": 42161,
+    "fromAmount": "1000000",
+    "toAmount": "997500",
+    "stargateSteps": [
+      {
+        "type": "approve",
+        "transaction": { "to": "0x...", "data": "0x...", "value": "0x0" }
+      },
+      {
+        "type": "bridge",
+        "transaction": { "to": "0x...", "data": "0x...", "value": "0x123" }
+      }
+    ],
+    "fullQuote": { /* Full Stargate API response */ }
   }
-  ```
-- Update after every `quote` and `bridge`.
-- Ensure `updateExecutionContext` is used to append execution history for auditability.
+}
+```
+
+**Behavior:**
+- Maps chain IDs → Stargate chain keys via `CHAIN_KEY_MAP`
+- Calculates `dstAmountMin` with slippage (default 0.5%)
+- Queries `https://stargate.finance/api/v1/quotes`
+- Returns multi-step transaction array (approve + bridge)
+
+**Supported Chains:** Base (8453), Arbitrum (42161), Ethereum (1), Polygon (137), Optimism (10)
+
+**Implementation:** `src/app/api/stargate/quote/route.ts`
 
 ---
 
-## 7. Identity & Composition
+### Future Routes
 
-- `createProtocolFiber('stargate', 'Stargate Bridge', 'LayerZero stablecoin bridge')` automatically inserts `identity`.
-- All commands must be registered via `addCommandToFiber`.
-- Command composition examples:
-  - `composeCommands(quoteCommand, bridgeCommand)` remains within `M_stargate` (enables future macros like `stargate:quote_then_bridge`).
-  - Ambient identity (`identityCommand` from `G_core`) should not be used inside the fiber; rely on protocol identity for no-ops.
+- **POST `/api/stargate/bridge`** - Prepare bridge transactions (currently quote returns steps directly)
+- **GET `/api/stargate/tokens`** - Supported tokens per chain
+- **GET `/api/stargate/status`** - Query LayerZeroScan status
 
 ---
 
-## 8. CLI UX Considerations
+## 4. Shared Library Module
 
-- **Aliases**: register protocol-local aliases (`bridge` → `stargate:bridge`) and leverage namespace resolution (`stargate:quote`) in global context.
-- **Help Output**: hide the fiber identity command; surface `quote`, `bridge`, `status`, `tokens`, plus essential globals (`help`, `exit`, `history`, etc.).
-- **Errors**: lean on descriptive messages (“Unsupported chain pair”, “Missing cached quote – run `stargate:quote` first”, “Wallet must be connected to Base”).
-- **Isolation**: ensure `ρ` blocks `polygon:swap` invocations while inside `M_stargate` so the algebraic isolation guarantee holds.
+**Location:** `src/lib/stargate.ts`
+
+Consolidates reusable logic:
+
+- **Chain key mapping**: `CHAIN_KEY_MAP` converting EVM chain IDs → Stargate chain keys
+- **Slippage calculation**: `calculateMinDestAmount(amount, slippage)`
+- **Token metadata**: Static lists per chain with 1inch fallback
+- **TypeScript types**: `StargateStep`, `StargateQuote`, `StargateChain`, etc.
+
+This avoids duplication between API handlers and commands.
 
 ---
 
-## 9. Implementation Checklist
+## 5. Command Behavior
 
-1. **Scaffold Plugin**
-   - `cp -r src/plugins/_template src/plugins/stargate`
-   - Update metadata (id, name, tags).
-   - Replace template commands with Stargate-specific implementations.
+### `quoteCommand` ✅ Implemented
 
-2. **Server Routes**
-   - Create `/app/api/stargate/quote/route.ts` and `/app/api/stargate/bridge/route.ts`.
-   - Add optional `/tokens` route.
-   - Share schema/types via `src/plugins/stargate/types.ts`.
+**Usage:** `quote <fromChain> <toChain> <token> <amount> [--destToken TOKEN] [--slippage 0.5]`
 
-3. **Shared Libs**
-   - Add `src/lib/stargate.ts` with chain map, token helpers, transformers.
-   - Export from `src/lib/index.ts` if needed.
+**Flow:**
+1. Parse CLI input and resolve chain IDs + token addresses
+2. Calculate amount in base units (respecting token decimals)
+3. Call `/api/stargate/quote`
+4. Store returned quote (including `stargateSteps`) in `ExecutionContext.protocolState`
+5. Display summary:
+   ```
+   From: 1.00 USDC (Base)
+   To:   0.995 USDC (Arbitrum)  (-0.5% slippage)
+   Steps:
+     1. ERC20 Approve → 0x... (estimated gas: 45,000)
+     2. Stargate Bridge → 0x...
+   ```
+6. Suggest `stargate:bridge` to execute
 
-4. **Hook Into Terminal**
-   - Register plugin via `src/plugins/index.ts` or loader configuration.
-   - Update `helpCommand` filtering to include Stargate commands (already fiber-aware).
+**Implementation:** `src/plugins/stargate/commands.ts:quoteCommand`
 
-5. **Testing**
-   - Unit test token/address resolution.
-   - Mock Stargate API responses for quote transformation tests.
-   - Add integration test to ensure `stargate` commands stay in `G_p` scope and respect fiber isolation (similar to `monoid.test.ts` checks).
+---
 
-6. **Documentation**
-   - Update `FIBERED-MONOID-SPEC.md` or protocol catalog once implementation lands.
+### `bridgeCommand` ✅ Implemented
+
+**Usage:** `bridge [--yes] [--refresh]`
+
+**Flow:**
+1. Guard: wallet must be connected, `wallet.chainId` must match source chain
+2. Fetch cached quote from `protocolState` (or re-query with `--refresh`)
+3. Iterate `stargateSteps`, constructing each transaction payload
+4. For each transaction:
+   - Present summary (type, `to`, `value`, truncated data)
+   - Request confirmation unless `--yes` flag
+   - Submit via `walletClient.sendTransaction`
+   - Collect hash
+5. Append all hashes to `ExecutionContext.history`
+6. Output final summary with LayerZeroScan links
+
+**Implementation:** `src/plugins/stargate/commands.ts:bridgeCommand`
+
+---
+
+### `chainsCommand` ✅ Implemented
+
+**Usage:** `chains`
+
+**Flow:**
+- Display supported Stargate chains with IDs and names
+- Shows chain key mappings for debugging
+- Useful for discovery and command construction
+
+**Implementation:** `src/plugins/stargate/commands.ts:chainsCommand`
+
+---
+
+### Future Commands
+
+#### `statusCommand` 🚧 Planned
+
+**Usage:** `status [txHash]`
+
+**Flow:**
+- Default to last cached hash if not supplied
+- Query LayerZeroScan API: `https://layerzeroscan.com/api/tx/<hash>`
+- Display cross-chain state (enqueued, executed, delivered, failed)
+- Provide LayerZeroScan + block explorer links
+
+#### `tokensCommand` 🚧 Planned
+
+**Usage:** `tokens [chainId]`
+
+**Flow:**
+- Display supported tokens per chain using shared token map
+- Useful for discovery inside the terminal
+
+---
+
+## 6. Execution Context Shape
+
+Session state stored under `context.protocolState.get('stargate')`:
+
+```typescript
+interface StargateState {
+  lastQuote?: {
+    fromChainId: number
+    toChainId: number
+    fromAmount: string
+    toAmount: string
+    stargateSteps: StargateStep[]
+    fullQuote: any
+  }
+  lastTxHashes?: string[]
+  tokenCache?: Record<string, { address: string; decimals: number }>
+}
+```
+
+Updated after each command to maintain session continuity.
+
+---
+
+## 7. Terminal UX Considerations
+
+- **Isolation**: Relies on `ρ`/`ρ_f` operators—only stargate commands + essential globals appear inside the fiber
+- **Help output**: `help` command filters by fiber context; stargate commands show concise descriptions and aliases
+- **Errors**: Actionable messages:
+  - "Unsupported chain pair: Ethereum → Polygon"
+  - "Run `stargate:quote` first to fetch a quote"
+  - "Wallet must be connected to Base (8453)"
+- **History**: Every command appends entries to `ExecutionContext.history` for auditability
+- **Protocol identity**: Injected automatically via `createProtocolFiber`, ensuring proper submonoid structure
+
+---
+
+## 8. Implementation Status
+
+### ✅ Completed
+
+- [x] Plugin scaffold (`src/plugins/stargate/`)
+- [x] Fiber metadata (`id: 'stargate'`, tags, protocol-specific identity)
+- [x] Command registration via `addCommandToFiber`
+- [x] API route handler (`/quote`)
+- [x] Shared library (`src/lib/stargate.ts`)
+- [x] CLI commands (`quote`, `bridge`, `chains`)
+- [x] Execution context state management
+- [x] Wallet integration (viem/wagmi)
+- [x] Multi-step transaction execution (approve + bridge)
+- [x] Error handling and user feedback
+
+### 🚧 Planned
+
+- [ ] `/api/stargate/bridge` endpoint (currently quote returns steps directly)
+- [ ] `/api/stargate/status` endpoint
+- [ ] `/api/stargate/tokens` endpoint
+- [ ] `statusCommand` implementation
+- [ ] `tokensCommand` implementation
+- [ ] Unit tests for helpers (token resolution, slippage calculation)
+- [ ] Integration tests for fiber closure
+- [ ] Mocked API route tests
+
+### 📝 Documentation
+
+- [x] Architecture document (this file)
+- [x] API reference in `/src/app/api/README.md`
+- [x] Protocol catalog in `/FIBERED-MONOID-SPEC.md`
+- [x] Main README updated
+
+---
+
+## 9. Usage Examples
+
+### Basic Bridge Flow
+
+```bash
+# Enter Stargate fiber
+use stargate
+
+# Get quote for bridging USDC from Base to Arbitrum
+quote base arbitrum usdc 1
+
+# Execute bridge transaction
+bridge
+
+# Check status (future)
+status
+
+# Exit fiber
+exit
+```
+
+### Advanced Options
+
+```bash
+# Quote with custom slippage
+stargate:quote base arbitrum usdc 1 --slippage 1.0
+
+# Auto-confirm bridge (skip prompt)
+bridge --yes
+
+# Refresh quote before bridging
+bridge --refresh
+
+# View supported chains
+chains
+```
 
 ---
 
 ## 10. Future Enhancements
 
-- Support slippage configuration (`--slippage` flag) and pass to `dstAmountMin`.
-- Cache supported tokens/chain info at runtime (background refresh).
-- Add retry / backoff logic for LayerZero status polling.
-- Explore composing Stargate with other fibers via ambient identity once cross-fiber workflow support is formalised.
+- Add `--slippage` flag configuration for `dstAmountMin`
+- Cache supported tokens/chain info at runtime (background refresh)
+- Retry/backoff logic for LayerZero status polling
+- Cross-fiber compositions once ambient identity workflows are formalized
+- Batch bridging (multiple transfers in one session)
+- Gas estimation display before execution
+- Support for non-stablecoin assets (when Stargate adds support)
 
 ---
 
-With this blueprint, the repository is ready to implement the Stargate plugin as a proper `M_p` submonoid while reusing the proven behaviour from the reference li.fi integration.
+## 11. Related Documentation
+
+- **Main README**: `/README.md` - Project overview and setup
+- **Fibered Monoid Spec**: `/FIBERED-MONOID-SPEC.md` - Algebraic architecture
+- **Plugin Guide**: `/src/plugins/README.md` - Plugin development
+- **API Reference**: `/src/app/api/README.md` - API routes documentation
+- **Wormhole Architecture**: `/src/plugins/wormhole/ARCHITECTURE.md` - Similar bridge implementation
+
+---
+
+**Summary:** The `stargate` plugin implements a proper `M_p` submonoid that integrates Stargate/LayerZero stablecoin bridging within The DeFi Terminal, maintaining all algebraic guarantees of the fibered monoid architecture.
 

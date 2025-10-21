@@ -466,39 +466,69 @@ export const transferCommand: Command = {
 
 /**
  * Bridge command - Global alias for cross-chain bridging
- * This is a G_alias command that intelligently routes to the appropriate protocol
+ * Routes to the active protocol when possible, otherwise falls back to available bridge plugins
  */
 export const bridgeAliasCommand: Command = {
   id: 'bridge',
   scope: 'G_alias',
-  description: 'Bridge tokens cross-chain (auto-routes to wormhole or stargate)',
+  description: 'Bridge tokens cross-chain (auto-routes to available bridge protocols)',
   aliases: ['br'],
 
   async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
     try {
-      // Default to wormhole for now
-      const defaultProtocol = 'wormhole'
+      const rawArgs = typeof args === 'string' ? args : ''
+      const argTokens = rawArgs.split(/\s+/).filter(Boolean)
+      let explicitProtocolFromArgs: string | undefined
+      const filteredTokens: string[] = []
 
-      // Check if protocol exists
-      const fiber = registry.σ(defaultProtocol)
-      if (!fiber) {
-        return {
-          success: false,
-          error: new Error(`Bridge protocol '${defaultProtocol}' not loaded`),
+      for (let i = 0; i < argTokens.length; i++) {
+        const token = argTokens[i]
+        if (token === '--protocol' && i + 1 < argTokens.length) {
+          explicitProtocolFromArgs = argTokens[i + 1]
+          i++ // Skip the protocol value
+          continue
+        }
+        filteredTokens.push(token)
+      }
+
+      const sanitizedArgs = filteredTokens.join(' ')
+
+      const candidateProtocols: string[] = []
+      const seen = new Set<string>()
+      const addProtocol = (protocol?: string) => {
+        if (!protocol) return
+        const normalized = protocol.trim().toLowerCase()
+        if (!normalized || seen.has(normalized)) return
+        candidateProtocols.push(normalized)
+        seen.add(normalized)
+      }
+
+      addProtocol(explicitProtocolFromArgs)
+      addProtocol(context.activeProtocol)
+      addProtocol(context.protocolPreferences?.bridge)
+      addProtocol('wormhole')
+      addProtocol('lifi')
+      addProtocol('stargate')
+      for (const protocolId of registry.getProtocols()) {
+        addProtocol(protocolId)
+      }
+
+      for (const protocol of candidateProtocols) {
+        const fiber = registry.σ(protocol)
+        if (!fiber) {
+          continue
+        }
+
+        const bridgeCommand = fiber.commands.get('bridge')
+        if (bridgeCommand) {
+          return await bridgeCommand.run(sanitizedArgs, context)
         }
       }
 
-      // Get the bridge command from the protocol
-      const bridgeCommand = fiber.commands.get('bridge')
-      if (!bridgeCommand) {
-        return {
-          success: false,
-          error: new Error(`No bridge command found in ${defaultProtocol} protocol`),
-        }
+      return {
+        success: false,
+        error: new Error('No bridge-capable protocol is currently loaded'),
       }
-
-      // Execute the protocol-specific bridge command
-      return await bridgeCommand.run(args, context)
     } catch (error) {
       return {
         success: false,

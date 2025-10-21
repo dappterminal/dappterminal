@@ -5,13 +5,16 @@ import { Terminal as TerminalIcon, Settings, Plus, X, Bell, Zap, BarChart3, Book
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount, useEnsName, useBalance } from 'wagmi'
 import { mainnet } from 'wagmi/chains'
-import { formatUnits } from 'viem'
+import { formatUnits, encodeFunctionData, erc20Abi } from 'viem'
 import { registry, registerCoreCommands, createExecutionContext, updateExecutionContext } from "@/core"
 import type { ExecutionContext, CommandResult } from "@/core"
 import { pluginLoader } from "@/plugins/plugin-loader"
 import { oneInchPlugin } from "@/plugins/1inch"
 import { stargatePlugin } from "@/plugins/stargate"
 import { wormholePlugin } from "@/plugins/wormhole"
+import { lifiPlugin } from "@/plugins/lifi"
+import { getChainName } from "@/lib/lifi"
+import { getTxUrl } from "@/lib/explorers"
 
 interface HistoryItem {
   command: string
@@ -33,6 +36,7 @@ const PROTOCOL_COLORS: Record<string, string> = {
   stargate: '#0FB983',
   '1inch': '#94A6FF',
   wormhole: '#FF6B9D',
+  lifi: '#A855F7',
   // Add more protocols here as needed
 }
 
@@ -359,6 +363,15 @@ export function Terminal() {
         console.log('Wormhole plugin loaded successfully')
       } else {
         console.error('Failed to load Wormhole plugin:', result.error)
+      }
+    })
+
+    // Load LiFi plugin
+    pluginLoader.loadPlugin(lifiPlugin, undefined, context).then(result => {
+      if (result.success) {
+        console.log('LiFi plugin loaded successfully')
+      } else {
+        console.error('Failed to load LiFi plugin:', result.error)
       }
     })
 
@@ -1039,6 +1052,7 @@ export function Terminal() {
             setHistoryIndex(-1)
             return
           }
+          // Handle bridge command - execute LiFi route
           // Handle bridge command - execute cross-chain bridge via Stargate
           else if (resolved.command.id === 'bridge' && resolved.protocol === 'stargate' && 'bridgeRequest' in result.value) {
             const bridgeData = result.value as any
@@ -1572,6 +1586,187 @@ export function Terminal() {
               const errorMsg = error instanceof Error ? error.message : String(error)
               updateHistory([`❌ Bridge failed: ${errorMsg}`])
               console.error('[Wormhole Bridge] Error:', error)
+            }
+
+            setCommandHistory(prev => {
+              const newHistory = [...prev, trimmedInput]
+              if (newHistory.length > MAX_COMMAND_HISTORY) {
+                return newHistory.slice(-MAX_COMMAND_HISTORY)
+              }
+              return newHistory
+            })
+            setCurrentInput("")
+            setHistoryIndex(-1)
+            return
+          }
+          // Handle bridge command - execute cross-chain bridge via LiFi
+          else if (resolved.command.id === 'bridge' && resolved.protocol === 'lifi' && 'lifiTransferRequest' in result.value) {
+            const bridgeData = result.value as any
+
+            console.log('[LiFi Bridge] Bridge data received:', bridgeData)
+            console.log('[LiFi Bridge] Steps array:', bridgeData.steps)
+            console.log('[LiFi Bridge] Route:', bridgeData.route)
+
+            // Get chain names for display
+            const chainNames: Record<number, string> = {
+              1: 'Ethereum',
+              10: 'Optimism',
+              137: 'Polygon',
+              42161: 'Arbitrum',
+              8453: 'Base',
+              56: 'BSC',
+              43114: 'Avalanche',
+            }
+            const fromChainName = chainNames[bridgeData.fromChain] || `Chain ${bridgeData.fromChain}`
+            const toChainName = chainNames[bridgeData.toChain] || `Chain ${bridgeData.toChain}`
+
+            // Show initial message
+            output = [
+              `🌉 LiFi Bridge Quote:`,
+              `  ${fromChainName} → ${toChainName}`,
+              `  Token: ${bridgeData.fromToken.toUpperCase()}${bridgeData.toToken && bridgeData.toToken !== bridgeData.fromToken ? ` → ${bridgeData.toToken.toUpperCase()}` : ''}`,
+              `  Amount: ${bridgeData.amountIn}`,
+              `  Estimated Receive: ${bridgeData.amountOut}`,
+              `  Steps: ${bridgeData.steps.length}`,
+              ``,
+              `⏳ Executing LiFi bridge...`,
+            ]
+
+            const lifiTimestamp = new Date()
+            const tempHistoryItem: HistoryItem = {
+              command: trimmedInput,
+              output,
+              timestamp: lifiTimestamp
+            }
+
+            setTabs(tabs.map(tab =>
+              tab.id === activeTabId
+                ? { ...tab, history: [...tab.history, tempHistoryItem] }
+                : tab
+            ))
+
+            // Helper function to update history
+            const updateHistory = (lines: string[], links?: { text: string; url: string }[]) => {
+              setTabs(prevTabs => prevTabs.map(tab => {
+                if (tab.id === activeTabId) {
+                  const updatedHistory = tab.history.map(item =>
+                    item.timestamp === lifiTimestamp
+                      ? { ...item, output: lines, links }
+                      : item
+                  )
+                  return { ...tab, history: updatedHistory }
+                }
+                return tab
+              }))
+            }
+
+            // Execute LiFi bridge flow using LiFi SDK
+            try {
+              const { executeRoute, createConfig, EVM } = await import('@lifi/sdk')
+              const { getWalletClient, switchChain } = await import('wagmi/actions')
+              const { config } = await import('@/lib/wagmi-config')
+
+              const route = bridgeData.route
+              const txHashes: string[] = []
+              let txLink: string | null = null
+
+              updateHistory([
+                `🌉 LiFi Bridge Quote:`,
+                `  ${fromChainName} → ${toChainName}`,
+                `  Token: ${bridgeData.fromToken.toUpperCase()}${bridgeData.toToken && bridgeData.toToken !== bridgeData.fromToken ? ` → ${bridgeData.toToken.toUpperCase()}` : ''}`,
+                `  Amount: ${bridgeData.amountIn}`,
+                `  Estimated Receive: ${bridgeData.amountOut}`,
+                ``,
+                `⏳ Executing bridge via LiFi SDK...`,
+              ])
+
+              // Configure LiFi SDK with wagmi wallet provider
+              createConfig({
+                integrator: 'lifi-api',
+                providers: [
+                  EVM({
+                    getWalletClient: async () => {
+                      return await getWalletClient(config)
+                    },
+                    switchChain: async (chainId: number) => {
+                      await switchChain(config, { chainId })
+                      return await getWalletClient(config)
+                    },
+                  }),
+                ],
+              })
+
+              // Execute the route using LiFi SDK (handles approvals, multi-step execution, etc.)
+              const executedRoute = await executeRoute(route, {
+                infiniteApproval: false,
+
+                updateRouteHook(updatedRoute: any) {
+                  console.log('[LiFi Bridge] Route update:', updatedRoute)
+
+                  // Extract transaction link and hashes
+                  const internalTxLink = updatedRoute?.steps?.[0]?.execution?.internalTxLink
+                  if (internalTxLink) {
+                    txLink = internalTxLink
+                  }
+
+                  // Collect transaction hashes
+                  updatedRoute?.steps?.forEach((step: any) => {
+                    step?.execution?.process?.forEach((proc: any) => {
+                      if (proc.txHash && !txHashes.includes(proc.txHash)) {
+                        txHashes.push(proc.txHash)
+                        updateHistory([
+                          `🌉 LiFi Bridge:`,
+                          `  ${fromChainName} → ${toChainName}`,
+                          ``,
+                          `✅ Transaction submitted`,
+                          `  Tx Hash: ${proc.txHash}`,
+                          ``,
+                          `⏳ Waiting for confirmation...`,
+                        ])
+                      }
+                    })
+                  })
+                },
+
+                acceptExchangeRateUpdateHook(params: any) {
+                  console.log('[LiFi Bridge] Exchange rate update:', params)
+                  // Auto-accept rate updates
+                  return Promise.resolve(true)
+                },
+              })
+
+              console.log('[LiFi Bridge] Executed route:', executedRoute)
+
+              // Get final transaction link
+              const finalTxLink = txLink || executedRoute?.steps?.[0]?.execution?.internalTxLink
+              const lifiExplorerLink = finalTxLink || (txHashes.length > 0 ? `https://li.quest/tx/${txHashes[txHashes.length - 1]}` : null)
+
+              const successMessage = [
+                `✅ LiFi bridge executed successfully!`,
+                `  ${fromChainName} → ${toChainName}`,
+                `  Token: ${bridgeData.fromToken.toUpperCase()}${bridgeData.toToken && bridgeData.toToken !== bridgeData.fromToken ? ` → ${bridgeData.toToken.toUpperCase()}` : ''}`,
+                `  Amount: ${bridgeData.amountIn}`,
+                `  Estimated Receive: ${bridgeData.amountOut}`,
+              ]
+
+              if (txHashes.length > 0) {
+                successMessage.push(``, `Transaction Hashes:`)
+                txHashes.forEach((hash, idx) => {
+                  successMessage.push(`  ${idx + 1}. ${hash}`)
+                })
+              }
+
+              if (lifiExplorerLink) {
+                successMessage.push(``, `🔍 Track on LiFi Explorer:`)
+                updateHistory(successMessage, [{ text: lifiExplorerLink, url: lifiExplorerLink }])
+              } else {
+                updateHistory(successMessage)
+              }
+            } catch (error) {
+              // Update with error
+              const errorMsg = error instanceof Error ? error.message : String(error)
+              updateHistory([`❌ LiFi bridge failed: ${errorMsg}`])
+              console.error('[LiFi Bridge] Error:', error)
             }
 
             setCommandHistory(prev => {

@@ -1,33 +1,34 @@
-# Wormhole Fiber Architecture
+# Wormhole Bridge Integration Architecture
 
-This document distills the behaviour of the Wormhole bridge demo (`/home/nick/dev/wormhole-api-nextjs`) into guidance for building a Wormhole protocol fiber (`M_wormhole`) inside The DeFi Terminal. It mirrors the structure we adopted for Stargate so that all `M_p` implementations stay consistent with the fibered monoid spec.
+**Last Updated:** 2025-10-17
+**Status:** ✅ Implemented
 
----
-
-## 1. Objectives
-
-- Expose Wormhole cross-chain token transfers as a plugin that inhabits the `G_p` scope.
-- Preserve fiber isolation and identity guarantees supplied by `createProtocolFiber`.
-- Reuse proven SDK patterns from the reference app (route discovery, custom signer, sequential execution).
-- Provide a clear CLI surface (`wormhole:quote`, `wormhole:bridge`, etc.) that integrates with existing terminal UX (help output, history, tab contexts).
+This document describes the Wormhole cross-chain bridge integration for The DeFi Terminal, implementing the protocol as an `M_wormhole` fiber plugin within the fibered monoid architecture.
 
 ---
 
-## 2. External Reference Summary
+## 1. Overview & Objectives
 
-Source repository: `/home/nick/dev/wormhole-api-nextjs`
+### Goals
 
-Key components to port:
+- Expose Wormhole cross-chain token transfers as a protocol fiber plugin in the `G_p` scope
+- Preserve fiber isolation and identity guarantees supplied by `createProtocolFiber`
+- Reuse proven SDK patterns from reference implementation (route discovery, custom signer, sequential execution)
+- Provide ergonomic CLI commands (`wormhole:quote`, `wormhole:bridge`, etc.) integrated with terminal UX
 
-1. **SDK bootstrap** – `wormhole('Mainnet', [evm])` plus resolver composition (`AutomaticCCTPRoute`, `CCTPRoute`, `AutomaticTokenBridgeRoute`, `TokenBridgeRoute`).
-2. **Custom signer** – Viem wallet client → ethers-style signer overriding `signAndSend` to broadcast transactions directly.
-3. **Route discovery** – Build `tokenId`, find supported destination tokens, create `RouteTransferRequest`, and call `resolver.findRoutes`.
-4. **Quote aggregation** – Validate and quote all candidate routes (`getQuotesForAllRoutes`) to present ETA/fee/relay data.
-5. **Transfer initiation** – Validate selected route, re-quote, and call `route.initiate(...)`, returning receipts with origin transaction hashes.
+### Reference Implementation
+
+Based on: `/home/nick/dev/wormhole-api-nextjs`
+
+Key components ported from reference app:
+- SDK bootstrap and resolver composition (AutomaticCCTP, CCTP, AutomaticTokenBridge, TokenBridge routes)
+- Custom Viem → ethers signer adapter with direct transaction broadcasting
+- Route discovery and quote aggregation workflow (`getTransferQuote`, `getQuotesForAllRoutes`)
+- Multi-step transfer execution via `route.initiate(...)`
 
 ---
 
-## 3. Fiber Definition (`M_wormhole`)
+## 2. Fiber Definition (`M_wormhole`)
 
 | Field          | Value                                                                  |
 |----------------|------------------------------------------------------------------------|
@@ -37,144 +38,233 @@ Key components to port:
 | Identity       | Injected automatically via `createProtocolFiber('wormhole', ...)`      |
 | Isolation      | Only Wormhole commands + essential globals are visible while in fiber  |
 
-### Command Set (initial)
+### Command Set
 
-| Command ID | Purpose                                                               | Aliases                 |
-|------------|-----------------------------------------------------------------------|-------------------------|
-| `quote`    | Discover available Wormhole routes and cache the best option          | `estimate`, `preview`   |
-| `routes`   | List all routes with fees/ETA, optionally select one                  | `options`               |
-| `bridge`   | Execute the cached route by streaming the SDK transactions            | `transfer`, `execute`   |
-| `status`   | Fetch WormholeScan status for the latest hash                         | `track`                 |
-| `tokens`   | (Optional) Display supported assets per chain                         | `assets`                |
+| Command ID | Purpose                                                               | Status | Aliases                 |
+|------------|-----------------------------------------------------------------------|--------|-------------------------|
+| `quote`    | Discover available Wormhole routes and cache the best option          | ✅ Implemented | `estimate`, `preview`   |
+| `routes`   | List all routes with fees/ETA, optionally select one                  | ✅ Implemented | `options`               |
+| `bridge`   | Execute the cached route by streaming the SDK transactions            | ✅ Implemented | `transfer`, `execute`   |
+| `status`   | Fetch WormholeScan status for the latest hash                         | 🚧 Planned     | `track`                 |
+| `tokens`   | Display supported assets per chain                                    | 🚧 Planned     | `assets`                |
+| `chains`   | List supported chains with metadata                                   | ✅ Implemented | `networks`              |
 
-Each command **must** set `scope: 'G_p'` and `protocol: 'wormhole'`. Register them with `addCommandToFiber` during plugin initialization.
+Each command sets `scope: 'G_p'` and `protocol: 'wormhole'`, registered via `addCommandToFiber` during plugin initialization.
 
----
-
-## 4. API Surface
-
-Create Next.js API handlers under `src/app/api/wormhole/` that wrap the SDK logic:
-
-1. **POST `/api/wormhole/quote`**
-   - Body: `{ sourceChainId, destChainId, tokenAddress, amount, sourceAddress, destAddress }`.
-   - Behaviour:
-     - Map chain IDs → Wormhole chain names (centralise map in `src/lib/wormhole/chains.ts`).
-     - Call SDK helpers (`getTransferQuote`, `getQuotesForAllRoutes`).
-     - Return Li.Fi-style payload consumable by CLI, e.g.:
-       ```json
-       {
-         "success": true,
-         "data": {
-           "bestRoute": { ...summary },
-           "quotes": [{ ... }, ...],
-           "transferRequest": { ...serialized },
-           "context": { ...minimal data needed for execution }
-         }
-       }
-       ```
-     - Avoid returning raw SDK instances; serialize enums/strings only.
-
-2. **POST `/api/wormhole/bridge`**
-   - Body: `{ selectedRouteType, transferRequest, amount, sourceAddress }`.
-   - Reconstruct route via resolver, validate, quote, and return an ordered list of transactions:
-     ```json
-     {
-       "success": true,
-       "data": {
-         "transactions": [
-           { "to": "0x...", "data": "0x...", "value": "0x0", "description": "ERC20 approve" },
-           { "to": "0x...", "data": "0x...", "value": "0x0", "description": "Bridge transfer" }
-         ],
-         "receiverChain": "...",
-         "scanUrlTemplate": "https://wormholescan.io/#/tx/{{hash}}?network=Mainnet"
-       }
-     }
-     ```
-
-3. **GET `/api/wormhole/status`** (optional)
-   - Accept `txHash`, proxy WormholeScan status, return stage info (pending, attested, delivered).
-
-4. **GET `/api/wormhole/tokens`** (optional helper)
-   - Provide per-chain token metadata (prefill CLI autocomplete).
-
-All endpoints should return the standard `{ success, data | error }` format so the plugin can call them via `callProtocolApi`.
+**Implementation:** `src/plugins/wormhole/commands.ts`
 
 ---
 
-## 5. Shared Library Module
+## 3. API Implementation
 
-Create `src/lib/wormhole/index.ts` consolidating reusable logic:
+API handlers under `src/app/api/wormhole/`:
 
-- Chain + token metadata (ported from `wormhole-api-nextjs/src/app/lib/chains.ts` and `tokens.ts`).
-- Serialisable types (`RouteSummary`, `SerializedTransferRequest`, etc.).
-- Helpers:
-  - `getWormholeChains()`
-  - `resolveTokenAddress(chainId, symbol)`
-  - `buildTransferQuote(params)` – wraps SDK and returns statement for API.
-  - `buildTransferTxList(params)` – used by `/bridge`.
-  - `formatRouteSummary(route, quote)` – used by CLI display.
-- Custom signer utilities (adapted from `createWormholeSigner`) exposing a function that can run on the client command if needed.
+### **POST `/api/wormhole/quote`** ✅ Implemented
+
+Discover available Wormhole routes and return quotes.
+
+**Request:**
+```json
+{
+  "sourceChainId": 8453,
+  "destChainId": 42161,
+  "tokenAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "amount": "1000000",
+  "sourceAddress": "0x...",
+  "destAddress": "0x..."
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "bestRoute": {
+      "type": "AutomaticCCTPRoute",
+      "eta": "12m",
+      "fee": "1500",
+      "receiveAmount": "998500"
+    },
+    "quotes": [/* Array of all available routes */],
+    "transferRequest": {/* Serialized transfer request */},
+    "wormholeContext": {/* SDK context data */}
+  }
+}
+```
+
+**Behavior:**
+- Maps chain IDs → Wormhole chain names using `CHAIN_KEY_MAP`
+- Calls SDK helpers (`getTransferQuote`, `getQuotesForAllRoutes`)
+- Returns best route first (typically AutomaticCCTPRoute)
+- Serializes only enums/strings (no raw SDK instances)
+
+**Implementation:** `src/app/api/wormhole/quote/route.ts`
+
+---
+
+### **POST `/api/wormhole/bridge`** ✅ Implemented
+
+Execute a Wormhole bridge transfer.
+
+**Request:**
+```json
+{
+  "selectedRouteType": "AutomaticCCTPRoute",
+  "transferRequest": {/* From quote response */},
+  "amount": "1000000",
+  "sourceAddress": "0x..."
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "transactions": [
+      { "to": "0x...", "data": "0x...", "value": "0x0", "description": "ERC20 approve" },
+      { "to": "0x...", "data": "0x...", "value": "0x0", "description": "Bridge transfer" }
+    ],
+    "receiverChain": "Arbitrum",
+    "scanUrl": "https://wormholescan.io/#/tx/{{hash}}?network=Mainnet"
+  }
+}
+```
+
+**Behavior:**
+- Reconstructs route via resolver
+- Validates and re-quotes
+- Returns ordered transaction list for CLI to execute
+- Does NOT broadcast transactions (client-side signing)
+
+**Implementation:** `src/app/api/wormhole/bridge/route.ts`
+
+---
+
+### Future Routes
+
+- **GET `/api/wormhole/status`** - Query WormholeScan transaction status (pending, attested, delivered)
+- **GET `/api/wormhole/tokens`** - Supported tokens per chain for autocomplete
+
+---
+
+## 4. Shared Library Module
+
+**Location:** `src/lib/wormhole/index.ts`
+
+Consolidates reusable logic:
+
+- **Chain + token metadata**: Ported from `wormhole-api-nextjs/src/app/lib/chains.ts` and `tokens.ts`
+- **Serializable types**: `RouteSummary`, `SerializedTransferRequest`, etc.
+- **Helpers**:
+  - `getWormholeChains()` - Returns supported chain metadata
+  - `resolveTokenAddress(chainId, symbol)` - Maps symbols to addresses
+  - `buildTransferQuote(params)` - Wraps SDK and returns quote
+  - `buildTransferTxList(params)` - Used by `/bridge` endpoint
+  - `formatRouteSummary(route, quote)` - CLI display formatting
+- **Custom signer utilities**: Viem → ethers adapter with `signAndSend` override
 
 This avoids duplication between API handlers and commands.
 
 ---
 
-## 6. Command Behaviour
+## 5. Command Behavior
 
-### `quoteCommand`
+### `quoteCommand` ✅ Implemented
 
-1. Parse CLI input: `quote <fromChain> <toChain> <token> <amount> [--destToken <symbol>] [--receiver 0x...]`.
-2. Resolve chain IDs and token addresses using shared helpers.
-3. Call `/api/wormhole/quote`.
-4. Cache result in `ExecutionContext.protocolState` under `wormhole`.
-5. Display summary:
+**Usage:** `quote <fromChain> <toChain> <token> <amount> [--destToken <symbol>] [--receiver 0x...]`
+
+**Flow:**
+1. Parse CLI input and resolve chain IDs + token addresses
+2. Call `/api/wormhole/quote`
+3. Cache result in `ExecutionContext.protocolState`
+4. Display summary:
    ```
    Best route: AutomaticCCTPRoute (ETA ≈ 12m)
    Send: 1.00 USDC (Base)
-   Receive: 0.9985 USDC (Ethereum)   Relay fee: 0.0015 USDC
+   Receive: 0.9985 USDC (Arbitrum)   Relay fee: 0.0015 USDC
    Steps:
      1. ERC20 approve → 0x...
      2. Bridge transfer → 0x...
    ```
-6. Suggest `wormhole:routes` to inspect alternatives.
+5. Suggest `wormhole:routes` to inspect alternatives
 
-### `routesCommand`
-
-- Pull cached state, list all available routes with indexes.
-- Accept optional `--select <index>` to update preferred route in state.
-- If no cached quote, instruct user to run `wormhole:quote`.
-
-### `bridgeCommand`
-
-1. Guard: wallet must be connected, and `wallet.chainId` must match source chain.
-2. Fetch cached quote + selected route (default to `bestRoute` if none selected).
-3. Call `/api/wormhole/bridge` to get transaction envelope(s).
-4. For each transaction:
-   - Present summary (type, `to`, `value`, truncated data).
-   - Require confirmation unless `--yes`.
-   - Broadcast via `walletClient.sendTransaction`.
-5. Append tx hashes to `ExecutionContext.history` using `updateExecutionContext`.
-6. Output final summary with WormholeScan link (fill template using last hash).
-
-### `statusCommand`
-
-- Input: `status [txHash]`.
-- Default to last cached hash if not supplied.
-- Call `/api/wormhole/status`.
-- Render stage + helpful link(s).
-
-### `tokensCommand` (optional)
-
-- Render supported assets per chain using local metadata.
-- Useful for user discovery and command completion.
+**Implementation:** `src/plugins/wormhole/commands.ts:quoteCommand`
 
 ---
 
-## 7. Execution Context Shape
+### `routesCommand` ✅ Implemented
 
-Store the session under `context.protocolState.get('wormhole')`:
+**Usage:** `routes [--select <index>]`
 
-```ts
+**Flow:**
+- Pull cached quote state
+- List all available routes with indexes, ETAs, and fees
+- Accept optional `--select <index>` to update preferred route
+- If no cached quote, instruct user to run `wormhole:quote`
+
+**Implementation:** `src/plugins/wormhole/commands.ts:routesCommand`
+
+---
+
+### `bridgeCommand` ✅ Implemented
+
+**Usage:** `bridge [--yes]`
+
+**Flow:**
+1. Guard: wallet must be connected, `wallet.chainId` must match source chain
+2. Fetch cached quote + selected route (default to `bestRoute`)
+3. Call `/api/wormhole/bridge` to get transaction envelopes
+4. For each transaction:
+   - Present summary (type, `to`, `value`, truncated data)
+   - Require confirmation unless `--yes` flag
+   - Broadcast via `walletClient.sendTransaction`
+5. Append tx hashes to `ExecutionContext.history`
+6. Output final summary with WormholeScan link
+
+**Implementation:** `src/plugins/wormhole/commands.ts:bridgeCommand`
+
+---
+
+### `chainsCommand` ✅ Implemented
+
+**Usage:** `chains`
+
+**Flow:**
+- Display supported Wormhole chains with IDs and names
+- Useful for discovery and command construction
+
+**Implementation:** `src/plugins/wormhole/commands.ts:chainsCommand`
+
+---
+
+### Future Commands
+
+#### `statusCommand` 🚧 Planned
+
+**Usage:** `status [txHash]`
+
+**Flow:**
+- Default to last cached hash if not supplied
+- Call `/api/wormhole/status`
+- Render cross-chain state (pending, attested, delivered) + WormholeScan link
+
+#### `tokensCommand` 🚧 Planned
+
+**Usage:** `tokens [chainId]`
+
+**Flow:**
+- Render supported assets per chain using local metadata
+- Useful for user discovery and command completion
+
+---
+
+## 6. Execution Context Shape
+
+Session state stored under `context.protocolState.get('wormhole')`:
+
+```typescript
 interface WormholeState {
   lastQuote?: {
     bestRoute: RouteSummary
@@ -190,46 +280,117 @@ interface WormholeState {
 }
 ```
 
-Update this object after each command to keep CLI flows stateless from the user’s perspective.
+Updated after each command to maintain session continuity.
 
 ---
 
-## 8. Terminal UX Considerations
+## 7. Terminal UX Considerations
 
-- **Isolation**: rely on existing `ρ`/`ρ_f` behaviour—only wormhole commands + essential globals appear inside the fiber.
-- **Help output**: `help` already filters identities; ensure wormhole commands provide concise descriptions and aliases.
-- **Errors**: Provide actionable messages (“Unsupported chain pair”, “Run `wormhole:quote` first”, “Connect your wallet to Base (8453)”).
-- **History**: every command should append entries to `ExecutionContext.history` for auditing.
+- **Isolation**: Relies on `ρ`/`ρ_f` operators—only wormhole commands + essential globals appear inside the fiber
+- **Help output**: `help` command filters by fiber context; wormhole commands show concise descriptions and aliases
+- **Errors**: Actionable messages:
+  - "Unsupported chain pair: Base → Polygon"
+  - "Run `wormhole:quote` first to fetch routes"
+  - "Connect your wallet to Base (8453)"
+- **History**: Every command appends entries to `ExecutionContext.history` for auditability
 
 ---
 
-## 9. Implementation Checklist
+## 8. Implementation Status
 
-1. Scaffold plugin:
-   ```bash
-   cp -r src/plugins/_template src/plugins/wormhole
-   # prune template commands, keep metadata + structure
-   ```
-2. Replace metadata (`id: 'wormhole'`, etc.) and register commands.
-3. Implement command logic in `commands.ts` using helpers + API routes.
-4. Build shared library in `src/lib/wormhole/`.
-5. Create API route handlers (`quote`, `bridge`, optionally `status`, `tokens`).
-6. Write tests:
-   - Unit tests for helpers (token resolution, serialization).
-   - Integration tests ensuring `composeCommands` keeps results in `G_p`.
-   - Mocked API route tests verifying shape of responses.
-7. Update docs (`FIBERED-MONOID-SPEC.md`, protocol catalog) once live.
+### ✅ Completed
+
+- [x] Plugin scaffold (`src/plugins/wormhole/`)
+- [x] Fiber metadata (`id: 'wormhole'`, tags, protocol-specific identity)
+- [x] Command registration via `addCommandToFiber`
+- [x] API route handlers (`/quote`, `/bridge`)
+- [x] Shared library (`src/lib/wormhole/`)
+- [x] CLI commands (`quote`, `routes`, `bridge`, `chains`)
+- [x] Execution context state management
+- [x] Wallet integration (viem/wagmi)
+- [x] Multi-step transaction execution
+- [x] Error handling and user feedback
+
+### 🚧 Planned
+
+- [ ] `/api/wormhole/status` endpoint
+- [ ] `statusCommand` implementation
+- [ ] `tokensCommand` implementation
+- [ ] Unit tests for helpers (token resolution, serialization)
+- [ ] Integration tests for fiber closure (`composeCommands` in `G_p`)
+- [ ] Mocked API route tests
+
+### 📝 Documentation
+
+- [x] Architecture document (this file)
+- [x] API reference in `/src/app/api/README.md`
+- [x] Protocol catalog in `/FIBERED-MONOID-SPEC.md`
+- [x] Main README updated
+
+---
+
+## 9. Usage Examples
+
+### Basic Bridge Flow
+
+```bash
+# Enter Wormhole fiber
+use wormhole
+
+# Get quote for bridging USDC from Base to Arbitrum
+quote base arbitrum usdc 1
+
+# View all available routes
+routes
+
+# Execute bridge transaction
+bridge
+
+# Check status (future)
+status
+
+# Exit fiber
+exit
+```
+
+### Advanced Options
+
+```bash
+# Quote with custom destination address
+wormhole:quote base arbitrum usdc 1 --receiver 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+
+# Select specific route before bridging
+routes --select 2
+
+# Auto-confirm bridge (skip prompt)
+bridge --yes
+
+# View supported chains
+chains
+```
 
 ---
 
 ## 10. Future Enhancements
 
-- Add flags for relay fee preferences / native gas funding (pass through to SDK).
-- Support automatic destination chain completion flows when SDK exposes them.
-- Persist wormhole route cache between sessions (local storage or server state).
-- Explore cross-fiber compositions once ambient identity workflows are formalised.
+- Add `--slippage` flag for relay fee preferences
+- Support native gas funding options (pass through to SDK)
+- Automatic destination chain completion flows when SDK exposes them
+- Persistent route cache between sessions (local storage/server state)
+- Cross-fiber compositions once ambient identity workflows are formalized
+- Batch bridging (multiple transfers in one session)
+- Gas estimation display before execution
 
 ---
 
-With this blueprint the `wormhole` plugin can be implemented as a proper `M_p` submonoid that faithfully reproduces the Wormhole SDK workflow within The DeFi Terminal.
+## 11. Related Documentation
 
+- **Main README**: `/README.md` - Project overview and setup
+- **Fibered Monoid Spec**: `/FIBERED-MONOID-SPEC.md` - Algebraic architecture
+- **Plugin Guide**: `/src/plugins/README.md` - Plugin development
+- **API Reference**: `/src/app/api/README.md` - API routes documentation
+- **Stargate Architecture**: `/src/plugins/stargate/ARCHITECTURE.md` - Similar bridge implementation
+
+---
+
+**Summary:** The `wormhole` plugin implements a proper `M_p` submonoid that faithfully reproduces the Wormhole SDK workflow within The DeFi Terminal, maintaining all algebraic guarantees of the fibered monoid architecture.

@@ -1,224 +1,509 @@
-# Wormhole Bridge Integration Architecture
+# The DeFi Terminal - System Architecture
 
-This document captures the current implementation inside `/home/nick/dev/wormhole-api-nextjs` and defines how to translate it into an `M_p` fiber plugin for The DeFi Terminal. It mirrors the level of detail used for the Stargate/Li.Fi architecture notes and focuses on preparing a `wormhole` submonoid with a first-class `bridge` command.
+**Last Updated:** 2025-10-17
+**Version:** 0.1.0
 
----
-
-## 1. Goals
-
-- Expose Wormhole cross-chain token transfers through a dedicated protocol fiber `M_wormhole`.
-- Reuse the proven workflow implemented in the Next.js reference app:
-  1. Quote routes using the Wormhole SDK resolver.
-  2. Let users preview routes/fees/ETAs.
-  3. Execute the selected route by streaming the necessary transactions through the connected wallet.
-- Preserve the fibered monoid guarantees: protocol-specific identity, closure, and isolation from other fibers.
-- Provide CLI ergonomics comparable to the UI (`wormhole:quote`, `wormhole:routes`, `wormhole:bridge`, `wormhole:status`).
+This document provides an overview of The DeFi Terminal's system architecture, focusing on how components interact to provide a mathematically rigorous, composable CLI for DeFi protocols.
 
 ---
 
-## 2. Reference Implementation Summary
+## Table of Contents
 
-Source: `src/app/lib/wormhole.ts`, `src/app/components/Bridge.tsx`, and supporting libs.
-
-1. **SDK bootstrapping**
-   - `wormhole('Mainnet', [evm])` initialises the SDK.
-   - Resolver combines multiple route types (Automatic CCTP, manual CCTP, automatic token bridge, manual token bridge) to favour fast paths first.
-
-2. **Signer bridging**
-   - `createWormholeSigner` wraps a `WalletClient` (Viem) by converting it to an ethers-style signer that overrides `signAndSend` to directly broadcast transactions.
-   - This avoids using unsupported `eth_signTransaction` flows while still satisfying the Wormhole SDK’s expectations.
-
-3. **Route discovery**
-   - `getTransferQuote`:
-     - Resolves chain contexts (`wh.getChain`).
-     - Builds a `tokenId` (special casing native gas token address).
-     - Finds destination-compatible token representations via `resolver.supportedDestinationTokens`.
-     - Creates a `RouteTransferRequest`, injecting sender/receiver addresses.
-     - Calls `resolver.findRoutes` returning prioritised routes (first is “best”).
-   - `getQuotesForAllRoutes` loops through candidate routes to validate and quote transfer costs/ETAs.
-
-4. **Execution**
-   - `initiateTransfer` validates the chosen route, re-quotes, and then calls `route.initiate(...)` using the custom signer. It returns receipts containing origin transaction hashes.
-
-5. **UI Flow (`Bridge.tsx`)**
-   - Collects inputs (chains, token, amount, route selection).
-   - Calls `getTransferQuote` → `getQuotesForAllRoutes`.
-   - Shows route list, allowing selection.
-   - Uses `createWormholeSigner` & `initiateTransfer` to execute, then surfaces WormholeScan links.
-
-These behaviours are what we must port into the terminal plugin and supporting API endpoints.
+1. [Overview](#overview)
+2. [Core Architecture](#core-architecture)
+3. [Algebraic Foundation](#algebraic-foundation)
+4. [Component Layers](#component-layers)
+5. [Data Flow](#data-flow)
+6. [Plugin System](#plugin-system)
+7. [API Layer](#api-layer)
+8. [Frontend Architecture](#frontend-architecture)
+9. [Related Documentation](#related-documentation)
 
 ---
 
-## 3. Target Fiber Design (`M_wormhole`)
+## Overview
 
-| Attribute      | Value                                                            |
-|----------------|------------------------------------------------------------------|
-| Protocol ID    | `wormhole`                                                       |
-| Scope          | `G_p`                                                             |
-| Identity       | Added via `createProtocolFiber('wormhole', ...)` (scope `G_p`)   |
-| Isolation      | Commands only callable inside `M_wormhole` session               |
-| Tags           | `['bridge', 'cross-chain', 'wormhole']`                          |
+The DeFi Terminal is a Next.js application that implements a terminal-based interface for interacting with multiple DeFi protocols. The architecture is built on a **fibered monoid** algebraic structure that provides:
 
-### Command Set (Initial)
+- **Protocol Isolation**: Each protocol operates in its own algebraic fiber
+- **Type-Safe Composition**: Commands can be chained with compile-time guarantees
+- **Flexible Resolution**: Commands resolve via exact, fuzzy, or namespace-based matching
+- **Extensibility**: New protocols can be added via a plugin system
 
-| Command          | Purpose                                                        | Aliases                   |
-|------------------|----------------------------------------------------------------|---------------------------|
-| `quote`          | Fetch candidate routes and summarise best ETA/fees             | `estimate`, `preview`     |
-| `routes`         | Display full list of available routes + metadata               | `options`                 |
-| `select`         | Mark a specific route as active (optional, else `quote` picks) | `choose`                  |
-| `bridge`         | Execute the selected route using cached quote + wallet signer  | `transfer`, `execute`     |
-| `status`         | Query WormholeScan / route status via tx hash                  | `track`                   |
+### Technology Stack
 
-Implementation lives in `src/plugins/wormhole/commands.ts`. All commands must set `scope: 'G_p'` and `protocol: 'wormhole'`, be registered via `addCommandToFiber`, and rely on protocol identity for no-op operations.
+- **Frontend**: Next.js 15, React 19, TypeScript
+- **Styling**: Tailwind CSS 4
+- **Wallet**: RainbowKit + wagmi + viem
+- **State Management**: React hooks + ExecutionContext
+- **Architecture**: Fibered Monoid (algebraic structure)
 
 ---
 
-## 4. Backend API Surface
+## Core Architecture
 
-Create Next.js API routes under `src/app/api/wormhole/`:
+### High-Level System Diagram
 
-1. **`/api/wormhole/quote` (POST)**
-   - Request body: `{ sourceChainId, destChainId, tokenAddress, amount, sourceAddress, destAddress }`.
-   - Map chain IDs to Wormhole chain names using a shared registry (`src/lib/wormhole/chains.ts`).
-   - Run the same logic as `getTransferQuote` + `getQuotesForAllRoutes`.
-   - Response (for `apiToCommandResult`):
-     ```json
-     {
-       "success": true,
-       "data": {
-         "bestRoute": { ... },     // summary digest friendly for CLI display
-         "quotes": [ ... ],        // array of route+quote details
-         "transferRequest": { ... },
-         "wormholeContext": { ... } // serialisable subset needed for execution
-       }
-     }
-     ```
-     Persist minimal route metadata (constructor name, required params) to avoid serialising SDK instances directly; store them in `ExecutionContext.protocolState`.
-
-2. **`/api/wormhole/bridge` (POST)**
-   - Accepts `transferRequest`, selected `routeType`, `laxQuoteParams`, plus wallet metadata.
-   - Recreates the resolver/route instances, validates, and returns the ordered transactions to execute.
-   - Does **not** broadcast itself; returns payload for CLI to send via wallet provider:
-     ```json
-     {
-       "success": true,
-       "data": {
-         "transactions": [
-           { "to": "...", "data": "0x...", "value": "0x0", "description": "ERC20 approval" },
-           { "to": "...", "data": "0x...", "value": "0x0", "description": "Bridge transfer" }
-         ],
-         "receiverChain": "...",
-         "scanUrl": "https://wormholescan.io/#/tx/<hash>?network=Mainnet"
-       }
-     }
-     ```
-
-3. **`/api/wormhole/routes` (POST)** (optional)
-   - Return list of available routes with metadata (ETA, fees, reliability) to drive the `routes` command without repeating `quote`.
-
-4. **`/api/wormhole/status` (GET)**
-   - Proxy WormholeScan or Wormhole SDK status query to provide CLI-friendly updates.
-
-Shared utilities should be extracted into `src/lib/wormhole/index.ts` (or similar) to avoid duplicating logic between API and plugin.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Frontend                             │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │  Terminal   │  │  RainbowKit  │  │   Tabs UI    │       │
+│  │    UI       │  │   Wallet     │  │   Context    │       │
+│  └──────┬──────┘  └──────┬───────┘  └──────┬───────┘       │
+│         │                │                  │                │
+│         └────────────────┴──────────────────┘                │
+│                          │                                   │
+└──────────────────────────┼───────────────────────────────────┘
+                           │
+┌──────────────────────────┼───────────────────────────────────┐
+│                    Core System                               │
+│  ┌────────────────────┐ │ ┌────────────────────────────┐    │
+│  │  Command Registry  │◄┼─┤  Resolution Operators      │    │
+│  │  (π, σ, ρ, ρ_f)   │ │ │  - Exact (ρ)               │    │
+│  └─────────┬──────────┘ │ │  - Fuzzy (ρ_f)             │    │
+│            │            │ │  - Projection (π)           │    │
+│  ┌─────────▼──────────┐ │ │  - Section (σ)             │    │
+│  │  Execution Context │ │ └────────────────────────────┘    │
+│  │  - Active Protocol │ │                                   │
+│  │  - Protocol State  │ │                                   │
+│  │  - History         │ │                                   │
+│  └────────────────────┘ │                                   │
+└──────────────────────────┼───────────────────────────────────┘
+                           │
+┌──────────────────────────┼───────────────────────────────────┐
+│                    Plugin Layer                              │
+│                          │                                   │
+│  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐             │
+│  │ 1inch  │  │  LiFi  │  │Wormhole│  │Stargate│             │
+│  │M_1inch │  │ M_lifi │  │M_wrmhl │  │M_starg │             │
+│  └───┬────┘  └───┬────┘  └───┬────┘  └───┬────┘             │
+│      │           │           │           │                   │
+└──────┼───────────┼───────────┼───────────┼───────────────────┘
+       │           │           │           │
+┌──────┼───────────┼───────────┼───────────┼───────────────────┐
+│                      API Layer                               │
+│  ┌───▼─────┐  ┌──▼──────┐  ┌──▼──────┐  ┌──▼──────┐         │
+│  │/api/    │  │/api/lifi│  │/api/    │  │/api/    │         │
+│  │1inch/   │  │ -routes │  │wormhole/│  │stargate/│         │
+│  │ -gas    │  │ -status │  │ -quote  │  │ -quote  │         │
+│  └─────────┘  └─────────┘  │ -bridge │  └─────────┘         │
+│                             └─────────┘                       │
+└──────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 5. Command Behaviour & Context Handling
+## Algebraic Foundation
 
-Use `ExecutionContext.protocolState.get('wormhole')` to store session data:
+The DeFi Terminal is built on a **fibered monoid** structure. See [FIBERED-MONOID-SPEC.md](./FIBERED-MONOID-SPEC.md) for the complete mathematical specification.
 
-```ts
-interface WormholeSessionState {
-  lastQuote?: {
-    bestRoute: RouteSummary
-    quotes: RouteSummary[]
-    transferRequest: SerializedTransferRequest
+### Key Concepts
+
+#### Monoid Structure (M, ∘, e)
+
+- **Set M**: All commands in the system
+- **Operation ∘**: Command composition
+- **Identity e**: No-op command (both global and protocol-specific)
+
+**Laws:**
+```
+(f ∘ g) ∘ h = f ∘ (g ∘ h)  (Associativity)
+e ∘ f = f                    (Left Identity)
+f ∘ e = f                    (Right Identity)
+```
+
+#### Command Scopes
+
+Commands are partitioned into three disjoint scopes:
+
+**G = G_core ∪ G_alias ∪ G_p**
+
+- **G_core**: Global commands (`help`, `balance`, `wallet`, `whoami`)
+- **G_alias**: Protocol-agnostic aliases (`swap`, `bridge` - binds at runtime)
+- **G_p**: Protocol-specific commands (`1inch:swap`, `wormhole:bridge`)
+
+#### Protocol Fibers (M_p)
+
+Each protocol has a **submonoid** M_p ⊆ M with:
+
+- **Closure**: f, g ∈ M_p ⇒ f ∘ g ∈ M_p
+- **Identity**: e_p ∈ M_p (protocol-specific identity)
+- **Isolation**: M_p ∩ M_q = ∅ for p ≠ q
+
+**Implementation:** `src/core/monoid.ts:createProtocolFiber`
+
+#### Resolution Operators
+
+- **π (Projection)**: M → Protocols ∪ {⊥} - Maps command to protocol
+- **σ (Section)**: Protocols → M_p - Returns protocol fiber
+- **ρ (Exact Resolver)**: (Protocols ∪ G) → M ∪ {⊥} - Deterministic resolution
+- **ρ_f (Fuzzy Resolver)**: (Protocols ∪ G) × ℝ → [M] - Levenshtein-based matching
+
+**Implementation:** `src/core/command-registry.ts`
+
+---
+
+## Component Layers
+
+### 1. Core Layer (`src/core/`)
+
+**Monoid System** (`monoid.ts`)
+- `identityCommand`: Global identity element
+- `composeCommands`: Binary composition operation
+- `createProtocolFiber`: Creates protocol submonoids with identity
+- `verifyMonoidLaws`: Test harness for algebraic properties
+
+**Command Registry** (`command-registry.ts`)
+- Implements resolution operators (π, σ, ρ, ρ_f)
+- Maintains command mappings (G_core, G_alias, G_p)
+- Handles protocol-local alias resolution
+- Enforces fiber isolation
+
+**Execution Context** (`types.ts`)
+- Active protocol tracking
+- Protocol state management (per-fiber state)
+- Command history
+- Wallet connection state
+
+**Core Commands** (`commands.ts`)
+- `help`: Fiber-aware command listing
+- `use`: Enter protocol fiber
+- `exit`: Exit protocol fiber
+- `history`: Command execution log
+- `wallet`: Wallet connection
+- `whoami`: Display connected address
+- `balance`: Show wallet balance
+
+### 2. Plugin Layer (`src/plugins/`)
+
+Each protocol plugin implements:
+
+```typescript
+interface Plugin {
+  metadata: {
+    id: ProtocolId
+    name: string
+    version: string
+    description: string
+    tags: string[]
   }
-  selectedRouteType?: string
-  pendingTxs?: string[]        // hashes from latest bridge execution
+
+  defaultConfig: PluginConfig
+
+  initialize(context: ExecutionContext): Promise<ProtocolFiber>
 }
 ```
 
-- `quoteCommand`:
-  - Parse input: `quote <fromChain> <toChain> <token> <amount> [--destToken SYMBOL --address DEST]`.
-  - Resolve token addresses/decimals from shared map (`src/lib/tokens.ts`).
-  - Call `/api/wormhole/quote`.
-  - Cache result in `protocolState`.
-  - Display best route summary (route type, ETA, relay fee, expected receive).
-  - Suggest `wormhole:routes` to inspect others.
+**Implemented Plugins:**
+- **1inch** (`src/plugins/1inch/`) - DEX aggregator
+- **LiFi** (`src/plugins/lifi/`) - Bridge aggregator
+- **Wormhole** (`src/plugins/wormhole/`) - Cross-chain bridge
+- **Stargate** (`src/plugins/stargate/`) - LayerZero bridge
 
-- `routesCommand`:
-  - Use cached quote; if missing, prompt running `quote`.
-  - Render all route options with indexes; optionally accept `routes --select <n>` to update `selectedRouteType`.
+**Plugin Structure:**
+```
+src/plugins/[protocol]/
+├── index.ts          # Plugin metadata & initialization
+├── commands.ts       # Protocol commands (G_p scope)
+├── types.ts          # Protocol-specific types
+└── ARCHITECTURE.md   # Protocol-specific docs
+```
 
-- `bridgeCommand`:
-  - Require connected wallet + cached quote.
-  - Ensure wallet chain matches source chain; instruct user to `use base` etc.
-  - Hit `/api/wormhole/bridge`, passing selected route.
-  - Iterate returned transactions:
-    1. Present summary.
-    2. Confirm unless `--yes`.
-    3. Use `walletClient.sendTransaction`.
-  - Record hashes in context history (`updateExecutionContext`).
-  - Return final summary with WormholeScan link.
+### 3. API Layer (`src/app/api/`)
 
-- `statusCommand`:
-  - Accept tx hash or use last hash.
-  - Call `/api/wormhole/status`.
-  - Print human-readable stage (pending, attested, delivered).
+Next.js API routes organized by protocol:
 
-Ensure all commands log to `ExecutionContext.history` for auditability.
+```
+src/app/api/
+├── 1inch/
+│   └── gas/route.ts
+├── lifi/
+│   ├── routes/route.ts
+│   ├── step-transaction/route.ts
+│   ├── test-key/route.ts
+│   └── status/route.ts
+├── wormhole/
+│   ├── quote/route.ts
+│   └── bridge/route.ts
+└── stargate/
+    └── quote/route.ts
+```
 
----
+**Standard Response Format:**
+```typescript
+// Success
+{ success: true, data: T }
 
-## 6. CLI UX Notes
+// Error
+{ success: false, error: string }
+```
 
-- **Namespace**: Provide protocol-local aliases (`wormhole:bridge`) and short forms (`bridge` when inside fiber).
-- **Help integration**: hide protocol identity command; show `quote`, `routes`, `bridge`, `status`, plus essential globals (`help`, `exit`, `history`).
-- **Isolation**: `ρ`/`ρ_f` already enforce fiber isolation. Double-check that fuzzy search inside `M_wormhole` only returns wormhole commands + allowed globals.
-- **Errors**: Return explicit messages for unsupported chain/token combinations, missing quotes, or wallet chain mismatches.
+### 4. Frontend Layer (`src/app/` & `src/components/`)
 
----
+**Terminal UI** (`src/components/terminal.tsx`)
+- Command input handling
+- Output rendering
+- Command history (up/down arrows)
+- Tab management
 
-## 7. Implementation Checklist
-
-1. **Scaffold Plugin**
-   - `cp -r src/plugins/_template src/plugins/wormhole`.
-   - Update metadata (id `wormhole`, name `Wormhole Bridge`, tags).
-   - Replace template commands with wormhole-specific ones.
-
-2. **Server Routes & Helpers**
-   - Create `src/app/api/wormhole/quote/route.ts`, `/bridge/route.ts`, `/status/route.ts`.
-   - Extract shared logic into `src/lib/wormhole/` (chain map, token helpers, converter functions, serialization utilities).
-   - Reuse existing `TOKENS`, `CHAINS`, and `wormhole.ts` logic—refactor into modular functions consumable by both API and CLI layers.
-
-3. **Command Implementation**
-   - Implement `quote`, `routes`, `bridge`, `status` commands using `callProtocolApi`.
-   - Update `ExecutionContext` state as described.
-   - Register commands in `initialize`.
-
-4. **Terminal Wiring**
-   - Ensure plugin loader registers `wormhole` plugin (either statically or via config).
-   - Confirm `helpCommand` (fiber-aware) presents commands correctly.
-
-5. **Testing**
-   - Unit tests for helper utilities (token resolution, chain mapping).
-   - Mock Wormhole SDK calls to validate API handler transformations.
-   - Add integration tests verifying `composeCommands` keeps outputs within `G_p`, and that `wormhole` commands respect isolation.
-
-6. **Documentation**
-   - Once implementation lands, update protocol catalog in the main repo (`FIBERED-MONOID-SPEC.md`) with Wormhole info.
+**Main Page** (`src/app/page.tsx`)
+- RainbowKit wallet provider
+- Tabbed terminal instances
+- Execution context management
 
 ---
 
-## 8. Future Enhancements
+## Data Flow
 
-- Add slippage and gas-options flags (`--gas`, `--nativeGas`) mirroring SDK parameters.
-- Support automatic completion on destination chain when required (e.g., swap-out flows).
-- Persist route cache across sessions (local storage or server state).
-- Explore cross-fiber compositions (e.g., `wormhole:bridge` followed by `uniswap:swap`) once ambient identity workflows are formalised.
+### Command Execution Flow
+
+```
+1. User Input
+   └─> Terminal UI captures input
+
+2. Resolution
+   └─> CommandRegistry.ρ(input, context)
+       ├─> Check G_core (global commands)
+       ├─> Check G_alias (aliased commands)
+       └─> Check G_p (protocol-specific)
+           ├─> Explicit: --protocol flag
+           ├─> Namespace: protocol:command
+           └─> Active protocol context
+
+3. Execution
+   └─> command.run(args, context)
+       ├─> May call API routes
+       ├─> May update ExecutionContext
+       └─> Returns CommandResult
+
+4. Rendering
+   └─> Terminal displays result
+       └─> Update history
+```
+
+### Protocol State Management
+
+```typescript
+ExecutionContext {
+  activeProtocol?: ProtocolId        // Current fiber (or undefined = M_G)
+
+  protocolState: Map<ProtocolId, any> // Per-protocol session state
+  // Example for wormhole:
+  // {
+  //   'wormhole': {
+  //     lastQuote: {...},
+  //     selectedRoute: 'AutomaticCCTPRoute',
+  //     lastTxHashes: ['0x...']
+  //   }
+  // }
+
+  history: CommandHistoryEntry[]     // Execution log
+
+  wallet: {                          // Wallet connection
+    address?: string
+    chainId?: number
+    isConnected: boolean
+  }
+}
+```
 
 ---
 
-With this architecture, the repository is ready to expose Wormhole bridging as a proper `M_p` submonoid plugin, ensuring feature parity with the existing Next.js implementation while respecting the terminal’s algebraic structure. 
+## Plugin System
+
+### Creating a New Plugin
+
+1. **Scaffold:**
+   ```bash
+   cp -r src/plugins/_template src/plugins/my-protocol
+   ```
+
+2. **Update Metadata** (`index.ts`):
+   ```typescript
+   export const myProtocolPlugin: Plugin = {
+     metadata: {
+       id: 'my-protocol',
+       name: 'My Protocol',
+       version: '1.0.0',
+       description: 'My DeFi protocol integration',
+       tags: ['dex', 'swap']
+     },
+
+     async initialize(context) {
+       const fiber = createProtocolFiber('my-protocol', 'My Protocol')
+       addCommandToFiber(fiber, swapCommand)
+       return fiber
+     }
+   }
+   ```
+
+3. **Define Commands** (`commands.ts`):
+   ```typescript
+   export const swapCommand: Command = {
+     id: 'swap',
+     scope: 'G_p',
+     protocol: 'my-protocol',
+     description: 'Swap tokens',
+
+     async run(args, context) {
+       // Implementation
+       return { success: true, value: result }
+     }
+   }
+   ```
+
+4. **Create API Routes** (`src/app/api/my-protocol/`):
+   ```typescript
+   // src/app/api/my-protocol/quote/route.ts
+   export async function POST(request: NextRequest) {
+     // Implementation
+     return NextResponse.json({ success: true, data: {...} })
+   }
+   ```
+
+5. **Register Plugin** (`src/plugins/index.ts`):
+   ```typescript
+   import { myProtocolPlugin } from './my-protocol'
+   export const plugins = [myProtocolPlugin, ...]
+   ```
+
+---
+
+## API Layer
+
+### Design Principles
+
+1. **Protocol Isolation**: Each protocol has its own `/api/[protocol]/` namespace
+2. **Standard Format**: All routes return `{ success, data | error }`
+3. **No Direct Wallet Access**: Routes return transaction data; client signs
+4. **Stateless**: Session state managed in ExecutionContext (client-side)
+
+### Example API Route
+
+```typescript
+// src/app/api/my-protocol/quote/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+
+    // Validate
+    if (!body.tokenIn || !body.tokenOut) {
+      return NextResponse.json(
+        { success: false, error: 'Missing required parameters' },
+        { status: 400 }
+      )
+    }
+
+    // Call protocol API/SDK
+    const quote = await getQuote(body)
+
+    // Return standard format
+    return NextResponse.json({
+      success: true,
+      data: quote
+    })
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    )
+  }
+}
+```
+
+---
+
+## Frontend Architecture
+
+### Terminal Component
+
+**State Management:**
+- Command history (stored in ExecutionContext)
+- Input buffer (local state)
+- Active tab (local state)
+- Wallet connection (wagmi hooks)
+
+**Key Features:**
+- Multi-line command support
+- Arrow key history navigation
+- Tab completion (via ρ_f fuzzy resolver)
+- Protocol context indicator (e.g., `user@1inch>`)
+
+### Execution Context Provider
+
+```typescript
+const ExecutionContextProvider: React.FC = ({ children }) => {
+  const [contexts, setContexts] = useState<Map<string, ExecutionContext>>()
+
+  // Each tab gets its own ExecutionContext
+  // Allows independent protocol sessions
+
+  return (
+    <ExecutionContextContext.Provider value={{contexts, setContexts}}>
+      {children}
+    </ExecutionContextContext.Provider>
+  )
+}
+```
+
+---
+
+## Related Documentation
+
+- **[README.md](./README.md)** - Project overview and setup
+- **[FIBERED-MONOID-SPEC.md](./FIBERED-MONOID-SPEC.md)** - Complete algebraic specification
+- **[src/app/api/README.md](./src/app/api/README.md)** - API routes reference
+- **[src/plugins/README.md](./src/plugins/README.md)** - Plugin development guide
+- **[src/plugins/wormhole/ARCHITECTURE.md](./src/plugins/wormhole/ARCHITECTURE.md)** - Wormhole integration
+- **[src/plugins/stargate/ARCHITECTURE.md](./src/plugins/stargate/ARCHITECTURE.md)** - Stargate integration
+
+---
+
+## Implementation Status
+
+### ✅ Completed (v0.1.0)
+
+- [x] Core monoid system with proper identity and composition
+- [x] Command registry with all resolution operators (π, σ, ρ, ρ_f)
+- [x] Execution context and state management
+- [x] Protocol fiber isolation
+- [x] Plugin system and loader
+- [x] 1inch plugin (swap, quote, chains, tokens)
+- [x] LiFi plugin (health, quote, routes, execute, prepare, chains, status)
+- [x] Wormhole plugin (quote, routes, bridge, chains)
+- [x] Stargate plugin (quote, bridge, chains)
+- [x] RainbowKit wallet integration
+- [x] Tabbed terminal UI
+- [x] Command history and aliases
+- [x] Fuzzy command matching
+
+### 🚧 In Progress
+
+- [ ] Unit tests for core monoid operations
+- [ ] Integration tests for fiber closure
+- [ ] Status commands for bridges (Wormhole, Stargate)
+- [ ] Token listing commands
+
+### 📋 Planned (v0.2.0+)
+
+- [ ] Ambient identity for cross-fiber workflows
+- [ ] G_alias command support (when 2+ protocols share functionality)
+- [ ] Command composition macros
+- [ ] Transaction batching
+- [ ] Multi-chain wallet support
+- [ ] Additional protocol integrations (Uniswap, Aave, Curve)
+
+---
+
+**Version History:**
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 0.1.0 | 2025-10-17 | Initial architecture document |
+
+---
+
+For questions or contributions, see [Contributing](#) section in main README.
