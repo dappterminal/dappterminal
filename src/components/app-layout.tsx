@@ -125,7 +125,7 @@ export function AppLayout() {
           {/* Header */}
           <header className="flex items-center justify-between h-20 px-8 border-b border-[#262626] flex-shrink-0">
             <div className="flex items-center space-x-8 text-base">
-              <h1 className="text-xl font-semibold text-white">The (Decentralized) Finance Terminal</h1>
+              <h1 className="text-xl font-semibold text-white">fi.computer</h1>
             </div>
             <div className="flex items-center space-x-4">
               <ConnectButton.Custom>

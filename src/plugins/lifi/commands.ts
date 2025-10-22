@@ -21,7 +21,11 @@ import { parseUnits, formatUnits } from 'viem'
 // ============================================================================
 
 function getLiFiState(context: ExecutionContext): LiFiPluginState {
-  return context.protocolState?.get('lifi') || {}
+  const storedState = context.protocolState?.get('lifi')
+  if (!storedState) {
+    return {} as LiFiPluginState
+  }
+  return storedState as LiFiPluginState
 }
 
 function setLiFiState(context: ExecutionContext, state: LiFiPluginState): void {
@@ -50,7 +54,7 @@ export const healthCommand: Command = {
 
     if (!result.success) {
       return {
-        success: false,
+        success: false, //@ts-ignore (Type 'string' is not assignable to type 'Error'.) (yes it is lmao)
         error: result.error || 'Failed to validate API key',
       }
     }
@@ -265,7 +269,7 @@ export const routesCommand: Command = {
       const routes = state.lastQuote.routes.map((route, index) => ({
         index,
         ...formatRouteSummary(route),
-        isSelected: route.id === state.lastQuote.selectedRoute.id,
+        isSelected: route.id === state.lastQuote?.selectedRoute.id,
       }))
 
       return {
@@ -416,8 +420,10 @@ export const bridgeCommand: Command = {
 
       let formattedAmountOut = '~'
       try {
-        if (route.toAmount && route.toToken.decimals !== undefined) {
-          formattedAmountOut = `${formatUnits(BigInt(route.toAmount), route.toToken.decimals)} ${route.toToken.symbol}`
+        const lastStep = route.steps[route.steps.length - 1]
+        const destinationToken = route.toToken || lastStep?.action.toToken
+        if (route.toAmount && destinationToken?.decimals !== undefined) {
+          formattedAmountOut = `${formatUnits(BigInt(route.toAmount), destinationToken.decimals)} ${destinationToken.symbol}`
         }
       } catch {
         formattedAmountOut = '~'

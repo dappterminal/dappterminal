@@ -9,11 +9,14 @@
 // ============================================================================
 
 export interface LiFiRoute {
+  integrator: string | undefined
   id: string
   fromChainId: number
   toChainId: number
   fromTokenAddress: string
   toTokenAddress: string
+  fromToken?: LiFiToken
+  toToken?: LiFiToken
   fromAmount: string
   toAmount: string
   toAmountMin: string
@@ -205,7 +208,7 @@ export interface LiFiHealthResponse {
 // Plugin State Types
 // ============================================================================
 
-export interface LiFiPluginState {
+export interface LiFiPluginState extends Record<string, unknown> {
   lastQuote?: {
     routes: LiFiRoute[]
     selectedRoute: LiFiRoute
