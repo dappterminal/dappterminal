@@ -27,6 +27,7 @@ interface TerminalTab {
   id: string
   name: string
   history: HistoryItem[]
+  executionContext: ExecutionContext
 }
 
 const MAX_COMMAND_HISTORY = 1000 // Maximum commands to keep in history
@@ -284,7 +285,6 @@ export function Terminal() {
   const [showSettingsPage, setShowSettingsPage] = useState(false)
   const [showDocsPage, setShowDocsPage] = useState(false)
   const [fontSize, setFontSize] = useState(15)
-  const [executionContext, setExecutionContext] = useState<ExecutionContext | null>(null)
   const [fuzzyMatches, setFuzzyMatches] = useState<string[]>([])
   const [selectedMatchIndex, setSelectedMatchIndex] = useState(0)
   const [isExecuting, setIsExecuting] = useState(false)
@@ -298,6 +298,10 @@ export function Terminal() {
     address,
     chainId: mainnet.id,
   })
+
+  // Get active tab and its execution context
+  const activeTab = tabs.find(tab => tab.id === activeTabId)
+  const executionContext = activeTab?.executionContext ?? null
 
   // Generate prompt based on wallet state and active protocol
   const activeProtocol = executionContext?.activeProtocol
@@ -337,7 +341,6 @@ export function Terminal() {
 
     // Create execution context
     const context = createExecutionContext()
-    setExecutionContext(context)
 
     // Load 1inch plugin
     pluginLoader.loadPlugin(oneInchPlugin, undefined, context).then(result => {
@@ -401,7 +404,8 @@ export function Terminal() {
           output: ["Welcome to The DeFi Terminal. Type 'help' to see available commands."],
           timestamp: new Date()
         }
-      ]
+      ],
+      executionContext: context
     }
     setTabs([initialTab])
     setActiveTabId("1")
@@ -436,7 +440,6 @@ export function Terminal() {
     }
   }, [showSettings])
 
-  const activeTab = tabs.find(tab => tab.id === activeTabId)
   const history = activeTab?.history || []
 
   // Simple, reliable auto-scroll to bottom when history changes
@@ -467,23 +470,40 @@ export function Terminal() {
 
   // Sync wallet state to execution context
   useEffect(() => {
-    if (executionContext) {
-      setExecutionContext(prev => prev ? {
-        ...prev,
-        wallet: {
-          address,
-          chainId,
-          isConnected,
-          isConnecting,
-          isDisconnecting: false, // wagmi v2 doesn't expose this
-        }
-      } : prev)
+    if (executionContext && activeTabId) {
+      setTabs(prevTabs => prevTabs.map(tab =>
+        tab.id === activeTabId
+          ? {
+              ...tab,
+              executionContext: {
+                ...tab.executionContext,
+                wallet: {
+                  address,
+                  chainId,
+                  isConnected,
+                  isConnecting,
+                  isDisconnecting: false, // wagmi v2 doesn't expose this
+                }
+              }
+            }
+          : tab
+      ))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, chainId, isConnected, isConnecting])
 
   const addNewTab = () => {
     const newId = (tabs.length + 1).toString()
+
+    // Create a new execution context for this tab
+    const newContext = createExecutionContext()
+
+    // Load plugins for the new context
+    pluginLoader.loadPlugin(oneInchPlugin, undefined, newContext)
+    pluginLoader.loadPlugin(stargatePlugin, undefined, newContext)
+    pluginLoader.loadPlugin(wormholePlugin, undefined, newContext)
+    pluginLoader.loadPlugin(lifiPlugin, undefined, newContext)
+
     const newTab: TerminalTab = {
       id: newId,
       name: "defi",
@@ -493,18 +513,11 @@ export function Terminal() {
           output: ["Welcome to The DeFi Terminal. Type 'help' to see available commands."],
           timestamp: new Date()
         }
-      ]
+      ],
+      executionContext: newContext
     }
     setTabs([...tabs, newTab])
     setActiveTabId(newId)
-
-    // Exit protocol fiber - new tabs start in M_G (global monoid)
-    if (executionContext) {
-      setExecutionContext({
-        ...executionContext,
-        activeProtocol: undefined
-      })
-    }
   }
 
   const closeTab = (tabId: string) => {
@@ -1800,7 +1813,13 @@ export function Terminal() {
         console.log('[executeCommand] Before update - context.activeProtocol:', executionContext.activeProtocol)
         console.log('[executeCommand] After update - updatedContext.activeProtocol:', updatedContext.activeProtocol)
         console.log('[executeCommand] Setting new execution context...')
-        setExecutionContext(updatedContext)
+
+        // Update the active tab's execution context
+        setTabs(prevTabs => prevTabs.map(tab =>
+          tab.id === activeTabId
+            ? { ...tab, executionContext: updatedContext }
+            : tab
+        ))
 
         // Handle clear command
         if (output.length === 0 && result.success && 'cleared' in (result.value as any)) {
