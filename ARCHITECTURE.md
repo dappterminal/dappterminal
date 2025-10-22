@@ -241,7 +241,7 @@ src/app/api/
 
 ### 4. Frontend Layer (`src/app/` & `src/components/`)
 
-**Terminal UI** (`src/components/terminal.tsx`)
+**CLI UI** (`src/components/cli.tsx`)
 - Command input handling
 - Output rendering
 - Command history (up/down arrows)

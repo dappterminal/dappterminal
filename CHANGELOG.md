@@ -114,7 +114,7 @@ s eth usdc 0.1  # ✅ Resolves to '1inch:swap'
 - **Issue**: Balance command overwrote last previous command output
 - **Impact**: History item corruption when multiple async operations running
 - **Fix**: Use timestamp-based tracking instead of array index
-- **Location**: `src/components/terminal.tsx`
+- **Location**: `src/components/cli.tsx`
 - **Result**: Each async operation correctly updates its own history item
 
 ### Changed

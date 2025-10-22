@@ -1,0 +1,90 @@
+/**
+ * Chart types and interfaces for price data and analytics
+ */
+
+export type ChartType = 'candlestick' | 'line' | 'bar' | 'area' | 'graph'
+export type TimeRange = '1H' | '24H' | '7D' | '30D' | '1Y' | 'ALL'
+
+/**
+ * OHLC data for candlestick charts
+ */
+export interface OHLCData {
+  timestamp: number
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+/**
+ * Simple price point for line charts
+ */
+export interface PricePoint {
+  timestamp: number
+  price: number
+}
+
+/**
+ * Performance metric data
+ */
+export interface PerformanceMetric {
+  label: string
+  value: number
+  change?: number // percentage change
+  color?: string
+}
+
+/**
+ * Network graph node
+ */
+export interface GraphNode {
+  id: string
+  name: string
+  type: 'protocol' | 'chain' | 'token'
+  value?: number // size of node
+  color?: string
+  category?: number
+}
+
+/**
+ * Network graph edge/link
+ */
+export interface GraphLink {
+  source: string
+  target: string
+  value?: number // strength of connection
+  label?: string
+}
+
+/**
+ * Network graph data
+ */
+export interface NetworkGraphData {
+  nodes: GraphNode[]
+  links: GraphLink[]
+  categories?: Array<{ name: string }>
+}
+
+/**
+ * Chart data wrapper for API responses
+ */
+export interface ChartDataResponse<T> {
+  data: T
+  symbol?: string
+  lastUpdate?: number
+  timeRange?: TimeRange
+}
+
+/**
+ * Chart configuration options
+ */
+export interface ChartConfig {
+  height?: number
+  showGrid?: boolean
+  showTooltip?: boolean
+  showLegend?: boolean
+  theme?: 'dark' | 'light'
+  autoRefresh?: boolean
+  refreshInterval?: number // milliseconds
+}

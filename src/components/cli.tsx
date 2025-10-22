@@ -274,7 +274,11 @@ function formatCommandResult(result: CommandResult): string[] {
   return [String(value)]
 }
 
-export function Terminal() {
+export interface CLIProps {
+  className?: string
+}
+
+export function CLI({ className = '' }: CLIProps = {}) {
   const [mounted, setMounted] = useState(false)
   const [tabs, setTabs] = useState<TerminalTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string>("")
@@ -1997,7 +2001,7 @@ export function Terminal() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-[#0A0A0A]">
+    <div className={`flex h-screen flex-col bg-[#0A0A0A] ${className}`}>
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside className="w-20 flex flex-col items-center bg-[#141414] py-6 border-r border-[#262626]">
