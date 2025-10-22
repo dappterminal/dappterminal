@@ -15,6 +15,7 @@ export interface PerformanceChartProps {
   height?: number
   className?: string
   title?: string
+  resizeKey?: number
 }
 
 export function PerformanceChart({
@@ -22,6 +23,7 @@ export function PerformanceChart({
   height = 300,
   className = '',
   title = 'Performance Metrics',
+  resizeKey,
 }: PerformanceChartProps) {
   // Generate mock data if not provided
   const metrics = useMemo(() => data || generateMockPerformanceMetrics(), [data])
@@ -68,10 +70,10 @@ export function PerformanceChart({
         },
       },
       grid: {
-        left: '3%',
-        right: '3%',
-        bottom: '3%',
-        top: '15%',
+        left: 30,
+        right: 30,
+        bottom: 30,
+        top: 40,
         containLabel: true,
       },
       xAxis: {
@@ -114,7 +116,7 @@ export function PerformanceChart({
 
   return (
     <div className={className}>
-      <BaseChart option={option} height={height} />
+      <BaseChart option={option} height={height} resizeKey={resizeKey} />
 
       {/* Metric cards below chart */}
       <div className="mt-4 grid grid-cols-3 gap-2 px-2">

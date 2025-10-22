@@ -2001,178 +2001,7 @@ export function CLI({ className = '' }: CLIProps = {}) {
   }
 
   return (
-    <div className={`flex h-screen flex-col bg-[#0A0A0A] ${className}`}>
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-20 flex flex-col items-center bg-[#141414] py-6 border-r border-[#262626]">
-          <div className="p-2 mb-10">
-            {/* <div className="text-white text-2xl font-bold">
-              D<sup className="text-lg">3</sup>
-            </div> */}
-          </div>
-          <nav className="flex flex-col items-center space-y-8 flex-1">
-            {/* Terminal Icon with Tooltip */}
-            <div className="relative group">
-              <a href="#" className="text-white block p-2 hover:bg-[#1a1a1a] rounded-lg transition-colors">
-                <TerminalIcon className="w-6 h-6" />
-              </a>
-              <div className="absolute left-full ml-2 px-3 py-1.5 bg-[#1a1a1a] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 border border-[#262626]">
-                Terminal
-              </div>
-            </div>
-
-
-
-            {/* Automation Icon with Tooltip */}
-            <div className="relative group">
-              <a href="#" className="text-[#737373] opacity-50 pointer-events-none block p-2 rounded-lg transition-colors">
-                <Zap className="w-6 h-6" />
-              </a>
-              <div className="absolute left-full ml-2 px-3 py-1.5 bg-[#1a1a1a] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 border border-[#262626]">
-                Automation (Coming Soon)
-              </div>
-            </div>
-
-            {/* Analytics Icon with Tooltip */}
-            <div className="relative group">
-              <a href="#" className="text-[#737373] opacity-50 pointer-events-none block p-2 rounded-lg transition-colors">
-                <BarChart3 className="w-6 h-6" />
-              </a>
-              <div className="absolute left-full ml-2 px-3 py-1.5 bg-[#1a1a1a] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 border border-[#262626]">
-                Analytics (Coming Soon)
-              </div>
-            </div>
-          </nav>
-
-          {/* Bottom Icons */}
-          <div className="mt-auto flex flex-col items-center space-y-6">
-            {/* Docs Icon with Tooltip */}
-            <div className="relative group">
-              <a href="#" className="text-[#737373] opacity-50 pointer-events-none block p-2 rounded-lg transition-colors">
-                <BookOpen className="w-6 h-6" />
-              </a>
-              <div className="absolute left-full ml-2 px-3 py-1.5 bg-[#1a1a1a] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 border border-[#262626]">
-                Docs (Coming Soon)
-              </div>
-            </div>
-
-            {/* Settings Icon with Tooltip */}
-            <div className="relative group">
-              <a href="#" className="text-[#737373] opacity-50 pointer-events-none block p-2 rounded-lg transition-colors">
-                <Settings className="w-6 h-6" />
-              </a>
-              <div className="absolute left-full ml-2 px-3 py-1.5 bg-[#1a1a1a] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 border border-[#262626]">
-                Settings (Coming Soon)
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        {/* Main Content */}
-        <main className="flex-1 flex flex-col overflow-hidden">
-          {/* Header */}
-          <header className="flex items-center justify-between h-20 px-8 border-b border-[#262626] flex-shrink-0">
-            <div className="flex items-center space-x-8 text-base">
-              <h1 className="text-xl font-semibold text-white">The DeFi Terminal</h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <ConnectButton.Custom>
-                {({
-                  account,
-                  chain,
-                  openAccountModal,
-                  openChainModal,
-                  openConnectModal,
-                  mounted,
-                }) => {
-                  const ready = mounted
-                  const connected = ready && account && chain
-
-                  return (
-                    <div
-                      {...(!ready && {
-                        'aria-hidden': true,
-                        style: {
-                          opacity: 0,
-                          pointerEvents: 'none',
-                          userSelect: 'none',
-                        },
-                      })}
-                    >
-                      {(() => {
-                        if (!connected) {
-                          return (
-                            <button
-                              onClick={openConnectModal}
-                              className="bg-[#141414] border border-[#262626] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#262626] transition-colors"
-                            >
-                              Connect Wallet
-                            </button>
-                          )
-                        }
-
-                        if (chain.unsupported) {
-                          return (
-                            <button
-                              onClick={openChainModal}
-                              className="bg-[#141414] border border-red-500/50 text-red-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-500/10 transition-colors"
-                            >
-                              Wrong network
-                            </button>
-                          )
-                        }
-
-                        return (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={openChainModal}
-                              className="bg-[#141414] border border-[#262626] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#262626] transition-colors flex items-center gap-2"
-                            >
-                              {chain.hasIcon && (
-                                <div
-                                  style={{
-                                    background: chain.iconBackground,
-                                    width: 16,
-                                    height: 16,
-                                    borderRadius: 999,
-                                    overflow: 'hidden',
-                                  }}
-                                >
-                                  {chain.iconUrl && (
-                                    <img
-                                      alt={chain.name ?? 'Chain icon'}
-                                      src={chain.iconUrl}
-                                      style={{ width: 16, height: 16 }}
-                                    />
-                                  )}
-                                </div>
-                              )}
-                              {chain.name}
-                            </button>
-
-                            <button
-                              onClick={openAccountModal}
-                              className="bg-[#141414] border border-[#262626] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#262626] transition-colors"
-                            >
-                              {account.displayName}
-                              {account.displayBalance && (
-                                <span className="ml-2 text-[#737373]">
-                                  {account.displayBalance}
-                                </span>
-                              )}
-                            </button>
-                          </div>
-                        )
-                      })()}
-                    </div>
-                  )
-                }}
-              </ConnectButton.Custom>
-            </div>
-          </header>
-
-          {/* Terminal Area */}
-          <div className="flex-1 bg-[#0A0A0A] p-8 flex flex-col relative overflow-hidden">
+    <div className="w-full h-full bg-[#0A0A0A] p-4 pr-2 flex flex-col relative overflow-hidden">
             <div className="h-full bg-[#141414] rounded-xl border border-[#262626] flex flex-col overflow-hidden">
               {/* Window Management Bar with Tabs */}
               <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center gap-2 rounded-t-xl flex-shrink-0">
@@ -2250,7 +2079,7 @@ export function CLI({ className = '' }: CLIProps = {}) {
               {/* Terminal Content */}
               <div
                 ref={terminalRef}
-                className="flex-1 p-6 font-mono overflow-y-scroll select-text min-h-0 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-gray-500"
+                className="flex-1 p-6 font-mono overflow-y-scroll select-text min-h-0 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]"
                 style={{ fontSize: `${fontSize}px` }}
                 onClick={handleTerminalClick}
               >
@@ -2362,10 +2191,5 @@ export function CLI({ className = '' }: CLIProps = {}) {
               </div>
             )}
           </div>
-        </main>
-      </div>
-
-
-    </div>
   )
 }

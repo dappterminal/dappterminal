@@ -17,6 +17,7 @@ export interface PriceChartProps {
   symbol?: string
   height?: number
   className?: string
+  resizeKey?: number
 }
 
 export function PriceChart({
@@ -26,6 +27,7 @@ export function PriceChart({
   symbol = 'ETH/USD',
   height = 400,
   className = '',
+  resizeKey,
 }: PriceChartProps) {
   const [chartType, setChartType] = useState<'candlestick' | 'line'>(initialChartType as 'candlestick' | 'line')
 
@@ -58,14 +60,27 @@ export function PriceChart({
       const values = ohlcData.map(d => [d.open, d.close, d.low, d.high])
       const volumes = ohlcData.map(d => d.volume)
 
+      // Calculate latest price for display
+      const latestCandle = ohlcData[ohlcData.length - 1]
+      const latestPrice = latestCandle.close
+      const priceChange = latestCandle.close - latestCandle.open
+      const priceChangePercent = (priceChange / latestCandle.open) * 100
+
       return {
         title: {
-          text: `${symbol} - ${timeRange}`,
-          left: 0,
+          text: `$${latestPrice.toFixed(2)}  {percent|${priceChange >= 0 ? '+' : ''}${priceChangePercent.toFixed(2)}%}`,
+          left: 10,
+          top: 10,
           textStyle: {
             color: '#E5E5E5',
             fontSize: 14,
-            fontWeight: 'normal',
+            fontWeight: '600',
+            rich: {
+              percent: {
+                color: priceChange >= 0 ? '#10B981' : '#EF4444',
+                fontWeight: '600',
+              },
+            },
           },
         },
         tooltip: {
@@ -93,10 +108,10 @@ export function PriceChart({
           },
         },
         grid: {
-          left: '3%',
-          right: '3%',
-          bottom: '15%',
-          top: '15%',
+          left: 30,
+          right: 30,
+          bottom: 40,
+          top: 40,
           containLabel: true,
         },
         xAxis: {
@@ -148,14 +163,27 @@ export function PriceChart({
       const dates = lineData.map(d => new Date(d.timestamp).toLocaleTimeString())
       const prices = lineData.map(d => d.price)
 
+      // Calculate latest price for display
+      const latestPrice = prices[prices.length - 1]
+      const firstPrice = prices[0]
+      const priceChange = latestPrice - firstPrice
+      const priceChangePercent = (priceChange / firstPrice) * 100
+
       return {
         title: {
-          text: `${symbol} - ${timeRange}`,
-          left: 0,
+          text: `$${latestPrice.toFixed(2)}  {percent|${priceChange >= 0 ? '+' : ''}${priceChangePercent.toFixed(2)}%}`,
+          left: 10,
+          top: 10,
           textStyle: {
             color: '#E5E5E5',
             fontSize: 14,
-            fontWeight: 'normal',
+            fontWeight: '600',
+            rich: {
+              percent: {
+                color: priceChange >= 0 ? '#10B981' : '#EF4444',
+                fontWeight: '600',
+              },
+            },
           },
         },
         tooltip: {
@@ -176,10 +204,10 @@ export function PriceChart({
           },
         },
         grid: {
-          left: '3%',
-          right: '3%',
-          bottom: '15%',
-          top: '15%',
+          left: 30,
+          right: 30,
+          bottom: 40,
+          top: 40,
           containLabel: true,
         },
         xAxis: {
@@ -267,7 +295,7 @@ export function PriceChart({
         </button>
       </div>
 
-      <BaseChart option={option} height={height} />
+      <BaseChart option={option} height={height} resizeKey={resizeKey} />
     </div>
   )
 }

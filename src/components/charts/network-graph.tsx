@@ -15,6 +15,7 @@ export interface NetworkGraphProps {
   height?: number
   className?: string
   title?: string
+  resizeKey?: number
 }
 
 export function NetworkGraph({
@@ -22,6 +23,7 @@ export function NetworkGraph({
   height = 400,
   className = '',
   title = 'Protocol Network',
+  resizeKey,
 }: NetworkGraphProps) {
   // Generate mock data if not provided
   const graphData = useMemo(() => data || generateMockNetworkGraph(), [data])
@@ -137,7 +139,7 @@ export function NetworkGraph({
 
   return (
     <div className={className}>
-      <BaseChart option={option} height={height} />
+      <BaseChart option={option} height={height} resizeKey={resizeKey} />
 
       {/* Legend info */}
       <div className="mt-2 flex gap-4 px-2 text-xs text-[#737373]">
