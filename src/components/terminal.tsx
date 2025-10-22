@@ -314,6 +314,14 @@ export function Terminal() {
     }
   }, [activeProtocol])
 
+  // Debug: log active tab changes
+  useEffect(() => {
+    console.log('[Tab State] activeTabId changed to:', activeTabId)
+    console.log('[Tab State] Available tabs:', tabs.map(t => ({ id: t.id, name: t.name })))
+    console.log('[Tab State] Active tab found:', !!activeTab)
+    console.log('[Tab State] Active tab details:', activeTab ? { id: activeTab.id, name: activeTab.name } : 'none')
+  }, [activeTabId, tabs, activeTab])
+
   // Update active tab name when protocol changes
   useEffect(() => {
     console.log('[Tab Update Effect] Triggered - activeProtocol:', activeProtocol, 'activeTabId:', activeTabId)
@@ -494,6 +502,8 @@ export function Terminal() {
 
   const addNewTab = () => {
     const newId = (tabs.length + 1).toString()
+    console.log('[Add Tab] Creating new tab with id:', newId)
+    console.log('[Add Tab] Current tabs before add:', tabs.map(t => ({ id: t.id, name: t.name })))
 
     // Create a new execution context for this tab
     const newContext = createExecutionContext()
@@ -517,17 +527,29 @@ export function Terminal() {
       executionContext: newContext
     }
     setTabs([...tabs, newTab])
+    console.log('[Add Tab] New tab created, setting active to:', newId)
     setActiveTabId(newId)
   }
 
   const closeTab = (tabId: string) => {
-    if (tabs.length === 1) return // Don't close last tab
+    console.log('[Close Tab] Attempting to close tab:', tabId)
+    console.log('[Close Tab] Current tabs:', tabs.map(t => ({ id: t.id, name: t.name })))
+    console.log('[Close Tab] Current activeTabId:', activeTabId)
+
+    if (tabs.length === 1) {
+      console.log('[Close Tab] Cannot close last tab')
+      return // Don't close last tab
+    }
 
     const newTabs = tabs.filter(tab => tab.id !== tabId)
+    console.log('[Close Tab] New tabs after filter:', newTabs.map(t => ({ id: t.id, name: t.name })))
     setTabs(newTabs)
 
     if (activeTabId === tabId) {
+      console.log('[Close Tab] Closed tab was active, switching to:', newTabs[0].id)
       setActiveTabId(newTabs[0].id)
+    } else {
+      console.log('[Close Tab] Closed tab was not active, keeping activeTabId:', activeTabId)
     }
   }
 
@@ -1995,15 +2017,7 @@ export function Terminal() {
               </div>
             </div>
 
-            {/* Notifications Icon with Tooltip */}
-            <div className="relative group">
-              <a href="#" className="text-[#737373] opacity-50 pointer-events-none block p-2 rounded-lg transition-colors">
-                <Bell className="w-6 h-6" />
-              </a>
-              <div className="absolute left-full ml-2 px-3 py-1.5 bg-[#1a1a1a] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 border border-[#262626]">
-                Notifications (Coming Soon)
-              </div>
-            </div>
+
 
             {/* Automation Icon with Tooltip */}
             <div className="relative group">
@@ -2181,16 +2195,27 @@ export function Terminal() {
                               ? `${protocolColor}88` // Add opacity for inactive tabs
                               : '#737373'
                       }}
+                      onClick={() => {
+                        console.log(`[Tab Switch] Clicked tab ${tab.id} (${tab.name})`)
+                        console.log(`[Tab Switch] Current activeTabId: ${activeTabId}`)
+                        console.log(`[Tab Switch] All tabs:`, tabs.map(t => ({ id: t.id, name: t.name })))
+                        if (activeTabId !== tab.id) {
+                          console.log(`[Tab Switch] Switching from ${activeTabId} to ${tab.id}`)
+                          setActiveTabId(tab.id)
+                        } else {
+                          console.log(`[Tab Switch] Already on tab ${tab.id}, no action needed`)
+                        }
+                      }}
                     >
                       <span
                         className="text-sm"
-                        onClick={() => setActiveTabId(tab.id)}
                       >
                         {tab.name}
                       </span>
                       {tabs.length > 1 && (
                         <button
                           onClick={(e) => {
+                            console.log('[Close Button] Clicked close button for tab:', tab.id)
                             e.stopPropagation()
                             closeTab(tab.id)
                           }}
