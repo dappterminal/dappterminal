@@ -471,7 +471,7 @@ export const transferCommand: Command = {
 export const bridgeAliasCommand: Command = {
   id: 'bridge',
   scope: 'G_alias',
-  description: 'Bridge tokens cross-chain (auto-routes to available bridge protocols)',
+  description: 'Bridge tokens cross-chain (use --protocol <stargate|wormhole|lifi> to specify)',
   aliases: ['br'],
 
   async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
