@@ -276,9 +276,10 @@ function formatCommandResult(result: CommandResult): string[] {
 
 export interface CLIProps {
   className?: string
+  isFullWidth?: boolean
 }
 
-export function CLI({ className = '' }: CLIProps = {}) {
+export function CLI({ className = '', isFullWidth = false }: CLIProps = {}) {
   const [mounted, setMounted] = useState(false)
   const [tabs, setTabs] = useState<TerminalTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string>("")
@@ -2001,7 +2002,7 @@ export function CLI({ className = '' }: CLIProps = {}) {
   }
 
   return (
-    <div className="w-full h-full bg-[#0A0A0A] p-4 pr-2 flex flex-col relative overflow-hidden">
+    <div className={`w-full h-full bg-[#0A0A0A] p-4 flex flex-col relative overflow-hidden ${isFullWidth ? '' : 'pr-2'}`}>
             <div className="h-full bg-[#141414] rounded-xl border border-[#262626] flex flex-col overflow-hidden">
               {/* Window Management Bar with Tabs */}
               <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center gap-2 rounded-t-xl flex-shrink-0">
@@ -2079,7 +2080,7 @@ export function CLI({ className = '' }: CLIProps = {}) {
               {/* Terminal Content */}
               <div
                 ref={terminalRef}
-                className="flex-1 p-6 font-mono overflow-y-scroll select-text min-h-0 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]"
+                className={`flex-1 font-mono overflow-y-scroll select-text min-h-0 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252] ${isFullWidth ? 'p-6' : 'pt-6 pb-6 pl-6 pr-0'}`}
                 style={{ fontSize: `${fontSize}px` }}
                 onClick={handleTerminalClick}
               >

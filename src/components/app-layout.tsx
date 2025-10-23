@@ -1,14 +1,24 @@
 "use client"
 
 import { useState, useCallback, useEffect } from 'react'
-import { Terminal as TerminalIcon, Settings, Zap, BarChart3, BookOpen } from "lucide-react"
+import { Terminal as TerminalIcon, Settings, Zap, BarChart3, BookOpen, X } from "lucide-react"
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { CLI } from './cli'
-import { Analytics } from './analytics'
+import { PriceChart } from './charts/price-chart'
+import { PerformanceChart } from './charts/performance-chart'
+import { NetworkGraph } from './charts/network-graph'
 
 export function AppLayout() {
   const [cliWidth, setCliWidth] = useState(70) // percentage
   const [isDragging, setIsDragging] = useState(false)
+  const [resizeKey, setResizeKey] = useState(0)
+  const [visibleCharts, setVisibleCharts] = useState({
+    btc: true,
+    eth: true,
+    sol: true,
+    performance: true,
+    network: true,
+  })
 
   const handleMouseDown = useCallback(() => {
     setIsDragging(true)
@@ -35,6 +45,18 @@ export function AppLayout() {
     },
     [isDragging]
   )
+
+  const closeChart = useCallback((chartId: keyof typeof visibleCharts) => {
+    setVisibleCharts(prev => ({ ...prev, [chartId]: false }))
+  }, [])
+
+  // Check if any charts are visible
+  const hasVisibleCharts = Object.values(visibleCharts).some(visible => visible)
+
+  // Trigger resize when cliWidth changes
+  useEffect(() => {
+    setResizeKey(prev => prev + 1)
+  }, [cliWidth])
 
   useEffect(() => {
     if (isDragging) {
@@ -125,7 +147,7 @@ export function AppLayout() {
           {/* Header */}
           <header className="flex items-center justify-between h-20 px-8 border-b border-[#262626] flex-shrink-0">
             <div className="flex items-center space-x-8 text-base">
-              <h1 className="text-xl font-mono text-white">de.fi.computer</h1>
+              <h1 className="text-xl font-mono text-white">de.fi.computer (dappterminal.com)</h1>
             </div>
             <div className="flex items-center space-x-4">
               <ConnectButton.Custom>
@@ -226,23 +248,133 @@ export function AppLayout() {
           {/* Content Area - CLI and Charts side by side */}
           <div className="flex-1 flex overflow-hidden content-container">
             {/* CLI - resizable */}
-            <div style={{ width: `${cliWidth}%` }} className="flex-shrink-0">
-              <CLI />
+            <div style={{ width: hasVisibleCharts ? `${cliWidth}%` : '100%' }} className="flex-shrink-0">
+              <CLI isFullWidth={!hasVisibleCharts} />
             </div>
 
-            {/* Resize Handle */}
-            <div
-              className="w-1 bg-[#0A0A0A] hover:bg-[#404040] cursor-col-resize transition-colors flex-shrink-0"
-              onMouseDown={handleMouseDown}
-            />
+            {/* Resize Handle - only show if charts are visible */}
+            {hasVisibleCharts && (
+              <div
+                className="w-1 bg-[#0A0A0A] hover:bg-[#404040] cursor-col-resize transition-colors flex-shrink-0"
+                onMouseDown={handleMouseDown}
+              />
+            )}
 
-            {/* Charts - remaining width */}
-            <div
-              className="flex-1 min-w-0"
-              style={{ width: `${100 - cliWidth}%` }}
-            >
-              <Analytics panelWidth={100 - cliWidth} />
-            </div>
+            {/* Charts - remaining width - only show if charts are visible */}
+            {hasVisibleCharts && (
+              <div
+                className="flex-1 min-w-0 h-full bg-[#0A0A0A] overflow-y-auto pt-4 pb-3 px-3 space-y-3 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]"
+                style={{ width: `${100 - cliWidth}%` }}
+              >
+              {/* BTC Price Chart Window */}
+              {visibleCharts.btc && (
+                <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
+                  <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
+                    <span className="text-sm text-white">BTC/USD</span>
+                    <button
+                      onClick={() => closeChart('btc')}
+                      className="text-[#737373] hover:text-red-400 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <PriceChart
+                    symbol="BTC/USD"
+                    timeRange="24H"
+                    height={280}
+                    className="p-1"
+                    resizeKey={resizeKey}
+                  />
+                </div>
+              )}
+
+              {/* ETH Price Chart Window */}
+              {visibleCharts.eth && (
+                <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
+                  <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
+                    <span className="text-sm text-white">ETH/USD</span>
+                    <button
+                      onClick={() => closeChart('eth')}
+                      className="text-[#737373] hover:text-red-400 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <PriceChart
+                    symbol="ETH/USD"
+                    timeRange="24H"
+                    height={280}
+                    className="p-1"
+                    resizeKey={resizeKey}
+                  />
+                </div>
+              )}
+
+              {/* SOL Price Chart Window */}
+              {visibleCharts.sol && (
+                <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
+                  <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
+                    <span className="text-sm text-white">SOL/USD</span>
+                    <button
+                      onClick={() => closeChart('sol')}
+                      className="text-[#737373] hover:text-red-400 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <PriceChart
+                    symbol="SOL/USD"
+                    timeRange="24H"
+                    height={280}
+                    className="p-1"
+                    resizeKey={resizeKey}
+                  />
+                </div>
+              )}
+
+              {/* Performance Metrics Window */}
+              {visibleCharts.performance && (
+                <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
+                  <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
+                    <span className="text-sm text-white">Performance</span>
+                    <button
+                      onClick={() => closeChart('performance')}
+                      className="text-[#737373] hover:text-red-400 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <PerformanceChart
+                    title=""
+                    height={250}
+                    className="p-2"
+                    resizeKey={resizeKey}
+                  />
+                </div>
+              )}
+
+              {/* Network Graph Window */}
+              {visibleCharts.network && (
+                <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
+                  <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
+                    <span className="text-sm text-white">Network</span>
+                    <button
+                      onClick={() => closeChart('network')}
+                      className="text-[#737373] hover:text-red-400 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <NetworkGraph
+                    title=""
+                    height={300}
+                    className="p-2"
+                    resizeKey={resizeKey}
+                  />
+                </div>
+              )}
+              </div>
+            )}
           </div>
         </main>
       </div>
