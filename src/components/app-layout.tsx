@@ -7,6 +7,7 @@ import { CLI } from './cli'
 import { PriceChart } from './charts/price-chart'
 import { PerformanceChart } from './charts/performance-chart'
 import { NetworkGraph } from './charts/network-graph'
+import { Analytics } from './analytics'
 
 export function AppLayout() {
   const [cliWidth, setCliWidth] = useState(70) // percentage
@@ -259,6 +260,17 @@ export function AppLayout() {
                 onMouseDown={handleMouseDown}
               />
             )}
+
+
+
+    
+            {/* Charts - remaining width */}
+            {/* <div
+              className="flex-1 min-w-0"
+              style={{ width: `${100 - cliWidth}%` }}
+            >
+              <Analytics panelWidth={100 - cliWidth} />
+            </div> */}
 
             {/* Charts - remaining width - only show if charts are visible */}
             {hasVisibleCharts && (
