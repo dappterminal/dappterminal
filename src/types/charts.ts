@@ -3,7 +3,8 @@
  */
 
 export type ChartType = 'candlestick' | 'line' | 'bar' | 'area' | 'graph'
-export type TimeRange = '1H' | '24H' | '7D' | '30D' | '1Y' | 'ALL'
+export type TimeRange = '1m' | '5m' | '15m' | '1h' | '4h' | '12h' | '24h' | '1w' | '1M' | '1Y' | 'ALL'
+export type DataSource = 'Binance' | 'Coinbase' | 'Kraken' | 'Mock' | 'Custom'
 
 /**
  * OHLC data for candlestick charts

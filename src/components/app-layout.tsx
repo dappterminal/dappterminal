@@ -4,22 +4,27 @@ import { useState, useCallback, useEffect } from 'react'
 import { Terminal as TerminalIcon, Settings, Zap, BarChart3, BookOpen, X, ChevronDown } from "lucide-react"
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { CLI } from './cli'
-import { PriceChart } from './charts/price-chart'
+import { PriceChart, PriceChartDropdown } from './charts/price-chart'
 import { PerformanceChart } from './charts/performance-chart'
 import { NetworkGraph } from './charts/network-graph'
 import { Analytics } from './analytics'
+import type { TimeRange, DataSource } from '@/types/charts'
+
+interface Chart {
+  id: string
+  type: 'price' | 'performance' | 'network'
+  symbol?: string // For price charts
+  timeRange?: TimeRange
+  dataSource?: DataSource
+  chartMode?: 'candlestick' | 'line'
+}
 
 export function AppLayout() {
   const [cliWidth, setCliWidth] = useState(70) // percentage
   const [isDragging, setIsDragging] = useState(false)
   const [resizeKey, setResizeKey] = useState(0)
-  const [visibleCharts, setVisibleCharts] = useState({
-    btc: true,
-    eth: true,
-    sol: true,
-    performance: true,
-    network: true,
-  })
+  const [charts, setCharts] = useState<Chart[]>([])
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null)
 
   const handleMouseDown = useCallback(() => {
     setIsDragging(true)
@@ -47,12 +52,42 @@ export function AppLayout() {
     [isDragging]
   )
 
-  const closeChart = useCallback((chartId: keyof typeof visibleCharts) => {
-    setVisibleCharts(prev => ({ ...prev, [chartId]: false }))
+  const closeChart = useCallback((chartId: string) => {
+    setCharts(prev => prev.filter(chart => chart.id !== chartId))
+  }, [])
+
+  const handleAddChart = useCallback((chartType: string, chartMode?: 'candlestick' | 'line') => {
+    const newChart: Chart = {
+      id: `${chartType}-${Date.now()}`,
+      type: 'price',
+      symbol: chartType.toUpperCase(),
+      timeRange: '24h',
+      dataSource: 'Mock',
+      chartMode: chartMode || 'candlestick',
+    }
+
+    // Handle special chart types
+    if (chartType === 'performance') {
+      newChart.type = 'performance'
+      newChart.symbol = undefined
+    } else if (chartType === 'network' || chartType === 'network-graph') {
+      newChart.type = 'network'
+      newChart.symbol = undefined
+    }
+
+    setCharts(prev => [...prev, newChart])
+  }, [])
+
+  const updateChartSettings = useCallback((chartId: string, timeRange: TimeRange, dataSource: DataSource) => {
+    setCharts(prev => prev.map(chart =>
+      chart.id === chartId
+        ? { ...chart, timeRange, dataSource }
+        : chart
+    ))
   }, [])
 
   // Check if any charts are visible
-  const hasVisibleCharts = Object.values(visibleCharts).some(visible => visible)
+  const hasVisibleCharts = charts.length > 0
 
   // Trigger resize when cliWidth changes
   useEffect(() => {
@@ -250,7 +285,7 @@ export function AppLayout() {
           <div className="flex-1 flex overflow-hidden content-container">
             {/* CLI - resizable */}
             <div style={{ width: hasVisibleCharts ? `${cliWidth}%` : '100%' }} className="flex-shrink-0">
-              <CLI isFullWidth={!hasVisibleCharts} />
+              <CLI isFullWidth={!hasVisibleCharts} onAddChart={handleAddChart} />
             </div>
 
             {/* Resize Handle - only show if charts are visible */}
@@ -275,151 +310,97 @@ export function AppLayout() {
             {/* Charts - remaining width - only show if charts are visible */}
             {hasVisibleCharts && (
               <div
-                className="flex-1 min-w-0 h-full bg-[#0A0A0A] overflow-y-auto pt-4 pb-3 px-3 space-y-3 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]"
+                className="flex-1 min-w-0 h-full bg-[#0A0A0A] overflow-y-auto overflow-x-hidden p-4 pb-3 space-y-3 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]"
                 style={{ width: `${100 - cliWidth}%` }}
               >
-              {/* BTC Price Chart Window */}
-              {visibleCharts.btc && (
-                <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
-                  <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                    <span className="text-sm text-white">BTC/USD</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="text-[#737373] hover:text-white transition-colors"
-                      >
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => closeChart('btc')}
-                        className="text-[#737373] hover:text-red-400 transition-colors"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+              {/* Render all charts dynamically */}
+              {charts.map((chart) => {
+                if (chart.type === 'price') {
+                  return (
+                    <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
+                      <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between relative">
+                        <span className="text-sm text-white">{chart.symbol}/USD</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setOpenDropdown(openDropdown === chart.id ? null : chart.id)}
+                            className="text-[#737373] hover:text-white transition-colors"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => closeChart(chart.id)}
+                            className="text-[#737373] hover:text-red-400 transition-colors"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                          <PriceChartDropdown
+                            timeRange={chart.timeRange || '24h'}
+                            dataSource={chart.dataSource || 'Mock'}
+                            onTimeRangeChange={(range) => updateChartSettings(chart.id, range, chart.dataSource || 'Mock')}
+                            onDataSourceChange={(source) => updateChartSettings(chart.id, chart.timeRange || '24h', source)}
+                            showDropdown={openDropdown === chart.id}
+                            onToggleDropdown={() => setOpenDropdown(null)}
+                          />
+                        </div>
+                      </div>
+                      <PriceChart
+                        symbol={`${chart.symbol}/USD`}
+                        timeRange={chart.timeRange}
+                        dataSource={chart.dataSource}
+                        chartType={chart.chartMode}
+                        height={280}
+                        className="p-1"
+                        resizeKey={resizeKey}
+                      />
                     </div>
-                  </div>
-                  <PriceChart
-                    symbol="BTC/USD"
-                    timeRange="24H"
-                    height={280}
-                    className="p-1"
-                    resizeKey={resizeKey}
-                  />
-                </div>
-              )}
-
-              {/* ETH Price Chart Window */}
-              {visibleCharts.eth && (
-                <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
-                  <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                    <span className="text-sm text-white">ETH/USD</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="text-[#737373] hover:text-white transition-colors"
-                      >
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => closeChart('eth')}
-                        className="text-[#737373] hover:text-red-400 transition-colors"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                  )
+                } else if (chart.type === 'performance') {
+                  return (
+                    <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
+                      <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
+                        <span className="text-sm text-white">Performance</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => closeChart(chart.id)}
+                            className="text-[#737373] hover:text-red-400 transition-colors"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <PerformanceChart
+                        title=""
+                        height={250}
+                        className="p-2"
+                        resizeKey={resizeKey}
+                      />
                     </div>
-                  </div>
-                  <PriceChart
-                    symbol="ETH/USD"
-                    timeRange="24H"
-                    height={280}
-                    className="p-1"
-                    resizeKey={resizeKey}
-                  />
-                </div>
-              )}
-
-              {/* SOL Price Chart Window */}
-              {visibleCharts.sol && (
-                <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
-                  <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                    <span className="text-sm text-white">SOL/USD</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="text-[#737373] hover:text-white transition-colors"
-                      >
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => closeChart('sol')}
-                        className="text-[#737373] hover:text-red-400 transition-colors"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                  )
+                } else if (chart.type === 'network') {
+                  return (
+                    <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
+                      <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
+                        <span className="text-sm text-white">Network</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => closeChart(chart.id)}
+                            className="text-[#737373] hover:text-red-400 transition-colors"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <NetworkGraph
+                        title=""
+                        height={300}
+                        className="p-2"
+                        resizeKey={resizeKey}
+                      />
                     </div>
-                  </div>
-                  <PriceChart
-                    symbol="SOL/USD"
-                    timeRange="24H"
-                    height={280}
-                    className="p-1"
-                    resizeKey={resizeKey}
-                  />
-                </div>
-              )}
-
-              {/* Performance Metrics Window */}
-              {visibleCharts.performance && (
-                <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
-                  <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                    <span className="text-sm text-white">Performance</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="text-[#737373] hover:text-white transition-colors"
-                      >
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => closeChart('performance')}
-                        className="text-[#737373] hover:text-red-400 transition-colors"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <PerformanceChart
-                    title=""
-                    height={250}
-                    className="p-2"
-                    resizeKey={resizeKey}
-                  />
-                </div>
-              )}
-
-              {/* Network Graph Window */}
-              {visibleCharts.network && (
-                <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
-                  <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                    <span className="text-sm text-white">Network</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="text-[#737373] hover:text-white transition-colors"
-                      >
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => closeChart('network')}
-                        className="text-[#737373] hover:text-red-400 transition-colors"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <NetworkGraph
-                    title=""
-                    height={300}
-                    className="p-2"
-                    resizeKey={resizeKey}
-                  />
-                </div>
-              )}
+                  )
+                }
+                return null
+              })}
               </div>
             )}
           </div>

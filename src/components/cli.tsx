@@ -277,9 +277,10 @@ function formatCommandResult(result: CommandResult): string[] {
 export interface CLIProps {
   className?: string
   isFullWidth?: boolean
+  onAddChart?: (chartType: string, chartMode?: 'candlestick' | 'line') => void
 }
 
-export function CLI({ className = '', isFullWidth = false }: CLIProps = {}) {
+export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProps = {}) {
   const [mounted, setMounted] = useState(false)
   const [tabs, setTabs] = useState<TerminalTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string>("")
@@ -606,8 +607,19 @@ export function CLI({ className = '', isFullWidth = false }: CLIProps = {}) {
 
         // Handle special client-side commands
         if (result.success && typeof result.value === 'object' && result.value !== null) {
+          // Handle chart command - add chart to analytics panel
+          if ('addChart' in result.value && result.value.addChart) {
+            const chartData = result.value as { addChart: boolean; chartType: string; chartMode?: 'candlestick' | 'line' }
+
+            if (onAddChart) {
+              onAddChart(chartData.chartType, chartData.chartMode)
+              output = [`✅ Added ${chartData.chartType} chart to analytics panel`]
+            } else {
+              output = [`⚠️  Chart panel not available`]
+            }
+          }
           // Handle whoami command - enhance with ENS
-          if (resolved.command.id === 'whoami' && 'address' in result.value) {
+          else if (resolved.command.id === 'whoami' && 'address' in result.value) {
             const valueData = result.value as { address: `0x${string}`; chainId?: number }
             const lines: string[] = []
             lines.push('Wallet Identity:')

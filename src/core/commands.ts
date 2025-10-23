@@ -465,6 +465,63 @@ export const transferCommand: Command = {
 }
 
 /**
+ * Chart command - Add charts to the analytics panel
+ * Usage:
+ *   chart btc - Add BTC price chart
+ *   chart eth --line - Add ETH price chart (line mode)
+ *   chart sol - Add SOL price chart
+ *   chart performance - Add performance metrics chart
+ *   chart network - Add network graph chart
+ */
+export const chartCommand: Command = {
+  id: 'chart',
+  scope: 'G_core',
+  description: 'Add a chart to the analytics panel',
+  aliases: ['c', 'add-chart'],
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      const rawArgs = typeof args === 'string' ? args.trim() : ''
+      const argTokens = rawArgs.split(/\s+/).filter(Boolean)
+
+      if (argTokens.length === 0) {
+        return {
+          success: false,
+          error: new Error('Usage: chart <symbol|type> [--line]\nExamples:\n  chart btc\n  chart eth --line\n  chart performance\n  chart network'),
+        }
+      }
+
+      const chartType = argTokens[0].toLowerCase()
+      const isLineMode = argTokens.includes('--line')
+
+      // Validate chart type
+      const validCharts = ['btc', 'eth', 'sol', 'performance', 'network', 'network-graph']
+      if (!validCharts.includes(chartType)) {
+        return {
+          success: false,
+          error: new Error(`Invalid chart type: ${chartType}\nValid types: ${validCharts.join(', ')}`),
+        }
+      }
+
+      // Return chart request - CLI component will handle adding the chart
+      return {
+        success: true,
+        value: {
+          addChart: true,
+          chartType,
+          chartMode: isLineMode ? 'line' : 'candlestick',
+        },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
  * Bridge command - Global alias for cross-chain bridging
  * Routes to the active protocol when possible, otherwise falls back to available bridge plugins
  */
@@ -553,6 +610,7 @@ export const coreCommands = [
   whoamiCommand,
   balanceCommand,
   transferCommand,
+  chartCommand,
 ]
 
 /**
