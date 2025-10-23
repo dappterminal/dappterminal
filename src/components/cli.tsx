@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, KeyboardEvent } from "react"
-import { Terminal as TerminalIcon, Settings, Plus, X, Bell, Zap, BarChart3, BookOpen } from "lucide-react"
+import { Terminal as TerminalIcon, Settings, Plus, X, Bell, Zap, BarChart3, BookOpen, ChevronDown } from "lucide-react"
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount, useEnsName, useBalance } from 'wagmi'
 import { mainnet } from 'wagmi/chains'
@@ -2072,7 +2072,7 @@ export function CLI({ className = '', isFullWidth = false }: CLIProps = {}) {
                     onClick={() => setShowSettings(!showSettings)}
                     className="p-1.5 text-[#737373] hover:text-white transition-colors"
                   >
-                    <Settings className="w-4 h-4" />
+                    <ChevronDown className="w-4 h-4" />
                   </button>
                 </div>
               </div>

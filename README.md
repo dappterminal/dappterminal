@@ -1,7 +1,7 @@
-# The DeFi Terminal
+# dappterminal.com
 
-**Version:** 0.1.0
-**Last Updated:** 2025-10-17
+**Version:** 0.1.1
+**Last Updated:** 2025-10-23
 
 A composable, algebraically-sound terminal interface for interacting with DeFi protocols across multiple blockchains. Built on a **fibered monoid** architecture that provides protocol isolation, type-safe command composition, and extensible plugin system.
 
@@ -45,6 +45,21 @@ The terminal is built on three core concepts:
    - `ρ_f` (fuzzy resolver): Levenshtein-based matching
 
 See [FIBERED-MONOID-SPEC.md](./FIBERED-MONOID-SPEC.md) for the complete algebraic specification.
+## Current protocols/APIs supported
+
+- 1inch
+- Stargate (LayerZero)
+- Li.Fi
+- Wormhole
+- Uniswap (V4) (*work in progress*)
+- Aave (V3) (*work in progress*)
+- Hyperliquid (*TODO*)
+- Chainlink (*TODO*)
+- Hyperlane (*TODO*)
+- LayerZero (*TODO*)
+- Yahoo Finance API (*TODO*)
+- Polygon.io API (*TODO*)
+- & more
 
 ## Getting Started
 

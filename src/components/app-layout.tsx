@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useCallback, useEffect } from 'react'
-import { Terminal as TerminalIcon, Settings, Zap, BarChart3, BookOpen, X } from "lucide-react"
+import { Terminal as TerminalIcon, Settings, Zap, BarChart3, BookOpen, X, ChevronDown } from "lucide-react"
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { CLI } from './cli'
 import { PriceChart } from './charts/price-chart'
@@ -148,7 +148,7 @@ export function AppLayout() {
           {/* Header */}
           <header className="flex items-center justify-between h-20 px-8 border-b border-[#262626] flex-shrink-0">
             <div className="flex items-center space-x-8 text-base">
-              <h1 className="text-xl font-mono text-white">de.fi.computer (dappterminal.com)</h1>
+              <h1 className="text-xl font-mono text-white">dappterminal.com</h1>
             </div>
             <div className="flex items-center space-x-4">
               <ConnectButton.Custom>
@@ -283,12 +283,19 @@ export function AppLayout() {
                 <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
                   <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
                     <span className="text-sm text-white">BTC/USD</span>
-                    <button
-                      onClick={() => closeChart('btc')}
-                      className="text-[#737373] hover:text-red-400 transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="text-[#737373] hover:text-white transition-colors"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => closeChart('btc')}
+                        className="text-[#737373] hover:text-red-400 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <PriceChart
                     symbol="BTC/USD"
@@ -305,12 +312,19 @@ export function AppLayout() {
                 <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
                   <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
                     <span className="text-sm text-white">ETH/USD</span>
-                    <button
-                      onClick={() => closeChart('eth')}
-                      className="text-[#737373] hover:text-red-400 transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="text-[#737373] hover:text-white transition-colors"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => closeChart('eth')}
+                        className="text-[#737373] hover:text-red-400 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <PriceChart
                     symbol="ETH/USD"
@@ -327,12 +341,19 @@ export function AppLayout() {
                 <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
                   <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
                     <span className="text-sm text-white">SOL/USD</span>
-                    <button
-                      onClick={() => closeChart('sol')}
-                      className="text-[#737373] hover:text-red-400 transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="text-[#737373] hover:text-white transition-colors"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => closeChart('sol')}
+                        className="text-[#737373] hover:text-red-400 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <PriceChart
                     symbol="SOL/USD"
@@ -349,12 +370,19 @@ export function AppLayout() {
                 <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
                   <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
                     <span className="text-sm text-white">Performance</span>
-                    <button
-                      onClick={() => closeChart('performance')}
-                      className="text-[#737373] hover:text-red-400 transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="text-[#737373] hover:text-white transition-colors"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => closeChart('performance')}
+                        className="text-[#737373] hover:text-red-400 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <PerformanceChart
                     title=""
@@ -370,12 +398,19 @@ export function AppLayout() {
                 <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
                   <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
                     <span className="text-sm text-white">Network</span>
-                    <button
-                      onClick={() => closeChart('network')}
-                      className="text-[#737373] hover:text-red-400 transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="text-[#737373] hover:text-white transition-colors"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => closeChart('network')}
+                        className="text-[#737373] hover:text-red-400 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <NetworkGraph
                     title=""

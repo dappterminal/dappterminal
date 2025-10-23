@@ -9,6 +9,9 @@ and this project adheres to algebraic versioning based on the fibered monoid spe
 
 ## [Unreleased]
 
+### Added
+- `src/plugins/aave-v3/ARCHITECTURE.md` — implementation guide covering command surface, shared services, and rollout options for the Aave v3 plugin.
+
 ### Planned
 - 1inch aggregator plugin (first protocol implementation)
 - Jest/Vitest testing infrastructure
