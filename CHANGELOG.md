@@ -11,6 +11,7 @@ and this project adheres to algebraic versioning based on the fibered monoid spe
 
 ### Added
 - `src/plugins/aave-v3/ARCHITECTURE.md` — implementation guide covering command surface, shared services, and rollout options for the Aave v3 plugin.
+- Aave v3 plugin read commands (`markets`, `reserves`, `rates`, `position`, `health`) plus shared data helpers and API routes for market, reserve, and account health data.
 
 ### Planned
 - 1inch aggregator plugin (first protocol implementation)

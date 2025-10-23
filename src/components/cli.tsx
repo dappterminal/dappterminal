@@ -13,6 +13,7 @@ import { oneInchPlugin } from "@/plugins/1inch"
 import { stargatePlugin } from "@/plugins/stargate"
 import { wormholePlugin } from "@/plugins/wormhole"
 import { lifiPlugin } from "@/plugins/lifi"
+import { aaveV3Plugin } from "@/plugins/aave-v3"
 import { getChainName } from "@/lib/lifi"
 import { getTxUrl } from "@/lib/explorers"
 
@@ -38,6 +39,7 @@ const PROTOCOL_COLORS: Record<string, string> = {
   '1inch': '#94A6FF',
   wormhole: '#FF6B9D',
   lifi: '#A855F7',
+  'aave-v3': '#2F7CF6',
   // Add more protocols here as needed
 }
 
@@ -392,6 +394,15 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       }
     })
 
+    // Load Aave v3 plugin
+    pluginLoader.loadPlugin(aaveV3Plugin, undefined, context).then(result => {
+      if (result.success) {
+        console.log('Aave v3 plugin loaded successfully')
+      } else {
+        console.error('Failed to load Aave v3 plugin:', result.error)
+      }
+    })
+
     // Load command history from localStorage
     const savedHistory = localStorage.getItem('defi-terminal-command-history')
     if (savedHistory) {
@@ -519,6 +530,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     pluginLoader.loadPlugin(stargatePlugin, undefined, newContext)
     pluginLoader.loadPlugin(wormholePlugin, undefined, newContext)
     pluginLoader.loadPlugin(lifiPlugin, undefined, newContext)
+    pluginLoader.loadPlugin(aaveV3Plugin, undefined, newContext)
 
     const newTab: TerminalTab = {
       id: newId,
@@ -1740,7 +1752,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                     getWalletClient: async () => {
                       return await getWalletClient(config)
                     },
-                    switchChain: async (chainId: number) => {
+                    switchChain: async (chainId: number) => { //@ts-ignore sybau
                       await switchChain(config, { chainId })
                       return await getWalletClient(config)
                     },
