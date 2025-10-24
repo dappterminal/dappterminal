@@ -467,9 +467,8 @@ export const transferCommand: Command = {
 /**
  * Chart command - Add charts to the analytics panel
  * Usage:
- *   chart btc - Add BTC price chart
+ *   chart wbtc - Add WBTC price chart
  *   chart eth --line - Add ETH price chart (line mode)
- *   chart sol - Add SOL price chart
  *   chart performance - Add performance metrics chart
  *   chart network - Add network graph chart
  */
@@ -487,7 +486,7 @@ export const chartCommand: Command = {
       if (argTokens.length === 0) {
         return {
           success: false,
-          error: new Error('Usage: chart <symbol|type> [--line]\nExamples:\n  chart btc\n  chart eth --line\n  chart performance\n  chart network'),
+          error: new Error('Usage: chart <symbol|type> [--line]\nExamples:\n  chart wbtc\n  chart eth --line\n  chart performance\n  chart network'),
         }
       }
 
@@ -495,7 +494,7 @@ export const chartCommand: Command = {
       const isLineMode = argTokens.includes('--line')
 
       // Validate chart type
-      const validCharts = ['btc', 'eth', 'sol', 'performance', 'network', 'network-graph']
+      const validCharts = ['wbtc', 'eth', 'performance', 'network', 'network-graph']
       if (!validCharts.includes(chartType)) {
         return {
           success: false,

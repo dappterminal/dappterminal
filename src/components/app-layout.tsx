@@ -13,7 +13,8 @@ import type { TimeRange, DataSource } from '@/types/charts'
 interface Chart {
   id: string
   type: 'price' | 'performance' | 'network'
-  symbol?: string // For price charts
+  symbol?: string // For price charts (can be contract address)
+  displayLabel?: string // Display name for the chart (e.g., "WBTC/USDC")
   timeRange?: TimeRange
   dataSource?: DataSource
   chartMode?: 'candlestick' | 'line'
@@ -57,10 +58,21 @@ export function AppLayout() {
   }, [])
 
   const handleAddChart = useCallback((chartType: string, chartMode?: 'candlestick' | 'line') => {
+    // Map chart types to symbols or contract addresses
+    let symbol = `${chartType.toUpperCase()}/USDC`
+    let displayLabel = `${chartType.toUpperCase()}/USDC`
+
+    // For WBTC, use the Ethereum mainnet contract address
+    if (chartType.toLowerCase() === 'wbtc') {
+      symbol = '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/USDC'
+      displayLabel = 'WBTC/USDC'
+    }
+
     const newChart: Chart = {
       id: `${chartType}-${Date.now()}`,
       type: 'price',
-      symbol: `${chartType.toUpperCase()}/USDC`,
+      symbol,
+      displayLabel,
       timeRange: '24h',
       dataSource: '1inch',
       chartMode: chartMode || 'candlestick',
@@ -70,9 +82,11 @@ export function AppLayout() {
     if (chartType === 'performance') {
       newChart.type = 'performance'
       newChart.symbol = undefined
+      newChart.displayLabel = undefined
     } else if (chartType === 'network' || chartType === 'network-graph') {
       newChart.type = 'network'
       newChart.symbol = undefined
+      newChart.displayLabel = undefined
     }
 
     setCharts(prev => [...prev, newChart])
@@ -319,7 +333,7 @@ export function AppLayout() {
                   return (
                     <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
                       <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between relative">
-                        <span className="text-sm text-white">{chart.symbol}</span>
+                        <span className="text-sm text-white">{chart.displayLabel || chart.symbol}</span>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => setOpenDropdown(openDropdown === chart.id ? null : chart.id)}
@@ -345,6 +359,7 @@ export function AppLayout() {
                       </div>
                       <PriceChart
                         symbol={chart.symbol}
+                        displaySymbol={chart.displayLabel}
                         timeRange={chart.timeRange}
                         dataSource={chart.dataSource}
                         chartType={chart.chartMode}

@@ -87,6 +87,7 @@ export const TOKEN_ADDRESSES: Record<number, Record<string, string>> = {
     weth: '0x4200000000000000000000000000000000000006',
     usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     dai: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb',
+    wbtc: '0x0555E30da8f98308EdB960aa94C0Db47230d2B9c',
   },
   // BSC (Chain ID 56)
   56: {

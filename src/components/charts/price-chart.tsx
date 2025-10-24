@@ -17,6 +17,7 @@ export interface PriceChartProps {
   timeRange?: TimeRange
   dataSource?: DataSource
   symbol?: string
+  displaySymbol?: string // Display label (e.g., "WBTC/USDC" instead of contract address)
   height?: number
   className?: string
   resizeKey?: number
@@ -28,6 +29,7 @@ export function PriceChart({
   timeRange: initialTimeRange = '24h',
   dataSource: initialDataSource = '1inch',
   symbol = 'ETH/USDC',
+  displaySymbol,
   height = 400,
   className = '',
   resizeKey,
@@ -140,14 +142,32 @@ export function PriceChart({
         // Transform API data to our format
         if (chartType === 'candlestick' && result.candles) {
           const candleData = result.candles.data || result.candles
-          const transformedData: OHLCData[] = candleData.map((candle: any) => ({
-            timestamp: candle.time * 1000,
-            open: parseFloat(candle.open) || 0,
-            high: parseFloat(candle.high) || 0,
-            low: parseFloat(candle.low) || 0,
-            close: parseFloat(candle.close) || 0,
-            volume: parseFloat(candle.volume) || 0,
-          }))
+          console.log('Raw candle data sample:', candleData.slice(0, 3))
+
+          const transformedData: OHLCData[] = candleData.map((candle: any) => {
+            // Handle array format: [time, open, high, low, close, volume]
+            if (Array.isArray(candle)) {
+              return {
+                timestamp: candle[0] * 1000,
+                open: parseFloat(candle[1]) || 0,
+                high: parseFloat(candle[2]) || 0,
+                low: parseFloat(candle[3]) || 0,
+                close: parseFloat(candle[4]) || 0,
+                volume: parseFloat(candle[5]) || 0,
+              }
+            }
+            // Handle object format
+            return {
+              timestamp: candle.time * 1000,
+              open: parseFloat(candle.open) || 0,
+              high: parseFloat(candle.high) || 0,
+              low: parseFloat(candle.low) || 0,
+              close: parseFloat(candle.close) || 0,
+              volume: parseFloat(candle.volume) || 0,
+            }
+          })
+          console.log('Transformed candle data sample:', transformedData.slice(0, 3))
+          console.log('First transformed candle:', transformedData[0])
           // Cache the transformed data
           cacheRef.current.set(cacheKey, transformedData)
           setApiData(transformedData)
@@ -216,6 +236,10 @@ export function PriceChart({
       const values = ohlcData.map(d => [d.open, d.close, d.low, d.high])
       const volumes = ohlcData.map(d => d.volume)
 
+      console.log('Chart values being rendered:', values.slice(0, 3))
+      console.log('First value array:', values[0])
+      console.log('First ohlcData:', ohlcData[0])
+
       // Calculate latest price for display
       const latestCandle = ohlcData[ohlcData.length - 1]
 
@@ -257,7 +281,9 @@ export function PriceChart({
             const data = params[0]
             if (!data) return ''
 
-            const [open, close, low, high] = data.data
+            // ECharts adds the category index as the first element
+            // So data.data is [categoryIndex, open, close, low, high]
+            const [, open, close, low, high] = data.data
             const volume = volumes[data.dataIndex]
 
             return `
@@ -309,14 +335,22 @@ export function PriceChart({
         ],
         series: [
           {
-            name: symbol,
+            name: displaySymbol || symbol,
             type: 'candlestick',
             data: values,
             itemStyle: {
-              color: '#10B981', // Green for up
-              color0: '#EF4444', // Red for down
+              color: '#10B981', // Green for up (close > open)
+              color0: '#EF4444', // Red for down (close < open)
               borderColor: '#10B981',
               borderColor0: '#EF4444',
+            },
+            emphasis: {
+              itemStyle: {
+                color: '#10B981',
+                color0: '#EF4444',
+                borderColor: '#10B981',
+                borderColor0: '#EF4444',
+              },
             },
           },
         ],
@@ -416,7 +450,7 @@ export function PriceChart({
         ],
         series: [
           {
-            name: symbol,
+            name: displaySymbol || symbol,
             type: 'line',
             data: prices,
             smooth: true,
