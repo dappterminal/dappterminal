@@ -468,7 +468,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       history: [
         {
           command: "welcome",
-          output: ["Welcome to The DeFi Terminal. Type 'help' to see available commands."],
+          output: ["Welcome to The dApp Terminal. This is an experimental snapshot release (pre-release 0.1.1). Use at your own risk. Type 'help' to see available commands."],
           timestamp: new Date()
         }
       ],
