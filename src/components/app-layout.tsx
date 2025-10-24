@@ -131,8 +131,8 @@ export function AppLayout() {
   return (
     <div className="flex h-screen flex-col bg-[#0A0A0A]">
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-20 flex flex-col items-center bg-[#141414] py-6 border-r border-[#262626]">
+        {/* Sidebar - hidden on mobile */}
+        <aside className="hidden md:flex w-20 flex-col items-center bg-[#141414] py-6 border-r border-[#262626]">
           <div className="p-2 mb-10">
             {/* Logo placeholder */}
           </div>
@@ -194,12 +194,12 @@ export function AppLayout() {
 
         {/* Main Content */}
         <main className="flex-1 flex flex-col overflow-hidden">
-          {/* Header */}
-          <header className="flex items-center justify-between h-20 px-8 border-b border-[#262626] flex-shrink-0">
+          {/* Header - responsive height and padding */}
+          <header className="flex items-center justify-between h-16 md:h-20 px-4 md:px-8 border-b border-[#262626] flex-shrink-0">
             <div className="flex items-center space-x-8 text-base">
-              <h1 className="text-xl font-mono text-white">dappterminal.com</h1>
+              <h1 className="text-lg md:text-xl font-mono text-white">dappterminal.com</h1>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 md:space-x-4">
               <ConnectButton.Custom>
                 {({
                   account,
@@ -276,11 +276,11 @@ export function AppLayout() {
 
                             <button
                               onClick={openAccountModal}
-                              className="bg-[#141414] border border-[#262626] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#262626] transition-colors"
+                              className="bg-[#141414] border border-[#262626] text-white px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium hover:bg-[#262626] transition-colors"
                             >
                               {account.displayName}
                               {account.displayBalance && (
-                                <span className="ml-2 text-[#737373]">
+                                <span className="ml-2 text-[#737373] hidden md:inline">
                                   {account.displayBalance}
                                 </span>
                               )}
@@ -295,17 +295,20 @@ export function AppLayout() {
             </div>
           </header>
 
-          {/* Content Area - CLI and Charts side by side */}
-          <div className="flex-1 flex overflow-hidden content-container">
-            {/* CLI - resizable */}
-            <div style={{ width: hasVisibleCharts ? `${cliWidth}%` : '100%' }} className="flex-shrink-0">
+          {/* Content Area - Vertical stack on mobile, side by side on desktop */}
+          <div className="flex-1 flex flex-col md:flex-row overflow-hidden content-container">
+            {/* CLI - full height on mobile, resizable width on desktop */}
+            <div
+              style={{ width: window.innerWidth >= 768 && hasVisibleCharts ? `${cliWidth}%` : undefined }}
+              className="flex-1 md:flex-initial w-full md:w-auto md:flex-shrink-0"
+            >
               <CLI isFullWidth={!hasVisibleCharts} onAddChart={handleAddChart} />
             </div>
 
-            {/* Resize Handle - only show if charts are visible */}
+            {/* Resize Handle - only show on desktop if charts are visible */}
             {hasVisibleCharts && (
               <div
-                className="w-1 bg-[#0A0A0A] hover:bg-[#404040] cursor-col-resize transition-colors flex-shrink-0"
+                className="hidden md:block w-1 bg-[#0A0A0A] hover:bg-[#404040] cursor-col-resize transition-colors flex-shrink-0"
                 onMouseDown={handleMouseDown}
               />
             )}
@@ -321,11 +324,11 @@ export function AppLayout() {
               <Analytics panelWidth={100 - cliWidth} />
             </div> */}
 
-            {/* Charts - remaining width - only show if charts are visible */}
+            {/* Charts - auto height on mobile (stacks below), remaining width on desktop */}
             {hasVisibleCharts && (
               <div
-                className="flex-1 min-w-0 h-full bg-[#0A0A0A] overflow-y-auto overflow-x-hidden p-4 pb-3 space-y-3 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]"
-                style={{ width: `${100 - cliWidth}%` }}
+                className="flex-initial md:flex-1 min-w-0 w-full h-auto md:h-full bg-[#0A0A0A] overflow-y-auto overflow-x-hidden p-2 md:p-4 pb-3 space-y-3 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]"
+                style={{ width: window.innerWidth >= 768 ? `${100 - cliWidth}%` : undefined }}
               >
               {/* Render all charts dynamically */}
               {charts.map((chart) => {

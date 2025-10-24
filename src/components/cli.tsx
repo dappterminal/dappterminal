@@ -1116,7 +1116,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   }
 
   return (
-    <div className={`w-full h-full bg-[#0A0A0A] p-4 flex flex-col relative overflow-hidden ${isFullWidth ? '' : 'pr-2'}`}>
+    <div className={`w-full h-full bg-[#0A0A0A] p-2 md:p-4 flex flex-col relative overflow-hidden ${isFullWidth ? '' : 'md:pr-2'}`}>
             <div className="h-full bg-[#141414] rounded-xl border border-[#262626] flex flex-col overflow-hidden">
               {/* Window Management Bar with Tabs */}
               <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center gap-2 rounded-t-xl flex-shrink-0">
@@ -1129,7 +1129,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                   return (
                     <div
                       key={tab.id}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
+                      className={`flex items-center gap-2 px-2 py-1 md:px-3 md:py-1.5 rounded-md cursor-pointer transition-colors ${
                         activeTabId === tab.id
                           ? "bg-[#262626]"
                           : "hover:bg-[#242424]"
@@ -1156,7 +1156,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                       }}
                     >
                       <span
-                        className="text-sm"
+                        className="text-xs md:text-sm"
                       >
                         {tab.name}
                       </span>
@@ -1194,7 +1194,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
               {/* Terminal Content */}
               <div
                 ref={terminalRef}
-                className={`flex-1 font-mono overflow-y-scroll select-text min-h-0 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252] ${isFullWidth ? 'p-6' : 'pt-6 pb-6 pl-6 pr-0'}`}
+                className={`flex-1 font-mono overflow-y-scroll select-text min-h-0 text-xs md:text-sm [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252] ${isFullWidth ? 'p-3 md:p-6' : 'pt-3 pb-3 pl-3 md:pt-6 md:pb-6 md:pl-6 pr-0'}`}
                 style={{ fontSize: `${fontSize}px` }}
                 onClick={handleTerminalClick}
               >
@@ -1233,8 +1233,8 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                   </div>
                 ))}
 
-                {/* Current Input */}
-                <div className="relative">
+                {/* Current Input - sticky on mobile */}
+                <div className="relative md:static sticky bottom-0 bg-[#141414] md:bg-transparent backdrop-blur-sm md:backdrop-blur-none -mx-3 md:mx-0 px-3 md:px-0 py-2 md:py-0">
                   <div className="flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded">
                     <span className="text-gray-100">
                       {prompt.split('@')[0]}
