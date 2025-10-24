@@ -103,16 +103,18 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     }
 
     // Get token address
-    const fromTokenAddress = resolveTokenAddress(data.fromToken, data.chainId)
+    const fromTokenAddress = resolveTokenAddress(data.chainId, data.fromToken)
 
     // Resolve chains
     const resolver = wh.resolver([routes.AutomaticTokenBridgeRoute, routes.AutomaticCCTPRoute, routes.CCTPRoute])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const srcChain = wh.getChain(sourceChain as any)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dstChain = wh.getChain(destChain as any)
 
     // Create token ID
     const isNative = fromTokenAddress === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
-    const tokenId = Wormhole.tokenId(srcChain.chain, isNative ? 'native' : fromTokenAddress)
+    const tokenId = Wormhole.tokenId(srcChain.chain, isNative ? 'native' : (fromTokenAddress || data.fromToken))
 
     // Find supported destination tokens
     const destTokens = await resolver.supportedDestinationTokens(tokenId, srcChain, dstChain)
@@ -132,7 +134,8 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     })
 
     // Validate request
-    const validated = await transferRequest.validate({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const validated = await (transferRequest as any).validate({
       amount: data.amount,
       from: senderAddr,
       to: receiverAddr,
@@ -143,28 +146,34 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     }
 
     // Get quote
-    const quote = await resolver.findBestRoute(validated.params)
-    if (!quote) {
+    const availableRoutes = await resolver.findRoutes(validated.params)
+    if (!availableRoutes || availableRoutes.length === 0) {
       throw new Error('No route found for this transfer')
     }
+    const quote = availableRoutes[0] // Use the first (best) route
 
     // Get route info for display
-    const routeInfo = getRouteInfo(quote)
-    const eta = formatETA(quote)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const routeType = (quote as any)?.constructor?.name || 'Unknown'
+    const routeInfo = getRouteInfo(routeType)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const eta = formatETA(quote as any)
 
     // Format amounts for display
-    const formatAmount = (amount: any, decimals: number) => {
+    const formatAmount = (amount: bigint | string | number, decimals: number) => {
       const value = BigInt(amount)
       const divisor = BigInt(10) ** BigInt(decimals)
       return (Number(value) / Number(divisor)).toFixed(6)
     }
 
     const sourceAmountFormatted = formatAmount(validated.params.amount.amount, validated.params.amount.decimals)
-    const destAmountFormatted = quote.destinationToken.amount
-      ? formatAmount(quote.destinationToken.amount.amount, quote.destinationToken.amount.decimals)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const destAmountFormatted = (quote as any).destinationToken?.amount
+      ? formatAmount((quote as any).destinationToken.amount.amount, (quote as any).destinationToken.amount.decimals)
       : sourceAmountFormatted
 
-    const relayFeeInfo = quote.relayFee ? `  Relay Fee: ${formatAmount(quote.relayFee.amount, quote.relayFee.amount.decimals)} ${(quote.relayFee.token as any)?.symbol || data.fromToken.toUpperCase()}` : null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const relayFeeInfo = (quote as any).relayFee ? `  Relay Fee: ${formatAmount((quote as any).relayFee.amount, (quote as any).relayFee.amount.decimals)} ${((quote as any).relayFee.token as { symbol?: string })?.symbol || data.fromToken.toUpperCase()}` : null
 
     ctx.updateHistory([
       data.message,
@@ -184,10 +193,19 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
 
     // Start transfer
     const txHashes: string[] = []
-    const receipt = await quote.initiateTransfer({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const receipt = await (quote as any).initiateTransfer({
       chain: srcChain.chain,
       address: () => data.walletAddress,
-      signAndSend: async (txs: any[]) => {
+      signAndSend: async (txs: Array<{
+        transaction: {
+          to: string
+          data: string
+          value?: string | number
+          gasLimit?: string | number
+        }
+        description: string
+      }>) => {
         const txids: string[] = []
         for (let i = 0; i < txs.length; i++) {
           const txn = txs[i]
@@ -250,7 +268,8 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     })
 
     // Try to get transaction hash from receipt
-    const txHash = (receipt as any).txid || (receipt as any).hash || 'unknown'
+    const receiptData = receipt as { txid?: string; hash?: string }
+    const txHash = receiptData.txid || receiptData.hash || 'unknown'
     if (txHash !== 'unknown') txHashes.push(txHash)
 
     const lastTxHash = txHashes.length > 0 ? txHashes[txHashes.length - 1] : 'pending'

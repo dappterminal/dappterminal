@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
       FetchProviderConnector,
       Address,
       randBigInt,
+      /* eslint-disable @typescript-eslint/no-explicit-any */
     } = sdkModule as {
       Sdk: new (config: any) => any
       MakerTraits: { default(): any }
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
       Address: new (value: string) => any
       randBigInt: (max: bigint) => bigint
     }
+    /* eslint-enable @typescript-eslint/no-explicit-any */
 
     const {
       fromChainId,

@@ -65,9 +65,10 @@ export async function POST(request: NextRequest) {
     const quoteResults = await getQuotesForRoutes(routes, transferRequest, amount)
 
     // Filter successful quotes and format them
+    type QuoteResult = { success: boolean; route: string; quote?: unknown }
     const successfulQuotes = quoteResults
-      .filter((result: any) => result.success)
-      .map((result: any, index: number) => {
+      .filter((result: QuoteResult) => result.success)
+      .map((result: QuoteResult, index: number) => {
         const route = routes[index]
         const routeInfo = getRouteInfo(result.route)
         const formattedQuote = formatQuoteForAPI(route, result.quote)

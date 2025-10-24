@@ -7,11 +7,29 @@
 import type { CommandHandler } from '@/core'
 
 /**
+ * LiFi Route Object (from LiFi SDK)
+ * Using unknown since LiFi SDK types are not fully exposed
+ */
+type LiFiRoute = unknown
+
+/**
+ * LiFi Step Object
+ */
+interface LiFiStep {
+  execution?: {
+    internalTxLink?: string
+    process?: Array<{
+      txHash?: string
+    }>
+  }
+}
+
+/**
  * Bridge Handler Data
  */
 interface LiFiBridgeRequestData {
   lifiTransferRequest: boolean
-  route: any
+  route: LiFiRoute
   fromToken: string
   toToken?: string
   fromChain: number
@@ -22,7 +40,7 @@ interface LiFiBridgeRequestData {
   walletAddress: string
   chainId: number
   slippage?: number
-  steps: any[]
+  steps: LiFiStep[]
   message?: string
 }
 
@@ -94,7 +112,7 @@ export const bridgeHandler: CommandHandler<LiFiBridgeRequestData> = async (data,
             return await getWalletClient(config)
           },
           switchChain: async (chainId: number) => {
-            //@ts-ignore
+            // @ts-expect-error - wagmi switchChain signature mismatch with LiFi SDK expectations
             await switchChain(config, { chainId })
             return await getWalletClient(config)
           },
@@ -103,9 +121,11 @@ export const bridgeHandler: CommandHandler<LiFiBridgeRequestData> = async (data,
     })
 
     // Execute the route using LiFi SDK (handles approvals, multi-step execution, etc.)
-    const executedRoute = await executeRoute(route, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const executedRoute = await executeRoute(route as any, {
       infiniteApproval: false,
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       updateRouteHook(updatedRoute: any) {
         console.log('[LiFi Bridge] Route update:', updatedRoute)
 
@@ -116,8 +136,8 @@ export const bridgeHandler: CommandHandler<LiFiBridgeRequestData> = async (data,
         }
 
         // Collect transaction hashes
-        updatedRoute?.steps?.forEach((step: any) => {
-          step?.execution?.process?.forEach((proc: any) => {
+        updatedRoute?.steps?.forEach((step: LiFiStep) => {
+          step?.execution?.process?.forEach((proc) => {
             if (proc.txHash && !txHashes.includes(proc.txHash)) {
               txHashes.push(proc.txHash)
               ctx.updateHistory([
@@ -134,6 +154,7 @@ export const bridgeHandler: CommandHandler<LiFiBridgeRequestData> = async (data,
         })
       },
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       acceptExchangeRateUpdateHook(params: any) {
         console.log('[LiFi Bridge] Exchange rate update:', params)
         // Auto-accept rate updates

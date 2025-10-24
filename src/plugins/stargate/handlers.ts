@@ -8,6 +8,20 @@ import type { CommandHandler } from '@/core'
 import { getTxUrl } from '@/lib/explorers'
 
 /**
+ * Stargate Transaction Step
+ */
+interface StargateStep {
+  type: string
+  transaction?: {
+    to: string
+    data: string
+    value?: string
+    gas?: string
+    gasPrice?: string
+  }
+}
+
+/**
  * Bridge Handler Data
  */
 interface BridgeRequestData {
@@ -20,7 +34,7 @@ interface BridgeRequestData {
   amountIn: string
   amountOut: string
   walletAddress: string
-  stargateSteps: any[]
+  stargateSteps: StargateStep[]
   slippage: number
 }
 
@@ -121,7 +135,7 @@ export const bridgeHandler: CommandHandler<BridgeRequestData> = async (data, ctx
     // Add explorer links for all transactions
     const links = txHashes.map((hash, idx) => ({
       text: `View Transaction ${idx + 1}`,
-      url: getTxUrl(hash, data.fromChain),
+      url: getTxUrl(data.fromChain, hash),
     }))
     ctx.addHistoryLinks(links)
   } catch (error) {

@@ -1,21 +1,18 @@
 "use client"
 
 import { useState, useEffect, useRef, KeyboardEvent } from "react"
-import { Terminal as TerminalIcon, Settings, Plus, X, Bell, Zap, BarChart3, BookOpen, ChevronDown } from "lucide-react"
-import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { useAccount, useEnsName, useBalance } from 'wagmi'
+import { Plus, X, ChevronDown } from "lucide-react"
+import { useAccount, useEnsName } from 'wagmi'
 import { mainnet } from 'wagmi/chains'
-import { formatUnits, encodeFunctionData, erc20Abi } from 'viem'
+import { formatUnits } from 'viem'
 import { registry, registerCoreCommands, createExecutionContext, updateExecutionContext } from "@/core"
-import type { ExecutionContext, CommandResult } from "@/core"
+import type { ExecutionContext, CommandResult, TransactionRequest, TypedDataPayload } from "@/core"
 import { pluginLoader } from "@/plugins/plugin-loader"
 import { oneInchPlugin } from "@/plugins/1inch"
 import { stargatePlugin } from "@/plugins/stargate"
 import { wormholePlugin } from "@/plugins/wormhole"
 import { lifiPlugin } from "@/plugins/lifi"
 import { aaveV3Plugin } from "@/plugins/aave-v3"
-import { getChainName } from "@/lib/lifi"
-import { getTxUrl } from "@/lib/explorers"
 
 interface HistoryItem {
   command: string
@@ -75,8 +72,23 @@ function formatCommandResult(result: CommandResult): string[] {
 
     // Handle help command output
     if ('message' in value && ('core' in value || 'fiber' in value)) {
-      const helpOutput = value as any
-      const lines: string[] = [helpOutput.message as string, '']
+      const helpOutput = value as {
+        message: string
+        core?: Array<{ id: string; description: string; aliases?: string[] }>
+        fiber?: unknown
+        commands?: Array<{ id: string; description: string; aliases?: string[] }>
+        globals?: Array<{ id: string; description: string; aliases?: string[] }>
+        aliases?: Array<{ id: string; description: string; aliases?: string[] }>
+        exitHint?: string
+        protocols?: Array<{
+          id: string
+          name: string
+          description?: string
+          commandCount: number
+          commands?: Array<{ id: string; description: string }>
+        }>
+      }
+      const lines: string[] = [helpOutput.message, '']
 
       // Fiber help (when in M_p)
       if (helpOutput.fiber && Array.isArray(helpOutput.commands)) {
@@ -145,18 +157,27 @@ function formatCommandResult(result: CommandResult): string[] {
 
       // Handle history (has command and timestamp)
       if ('command' in firstItem && 'timestamp' in firstItem) {
-        return value.map((item: any) => `  ${item.command}`)
+        return value.map((item: unknown) => {
+          const historyItem = item as { command: string }
+          return `  ${historyItem.command}`
+        })
       }
 
       // Handle protocols list (has id, name, commandCount)
       if ('id' in firstItem && 'commandCount' in firstItem) {
-        return value.map((item: any) => {
-          return `  ${item.id.padEnd(15)} ${item.name || ''} ${item.description ? `- ${item.description}` : ''} ${item.commandCount !== undefined ? `(${item.commandCount} commands)` : ''}`
+        return value.map((item: unknown) => {
+          const protocolItem = item as {
+            id: string
+            name?: string
+            description?: string
+            commandCount?: number
+          }
+          return `  ${protocolItem.id.padEnd(15)} ${protocolItem.name || ''} ${protocolItem.description ? `- ${protocolItem.description}` : ''} ${protocolItem.commandCount !== undefined ? `(${protocolItem.commandCount} commands)` : ''}`
         })
       }
 
       // Handle generic arrays
-      return value.map((item: any) => JSON.stringify(item, null, 2))
+      return value.map((item: unknown) => JSON.stringify(item, null, 2))
     }
 
     // Handle empty arrays
@@ -166,7 +187,13 @@ function formatCommandResult(result: CommandResult): string[] {
 
     // Handle 1inch token price
     if ('tokenPrice' in value) {
-      const priceData = value as any
+      const priceData = value as {
+        tokenPrice: number
+        chainId: number
+        token: string
+        tokenAddress: string
+        price: string | number
+      }
       const networkNames: Record<number, string> = {
         1: 'Ethereum',
         10: 'Optimism',
@@ -208,7 +235,14 @@ function formatCommandResult(result: CommandResult): string[] {
 
     // Handle 1inch gas prices
     if ('gasPrices' in value) {
-      const gasData = value as any
+      const gasData = value as {
+        gasPrices: unknown
+        chainId: number
+        low?: { maxFeePerGas: string }
+        medium?: { maxFeePerGas: string }
+        high?: { maxFeePerGas: string }
+        baseFee?: string
+      }
       const networkNames: Record<number, string> = {
         1: 'Ethereum',
         10: 'Optimism',
@@ -244,7 +278,15 @@ function formatCommandResult(result: CommandResult): string[] {
 
     // Handle 1inch swap request
     if ('swapRequest' in value) {
-      const swapData = value as any
+      const swapData = value as {
+        swapRequest: boolean
+        fromToken: string
+        toToken: string
+        amountIn: string
+        amountOut: string
+        gas?: string
+        slippage: number
+      }
       return [
         `📊 Swap Quote:`,
         `  ${swapData.fromToken.toUpperCase()} → ${swapData.toToken.toUpperCase()}`,
@@ -856,17 +898,17 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                     return tab
                   }))
                 },
-                signTransaction: async (tx: any) => {
+                signTransaction: async (tx: TransactionRequest) => {
                   const { sendTransaction } = await import('wagmi/actions')
                   const { config } = await import('@/lib/wagmi-config')
                   return sendTransaction(config, tx)
                 },
-                signTypedData: async (typedData: any) => {
+                signTypedData: async (typedData: TypedDataPayload) => {
                   const { signTypedData } = await import('wagmi/actions')
                   const { config } = await import('@/lib/wagmi-config')
                   return signTypedData(config, typedData)
                 },
-                sendTransaction: async (tx: any) => {
+                sendTransaction: async (tx: TransactionRequest) => {
                   const { sendTransaction } = await import('wagmi/actions')
                   const { config } = await import('@/lib/wagmi-config')
                   return sendTransaction(config, tx)
@@ -921,7 +963,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         ))
 
         // Handle clear command
-        if (output.length === 0 && result.success && 'cleared' in (result.value as any)) {
+        if (output.length === 0 && result.success && 'cleared' in (result.value as object)) {
           setTabs(tabs.map(tab =>
             tab.id === activeTabId ? { ...tab, history: [] } : tab
           ))

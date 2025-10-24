@@ -156,7 +156,7 @@ export const swapHandler: CommandHandler<SwapRequestData> = async (data, ctx) =>
 
     // Add explorer link
     ctx.addHistoryLinks([
-      { text: 'View Transaction', url: getTxUrl(hash, data.chainId) },
+      { text: 'View Transaction', url: getTxUrl(data.chainId, hash) },
     ])
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

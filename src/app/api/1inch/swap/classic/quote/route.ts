@@ -27,10 +27,11 @@ export async function GET(request: NextRequest) {
     })
 
     return NextResponse.json(data)
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Swap quote API error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Failed to get swap quote'
     return NextResponse.json(
-      { error: error.message || 'Failed to get swap quote' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

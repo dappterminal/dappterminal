@@ -10,11 +10,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    /* eslint-disable @typescript-eslint/no-explicit-any */
     const { FetchProviderConnector, LimitOrderWithFee, Sdk } = sdkModule as {
       FetchProviderConnector: new () => any
       LimitOrderWithFee: { fromDataAndExtension(build: unknown, extension: unknown): any }
       Sdk: new (config: any) => any
     }
+    /* eslint-enable @typescript-eslint/no-explicit-any */
 
     const { fromChainId, build, extension, signature } = await request.json()
 
@@ -32,7 +34,7 @@ export async function POST(request: NextRequest) {
     })
 
     const limitOrderWithFee = LimitOrderWithFee.fromDataAndExtension(build, extension)
-    console.log('Submitting limit order:', limitOrderWithFee instanceof LimitOrderWithFee)
+    console.log('Submitting limit order:', limitOrderWithFee)
 
     const submitOrder = await sdk.submitOrder(limitOrderWithFee, signature)
 

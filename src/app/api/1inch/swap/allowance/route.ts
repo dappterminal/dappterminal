@@ -23,10 +23,11 @@ export async function GET(request: NextRequest) {
     })
 
     return NextResponse.json(data)
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Allowance API error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Failed to get allowance'
     return NextResponse.json(
-      { error: error.message || 'Failed to get allowance' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

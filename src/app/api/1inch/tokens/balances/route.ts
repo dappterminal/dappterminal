@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createOneInchPlugin } from '@/plugins/1inch';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -24,17 +23,36 @@ export async function GET(request: NextRequest) {
   try {
     console.log('Fetching balances for:', walletAddress, 'on chain:', chainId);
 
-    // Use the 1inch plugin
-    const plugin = createOneInchPlugin();
-    const data = await plugin.getTokenBalances({
-      chainId: parseInt(chainId),
-      walletAddress
+    // Call 1inch Balance API directly
+    const apiKey = process.env.ONEINCH_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'API key not configured' },
+        { status: 500 }
+      );
+    }
+
+    const url = `https://api.1inch.dev/balance/v1.2/${chainId}/balances/${walletAddress}`;
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
     });
 
+    if (!response.ok) {
+      throw new Error(`1inch API error: ${response.statusText}`);
+    }
+
+    const data = await response.json() as Record<string, {
+      balance: string
+      decimals: number
+      symbol: string
+      name: string
+    }>;
     console.log('Response status: success');
 
     // Transform the response to include more readable information
-    const transformedBalances = Object.entries(data).map(([tokenAddress, tokenData]: [string, any]) => {
+    const transformedBalances = Object.entries(data).map(([tokenAddress, tokenData]) => {
       const balance = parseFloat(tokenData.balance) / Math.pow(10, tokenData.decimals);
 
       return {
@@ -58,10 +76,11 @@ export async function GET(request: NextRequest) {
       totalTokens: transformedBalances.length
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Balance API error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { error: errorMessage },
       { status: 500 }
     );
   }

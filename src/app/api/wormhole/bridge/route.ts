@@ -60,10 +60,10 @@ export async function POST(request: NextRequest) {
     const quoteResults = await getQuotesForRoutes(routes, transferRequest, amount)
 
     // Find the first successful route (or specified route type)
-    let selectedRouteIndex = quoteResults.findIndex((r: any) => r.success)
+    let selectedRouteIndex = quoteResults.findIndex((r: { success: boolean; route?: string }) => r.success)
 
     if (routeType) {
-      const typeIndex = quoteResults.findIndex((r: any) => r.success && r.route === routeType)
+      const typeIndex = quoteResults.findIndex((r: { success: boolean; route?: string }) => r.success && r.route === routeType)
       if (typeIndex !== -1) {
         selectedRouteIndex = typeIndex
       }

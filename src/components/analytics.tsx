@@ -71,7 +71,7 @@ export function Analytics({ panelWidth }: AnalyticsProps) {
               </div>
               <PriceChart
                 symbol="BTC/USD"
-                timeRange="24H"
+                timeRange="24h"
                 height={280}
                 className="p-1"
                 resizeKey={resizeKey}
@@ -93,7 +93,7 @@ export function Analytics({ panelWidth }: AnalyticsProps) {
               </div>
               <PriceChart
                 symbol="ETH/USD"
-                timeRange="24H"
+                timeRange="24h"
                 height={280}
                 className="p-1"
                 resizeKey={resizeKey}
@@ -115,7 +115,7 @@ export function Analytics({ panelWidth }: AnalyticsProps) {
               </div>
               <PriceChart
                 symbol="SOL/USD"
-                timeRange="24H"
+                timeRange="24h"
                 height={280}
                 className="p-1"
                 resizeKey={resizeKey}

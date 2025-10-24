@@ -35,10 +35,11 @@ export async function GET(request: NextRequest) {
       price: price,
       token: tokenAddress,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Token price API error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Failed to get token price'
     return NextResponse.json(
-      { error: error.message || 'Failed to get token price' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

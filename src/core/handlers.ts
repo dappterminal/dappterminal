@@ -8,6 +8,43 @@
 import type { ExecutionContext } from './types'
 
 /**
+ * Transaction Request
+ *
+ * Represents a transaction to be sent to the blockchain.
+ * Compatible with wagmi's sendTransaction parameters.
+ */
+export interface TransactionRequest {
+  to: `0x${string}`
+  data?: `0x${string}`
+  value?: bigint
+  gas?: bigint
+  gasLimit?: bigint
+  gasPrice?: bigint
+  maxFeePerGas?: bigint
+  maxPriorityFeePerGas?: bigint
+  nonce?: number
+  // chainId is handled by wagmi config, not passed in transaction
+}
+
+/**
+ * EIP-712 Typed Data Payload
+ *
+ * Represents structured data for EIP-712 signing.
+ * Used for off-chain signatures like limit orders.
+ */
+export interface TypedDataPayload {
+  domain: {
+    name: string
+    version: string
+    chainId: number
+    verifyingContract: `0x${string}`
+  }
+  types: Record<string, Array<{ name: string; type: string }>>
+  primaryType: string
+  message: Record<string, unknown>
+}
+
+/**
  * CLI Context
  *
  * Provides CLI-specific operations that handlers can use
@@ -29,19 +66,19 @@ export interface CLIContext {
    * Sign a transaction using the connected wallet
    * @returns Transaction hash
    */
-  signTransaction: (tx: any) => Promise<string>
+  signTransaction: (tx: TransactionRequest) => Promise<string>
 
   /**
    * Sign typed data (EIP-712) using the connected wallet
    * @returns Signature
    */
-  signTypedData: (typedData: any) => Promise<string>
+  signTypedData: (typedData: TypedDataPayload) => Promise<string>
 
   /**
    * Send a transaction using the connected wallet
    * @returns Transaction hash
    */
-  sendTransaction: (tx: any) => Promise<string>
+  sendTransaction: (tx: TransactionRequest) => Promise<string>
 
   /**
    * Active terminal tab ID
@@ -67,7 +104,7 @@ export interface CLIContext {
  *
  * @template T - The type of data returned by the command
  */
-export type CommandHandler<T = any> = (
+export type CommandHandler<T = unknown> = (
   data: T,
   context: ExecutionContext & CLIContext
 ) => Promise<void>
@@ -77,4 +114,5 @@ export type CommandHandler<T = any> = (
  *
  * Maps command IDs to their execution handlers
  */
-export type HandlerRegistry = Record<string, CommandHandler>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type HandlerRegistry = Record<string, CommandHandler<any>>

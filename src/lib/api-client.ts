@@ -48,7 +48,7 @@ export async function callProtocolApi<T = unknown>(
         'Content-Type': 'application/json',
         ...headers,
       },
-      ...(body && { body: JSON.stringify(body) }),
+      ...(body ? { body: JSON.stringify(body) } : {}),
     })
 
     if (!response.ok) {
@@ -124,7 +124,7 @@ export async function callCoreApi<T = unknown>(
         'Content-Type': 'application/json',
         ...headers,
       },
-      ...(body && { body: JSON.stringify(body) }),
+      ...(body ? { body: JSON.stringify(body) } : {}),
     })
 
     if (!response.ok) {

@@ -239,11 +239,11 @@ export function PriceChart({
           textStyle: {
             color: '#E5E5E5',
             fontSize: 14,
-            fontWeight: '600',
+            fontWeight: 600,
             rich: {
               percent: {
                 color: priceChange >= 0 ? '#10B981' : '#EF4444',
-                fontWeight: '600',
+                fontWeight: 600,
               },
             },
           },
@@ -358,11 +358,11 @@ export function PriceChart({
           textStyle: {
             color: '#E5E5E5',
             fontSize: 14,
-            fontWeight: '600',
+            fontWeight: 600,
             rich: {
               percent: {
                 color: priceChange >= 0 ? '#10B981' : '#EF4444',
-                fontWeight: '600',
+                fontWeight: 600,
               },
             },
           },

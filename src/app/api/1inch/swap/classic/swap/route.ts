@@ -29,10 +29,11 @@ export async function GET(request: NextRequest) {
     })
 
     return NextResponse.json(data)
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Swap execution API error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Failed to execute swap'
     return NextResponse.json(
-      { error: error.message || 'Failed to execute swap' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

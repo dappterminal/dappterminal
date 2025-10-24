@@ -19,14 +19,15 @@ export async function GET(request: NextRequest) {
     const data = await api.getApproveTransaction({
       chainId: parseInt(chainId),
       tokenAddress,
-      amount,
+      amount: amount ?? undefined,
     })
 
     return NextResponse.json(data)
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Approve transaction API error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Failed to get approve transaction'
     return NextResponse.json(
-      { error: error.message || 'Failed to get approve transaction' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

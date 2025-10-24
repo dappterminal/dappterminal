@@ -13,7 +13,7 @@ const HISTORICAL_METHODS = [
 interface RPCRequest {
   jsonrpc: string;
   method: string;
-  params: any[];
+  params: unknown[];
   id: number | string;
 }
 
@@ -49,7 +49,7 @@ async function getLatestBlockNumber(chainId: string): Promise<number> {
   return 999999999;
 }
 
-function determineNodeType(method: string, params: any[], latestBlock: number): string {
+function determineNodeType(method: string, params: unknown[], latestBlock: number): string {
   // Only use archive for historical methods
   if (!HISTORICAL_METHODS.includes(method)) {
     return 'full';
@@ -57,23 +57,23 @@ function determineNodeType(method: string, params: any[], latestBlock: number): 
 
   // Different methods have block parameter at different positions
   let blockParam: string | undefined;
-  
+
   switch (method) {
     case 'eth_getBalance':
     case 'eth_getCode':
       // Block parameter is at index 1
-      blockParam = params[1];
+      blockParam = params[1] as string | undefined;
       break;
     case 'eth_getStorageAt':
       // Block parameter is at index 2
-      blockParam = params[2];
+      blockParam = params[2] as string | undefined;
       break;
     case 'eth_call':
       // Block parameter is at index 1 (or could be in the transaction object)
-      blockParam = params[1];
+      blockParam = params[1] as string | undefined;
       // Also check if block is specified in the transaction object
-      if (typeof params[0] === 'object' && params[0].blockNumber) {
-        blockParam = params[0].blockNumber;
+      if (typeof params[0] === 'object' && params[0] !== null && 'blockNumber' in params[0]) {
+        blockParam = (params[0] as { blockNumber?: string }).blockNumber;
       }
       break;
   }

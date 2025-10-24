@@ -54,7 +54,8 @@ export const healthCommand: Command = {
 
     if (!result.success) {
       return {
-        success: false, //@ts-ignore (Type 'string' is not assignable to type 'Error'.) (yes it is lmao)
+        success: false,
+        // @ts-expect-error - Type 'string' is not assignable to type 'Error' (but it works at runtime)
         error: result.error || 'Failed to validate API key',
       }
     }
