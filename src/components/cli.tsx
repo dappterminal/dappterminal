@@ -1116,7 +1116,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   }
 
   return (
-    <div className={`w-full h-full bg-[#0A0A0A] p-2 md:p-4 flex flex-col relative overflow-hidden ${isFullWidth ? '' : 'md:pr-2'}`}>
+    <div className={`w-full h-full bg-[#0A0A0A] p-2 md:p-4 flex flex-col relative overflow-hidden`}>
             <div className="h-full bg-[#141414] rounded-xl border border-[#262626] flex flex-col overflow-hidden">
               {/* Window Management Bar with Tabs */}
               <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center gap-2 rounded-t-xl flex-shrink-0">
@@ -1194,7 +1194,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
               {/* Terminal Content */}
               <div
                 ref={terminalRef}
-                className={`flex-1 font-mono overflow-y-scroll select-text min-h-0 text-xs md:text-sm [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252] ${isFullWidth ? 'p-3 md:p-6' : 'pt-3 pb-3 pl-3 md:pt-6 md:pb-6 md:pl-6 pr-0'}`}
+                className={`flex-1 font-mono overflow-y-scroll select-text min-h-0 text-xs md:text-sm p-3 md:p-6 pr-3 md:pr-4 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]`}
                 style={{ fontSize: `${fontSize}px` }}
                 onClick={handleTerminalClick}
               >

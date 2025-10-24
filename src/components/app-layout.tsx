@@ -26,6 +26,7 @@ export function AppLayout() {
   const [resizeKey, setResizeKey] = useState(0)
   const [charts, setCharts] = useState<Chart[]>([])
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
+  const [isMobile, setIsMobile] = useState(false)
 
   const handleMouseDown = useCallback(() => {
     setIsDragging(true)
@@ -102,6 +103,18 @@ export function AppLayout() {
 
   // Check if any charts are visible
   const hasVisibleCharts = charts.length > 0
+
+  // Check if mobile on mount and resize
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   // Trigger resize when cliWidth changes
   useEffect(() => {
@@ -299,8 +312,8 @@ export function AppLayout() {
           <div className="flex-1 flex flex-col md:flex-row overflow-hidden content-container">
             {/* CLI - full height on mobile, resizable width on desktop */}
             <div
-              style={{ width: window.innerWidth >= 768 && hasVisibleCharts ? `${cliWidth}%` : undefined }}
-              className="flex-1 md:flex-initial w-full md:w-auto md:flex-shrink-0"
+              style={{ width: !isMobile && hasVisibleCharts ? `${cliWidth}%` : undefined }}
+              className={`flex-1 w-full ${hasVisibleCharts ? 'md:flex-initial md:w-auto md:flex-shrink-0' : ''}`}
             >
               <CLI isFullWidth={!hasVisibleCharts} onAddChart={handleAddChart} />
             </div>
@@ -328,7 +341,7 @@ export function AppLayout() {
             {hasVisibleCharts && (
               <div
                 className="flex-initial md:flex-1 min-w-0 w-full h-auto md:h-full bg-[#0A0A0A] overflow-y-auto overflow-x-hidden p-2 md:p-4 pb-3 space-y-3 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]"
-                style={{ width: window.innerWidth >= 768 ? `${100 - cliWidth}%` : undefined }}
+                style={{ width: !isMobile ? `${100 - cliWidth}%` : undefined }}
               >
               {/* Render all charts dynamically */}
               {charts.map((chart) => {
