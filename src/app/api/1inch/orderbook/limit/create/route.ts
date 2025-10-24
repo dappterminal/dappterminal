@@ -1,16 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
-import {
-  Sdk,
-  MakerTraits,
-  FetchProviderConnector,
-  Address,
-  Extension,
-  randBigInt,
-} from '@1inch/limit-order-sdk'
-import { getProperTokenAddress } from '@/lib/1inch-helpers'
+import { getProperTokenAddress } from '@/plugins/1inch/orderbook'
 
 export async function POST(request: NextRequest) {
   try {
+    const sdkModule = await import('@1inch/limit-order-sdk').catch(() => null)
+    if (!sdkModule) {
+      return NextResponse.json(
+        { error: 'The @1inch/limit-order-sdk package is not installed on the server.' },
+        { status: 500 }
+      )
+    }
+
+    const {
+      Sdk,
+      MakerTraits,
+      FetchProviderConnector,
+      Address,
+      randBigInt,
+    } = sdkModule as {
+      Sdk: new (config: any) => any
+      MakerTraits: { default(): any }
+      FetchProviderConnector: new () => any
+      Address: new (value: string) => any
+      randBigInt: (max: bigint) => bigint
+    }
+
     const {
       fromChainId,
       fromToken,
@@ -127,7 +141,7 @@ export async function POST(request: NextRequest) {
     // Create the order with SDK
     const limitOrder = await sdk.createOrder(orderInfo, makerTraits)
     const build = limitOrder.build() // non encoded
-    const extension: Extension = limitOrder.extension
+    const extension = limitOrder.extension
 
     const typedData = limitOrder.getTypedData(fromChainId)
 

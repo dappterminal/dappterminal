@@ -1,12 +1,21 @@
-import {
-  FetchProviderConnector,
-  LimitOrderWithFee,
-  Sdk,
-} from '@1inch/limit-order-sdk'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
+    const sdkModule = await import('@1inch/limit-order-sdk').catch(() => null)
+    if (!sdkModule) {
+      return NextResponse.json(
+        { error: 'The @1inch/limit-order-sdk package is not installed on the server.' },
+        { status: 500 }
+      )
+    }
+
+    const { FetchProviderConnector, LimitOrderWithFee, Sdk } = sdkModule as {
+      FetchProviderConnector: new () => any
+      LimitOrderWithFee: { fromDataAndExtension(build: unknown, extension: unknown): any }
+      Sdk: new (config: any) => any
+    }
+
     const { fromChainId, build, extension, signature } = await request.json()
 
     const authKey = process.env.ONEINCH_API_KEY

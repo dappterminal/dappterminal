@@ -6,6 +6,7 @@ import type { Plugin, PluginConfig } from '@/plugins'
 import type { ProtocolFiber, ExecutionContext } from '@/core'
 import { createProtocolFiber, addCommandToFiber } from '@/core'
 import { bridgeCommand, chainsCommand } from './commands'
+import { stargateHandlers } from './handlers'
 
 /**
  * Stargate Bridge Plugin
@@ -28,6 +29,9 @@ export const stargatePlugin: Plugin = {
     },
     credentials: {},
   },
+
+  // Command execution handlers
+  handlers: stargateHandlers,
 
   /**
    * Initialize the plugin

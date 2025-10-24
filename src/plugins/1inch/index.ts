@@ -7,6 +7,7 @@ import type { ProtocolFiber, ExecutionContext } from '@/core'
 import { createProtocolFiber, addCommandToFiber } from '@/core'
 import { priceCommand, gasCommand, swapCommand, limitorderCommand, ethrpcCommand } from './commands'
 import { OneInchAPI } from './api'
+import { oneInchHandlers } from './handlers'
 
 /**
  * 1inch Plugin
@@ -31,6 +32,9 @@ export const oneInchPlugin: Plugin = {
       apiKey: process.env.ONEINCH_API_KEY || '',
     },
   },
+
+  // Command execution handlers
+  handlers: oneInchHandlers,
 
   /**
    * Initialize the plugin

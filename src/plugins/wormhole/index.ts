@@ -6,6 +6,7 @@ import type { Plugin, PluginConfig } from '@/plugins'
 import type { ProtocolFiber, ExecutionContext } from '@/core'
 import { createProtocolFiber, addCommandToFiber } from '@/core'
 import { quoteCommand, routesCommand, bridgeCommand } from './commands'
+import { wormholeHandlers } from './handlers'
 
 /**
  * Wormhole Plugin
@@ -27,6 +28,9 @@ export const wormholePlugin: Plugin = {
       network: 'Mainnet',
     },
   },
+
+  // Command execution handlers
+  handlers: wormholeHandlers,
 
   /**
    * Initialize the plugin

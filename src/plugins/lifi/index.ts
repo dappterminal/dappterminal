@@ -17,6 +17,7 @@ import {
   chainsCommand,
   statusCommand,
 } from './commands'
+import { lifiHandlers } from './handlers'
 
 export const lifiPlugin: Plugin = {
   metadata: {
@@ -38,6 +39,9 @@ export const lifiPlugin: Plugin = {
       quoteExpiryMs: 5 * 60 * 1000,
     },
   },
+
+  // Command execution handlers
+  handlers: lifiHandlers,
 
   async initialize(context: ExecutionContext): Promise<ProtocolFiber> {
     // Create protocol fiber with automatic identity injection

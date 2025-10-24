@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@1inch/limit-order-sdk": "^5.2.3",
     "@aave/react": "^0.7.0",
     "@lifi/sdk": "^3.12.14",
     "@radix-ui/react-scroll-area": "^1.2.10",

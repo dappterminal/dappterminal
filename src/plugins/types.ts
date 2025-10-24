@@ -4,7 +4,7 @@
  * Defines the contract that all protocol plugins must implement
  */
 
-import type { Command, ProtocolFiber, ExecutionContext } from '@/core/types'
+import type { Command, ProtocolFiber, ExecutionContext, HandlerRegistry } from '@/core'
 
 /**
  * Plugin metadata
@@ -84,6 +84,15 @@ export interface Plugin {
    * Returns whether the plugin is functioning correctly
    */
   healthCheck?(context: ExecutionContext): Promise<boolean>
+
+  /**
+   * Command execution handlers
+   *
+   * Maps command IDs to their execution logic.
+   * Handlers receive command result data and CLI context
+   * to orchestrate complex flows (signing, transactions, etc.)
+   */
+  handlers?: HandlerRegistry
 }
 
 /**
