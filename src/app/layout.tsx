@@ -16,7 +16,7 @@ const firaCode = Fira_Code({
 
 export const metadata: Metadata = {
   title: "dappterminal.com",
-  description: "dappterminal.com",
+  description: "dApp Terminal",
 };
 
 export default function RootLayout({
