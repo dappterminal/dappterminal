@@ -132,11 +132,17 @@ export const bridgeHandler: CommandHandler<BridgeRequestData> = async (data, ctx
       ...txHashes.map((hash, idx) => `  ${idx + 1}. ${hash}`),
     ])
 
-    // Add explorer links for all transactions
-    const links = txHashes.map((hash, idx) => ({
-      text: `View Transaction ${idx + 1}`,
-      url: getTxUrl(data.fromChain, hash),
-    }))
+    // Add explorer links for all transactions (chain explorer + LayerZero Scan)
+    const links = txHashes.flatMap((hash, idx) => [
+      {
+        text: `View Transaction ${idx + 1} on ${fromChainName} Explorer`,
+        url: getTxUrl(data.fromChain, hash),
+      },
+      {
+        text: `View Transaction ${idx + 1} on LayerZero Scan`,
+        url: `https://layerzeroscan.com/tx/${hash}`,
+      },
+    ])
     ctx.addHistoryLinks(links)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

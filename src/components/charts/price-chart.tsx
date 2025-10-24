@@ -302,7 +302,7 @@ export function PriceChart({
           left: 30,
           right: 30,
           bottom: 40,
-          top: 40,
+          top: 50,
           containLabel: true,
         },
         xAxis: {
@@ -422,7 +422,7 @@ export function PriceChart({
           left: 30,
           right: 30,
           bottom: 40,
-          top: 40,
+          top: 50,
           containLabel: true,
         },
         xAxis: {

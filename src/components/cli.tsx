@@ -537,7 +537,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
 
   // Sync wallet state to execution context
   useEffect(() => {
-    if (executionContext && activeTabId) {
+    if (activeTabId) {
       setTabs(prevTabs => prevTabs.map(tab =>
         tab.id === activeTabId
           ? {
@@ -556,8 +556,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
           : tab
       ))
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, chainId, isConnected, isConnecting])
+  }, [address, chainId, isConnected, isConnecting, activeTabId])
 
   const addNewTab = () => {
     const newId = (tabs.length + 1).toString()
@@ -580,7 +579,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       history: [
         {
           command: "welcome",
-          output: ["Welcome to The DeFi Terminal. Type 'help' to see available commands."],
+          output: ["Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.1.1). Use at your own risk. Type 'help' to see available commands."],
           timestamp: new Date()
         }
       ],
@@ -1080,23 +1079,12 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       if (fuzzyResults.length === 0) {
         // No matches
         setFuzzyMatches([])
-      } else if (fuzzyResults.length === 1) {
-        // Single match - autocomplete immediately
-        setCurrentInput(fuzzyResults[0].command.id)
-        setFuzzyMatches([])
       } else {
-        // Multiple matches - show suggestions
+        // Always show suggestions menu (even for single match)
         // Deduplicate matches (in case aliases match the same command)
         const matches = Array.from(new Set(fuzzyResults.map(r => r.command.id)))
-
-        if (matches.length === 1) {
-          // After deduplication, only one unique command
-          setCurrentInput(matches[0])
-          setFuzzyMatches([])
-        } else {
-          setFuzzyMatches(matches)
-          setSelectedMatchIndex(0)
-        }
+        setFuzzyMatches(matches)
+        setSelectedMatchIndex(0)
       }
     }
   }

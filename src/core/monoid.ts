@@ -398,10 +398,11 @@ export function updateExecutionContext(
 
   // Create a NEW context object with all fields including any mutations
   // This ensures React detects the state change (different object reference)
+  // IMPORTANT: Deep copy wallet to ensure wallet state is preserved
   return {
     activeProtocol: context.activeProtocol, // Explicitly copy (may have been mutated)
     protocolPreferences: context.protocolPreferences,
-    wallet: context.wallet,
+    wallet: { ...context.wallet }, // Deep copy to preserve wallet state
     globalState: context.globalState,
     protocolState: context.protocolState,
     history: [...context.history, execution],
