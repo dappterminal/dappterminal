@@ -9,6 +9,7 @@ import type { EChartsOption } from 'echarts'
 import { BaseChart } from './base-chart'
 import type { OHLCData, PricePoint, ChartType, TimeRange, DataSource } from '@/types/charts'
 import { generateMockOHLCData, generateMockPricePoints } from '@/lib/charts'
+import { resolveTokenAddress } from '@/plugins/1inch/tokens'
 
 export interface PriceChartProps {
   data?: OHLCData[] | PricePoint[]
@@ -25,8 +26,8 @@ export function PriceChart({
   data,
   chartType: initialChartType = 'candlestick',
   timeRange: initialTimeRange = '24h',
-  dataSource: initialDataSource = 'Mock',
-  symbol = 'ETH/USD',
+  dataSource: initialDataSource = '1inch',
+  symbol = 'ETH/USDC',
   height = 400,
   className = '',
   resizeKey,
@@ -35,7 +36,12 @@ export function PriceChart({
   const [timeRange, setTimeRange] = useState<TimeRange>(initialTimeRange)
   const [dataSource, setDataSource] = useState<DataSource>(initialDataSource)
   const [showDropdown, setShowDropdown] = useState(false)
+  const [apiData, setApiData] = useState<OHLCData[] | PricePoint[] | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Cache for API data to avoid refetching
+  const cacheRef = useRef<Map<string, OHLCData[] | PricePoint[]>>(new Map())
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -54,12 +60,127 @@ export function PriceChart({
     }
   }, [showDropdown])
 
+  // Fetch data from 1inch API
+  useEffect(() => {
+    if (dataSource !== '1inch' || data) {
+      setApiData(null)
+      return
+    }
+
+    const fetchChartData = async () => {
+      // Create cache key based on chart parameters
+      const cacheKey = `${symbol}-${chartType}-${timeRange}-${dataSource}`
+
+      // Check if data is already cached
+      const cachedData = cacheRef.current.get(cacheKey)
+      if (cachedData) {
+        console.log('Using cached chart data for:', cacheKey)
+        setApiData(cachedData)
+        return
+      }
+
+      setIsLoading(true)
+      try {
+        // Parse symbol (e.g., "ETH/USDC" -> token0=ETH, token1=USDC)
+        const [token0Symbol, token1Symbol = 'USDC'] = symbol.split('/').map(s => s.trim())
+
+        // Resolve token symbols to addresses
+        const chainId = 1 // Default to Ethereum mainnet, could be made dynamic later
+        const token0 = resolveTokenAddress(token0Symbol, chainId)
+        const token1 = resolveTokenAddress(token1Symbol, chainId)
+
+        // Map time range to period parameter for 1inch API
+        // Candle uses seconds, Line uses period codes
+        const candlePeriodMap: Record<TimeRange, string> = {
+          '1m': '60',
+          '5m': '300',
+          '15m': '900',
+          '1h': '3600',
+          '4h': '14400',
+          '12h': '43200',
+          '24h': '86400',
+          '1w': '604800',
+          '1M': '2592000',
+          '1Y': '31536000',
+          'ALL': '31536000', // Default to 1 year for ALL
+        }
+
+        const linePeriodMap: Record<TimeRange, string> = {
+          '1m': '1M',
+          '5m': '5M',
+          '15m': '15M',
+          '1h': '1H',
+          '4h': '4H',
+          '12h': '12H',
+          '24h': '24H',
+          '1w': '1W',
+          '1M': '1MON',
+          '1Y': '1Y',
+          'ALL': 'ALL',
+        }
+
+        const period = chartType === 'candlestick'
+          ? (candlePeriodMap[timeRange] || '86400')
+          : (linePeriodMap[timeRange] || '24H')
+
+        const endpoint = chartType === 'candlestick'
+          ? `/api/1inch/charts/candle?token0=${token0}&token1=${token1}&period=${period}&chainId=${chainId}`
+          : `/api/1inch/charts/line?token0=${token0}&token1=${token1}&period=${period}&chainId=${chainId}`
+
+        const response = await fetch(endpoint)
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch chart data')
+        }
+
+        const result = await response.json()
+
+        console.log('Chart API response:', result)
+
+        // Transform API data to our format
+        if (chartType === 'candlestick' && result.candles) {
+          const candleData = result.candles.data || result.candles
+          const transformedData: OHLCData[] = candleData.map((candle: any) => ({
+            timestamp: candle.time * 1000,
+            open: parseFloat(candle.open) || 0,
+            high: parseFloat(candle.high) || 0,
+            low: parseFloat(candle.low) || 0,
+            close: parseFloat(candle.close) || 0,
+            volume: parseFloat(candle.volume) || 0,
+          }))
+          // Cache the transformed data
+          cacheRef.current.set(cacheKey, transformedData)
+          setApiData(transformedData)
+        } else if (chartType === 'line' && result.data) {
+          // Handle nested data structure: result.data.data
+          const lineData = result.data.data || result.data
+          const transformedData: PricePoint[] = lineData.map((point: any) => ({
+            timestamp: point.time * 1000, // Convert to milliseconds
+            price: parseFloat(point.value) || 0,
+          }))
+          console.log('Transformed line data:', transformedData)
+          // Cache the transformed data
+          cacheRef.current.set(cacheKey, transformedData)
+          setApiData(transformedData)
+        }
+      } catch (error) {
+        console.error('Error fetching chart data:', error)
+        setApiData(null)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchChartData()
+  }, [symbol, chartType, timeRange, dataSource, data])
+
   // Generate mock data if not provided
   const mockOHLCData = useMemo(() => generateMockOHLCData(100, 2000, 0.02), [])
   const mockLineData = useMemo(() => generateMockPricePoints(100, 2000, 0.02), [])
 
   // Prepare chart data
   const chartData = useMemo(() => {
+    // Priority: provided data > API data > mock data
     if (data) {
       // Use provided data
       if (chartType === 'candlestick' && 'open' in data[0]) {
@@ -69,14 +190,26 @@ export function PriceChart({
       }
     }
 
-    // Use mock data
+    if (apiData && apiData.length > 0) {
+      return apiData
+    }
+
+    // Use mock data as fallback
     return chartType === 'candlestick' ? mockOHLCData : mockLineData
-  }, [data, chartType, mockOHLCData, mockLineData])
+  }, [data, apiData, chartType, mockOHLCData, mockLineData])
 
   // Build ECharts option
   const option: EChartsOption = useMemo(() => {
     if (chartType === 'candlestick') {
       const ohlcData = chartData as OHLCData[]
+
+      // Check if we have data
+      if (!ohlcData || ohlcData.length === 0) {
+        return {
+          title: { text: 'Loading...', left: 10, top: 10 },
+          grid: { left: 30, right: 30, bottom: 40, top: 40 },
+        }
+      }
 
       // Format data for candlestick chart
       const dates = ohlcData.map(d => new Date(d.timestamp).toLocaleTimeString())
@@ -85,6 +218,15 @@ export function PriceChart({
 
       // Calculate latest price for display
       const latestCandle = ohlcData[ohlcData.length - 1]
+
+      // Validate latest candle has required data
+      if (!latestCandle || latestCandle.close === undefined || latestCandle.open === undefined) {
+        return {
+          title: { text: 'No data available', left: 10, top: 10 },
+          grid: { left: 30, right: 30, bottom: 40, top: 40 },
+        }
+      }
+
       const latestPrice = latestCandle.close
       const priceChange = latestCandle.close - latestCandle.open
       const priceChangePercent = (priceChange / latestCandle.open) * 100
@@ -183,8 +325,24 @@ export function PriceChart({
       // Line chart
       const lineData = chartData as PricePoint[]
 
+      // Check if we have data
+      if (!lineData || lineData.length === 0) {
+        return {
+          title: { text: 'Loading...', left: 10, top: 10 },
+          grid: { left: 30, right: 30, bottom: 40, top: 40 },
+        }
+      }
+
       const dates = lineData.map(d => new Date(d.timestamp).toLocaleTimeString())
-      const prices = lineData.map(d => d.price)
+      const prices = lineData.map(d => d.price).filter(p => p !== undefined && p !== null && !isNaN(p))
+
+      // Check if we have valid price data
+      if (prices.length === 0) {
+        return {
+          title: { text: 'No data available', left: 10, top: 10 },
+          grid: { left: 30, right: 30, bottom: 40, top: 40 },
+        }
+      }
 
       // Calculate latest price for display
       const latestPrice = prices[prices.length - 1]
@@ -293,7 +451,7 @@ export function PriceChart({
   }, [chartType, chartData, symbol, timeRange])
 
   const timeRanges: TimeRange[] = ['1m', '5m', '15m', '1h', '4h', '12h', '24h', '1w', '1M', '1Y', 'ALL']
-  const dataSources: DataSource[] = ['Binance', 'Coinbase', 'Kraken', 'Mock']
+  const dataSources: DataSource[] = ['1inch', 'Binance', 'Coinbase', 'Kraken', 'Mock']
 
   return (
     <div className={`relative ${className}`}>
@@ -344,7 +502,7 @@ export function PriceChartDropdown({
   onToggleDropdown,
 }: PriceChartDropdownProps) {
   const timeRanges: TimeRange[] = ['1m', '5m', '15m', '1h', '4h', '12h', '24h', '1w', '1M', '1Y', 'ALL']
-  const dataSources: DataSource[] = ['Binance', 'Coinbase', 'Kraken', 'Mock']
+  const dataSources: DataSource[] = ['1inch', 'Binance', 'Coinbase', 'Kraken', 'Mock']
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

@@ -313,3 +313,87 @@ export const limitorderCommand: Command = {
     }
   },
 }
+
+/**
+ * ETH RPC command - Execute Ethereum RPC calls via 1inch
+ */
+export const ethrpcCommand: Command = {
+  id: 'eth_rpc',
+  scope: 'G_p',
+  protocol: '1inch',
+  description: 'Execute Ethereum RPC calls via 1inch node',
+  aliases: ['rpc', 'ethrpc'],
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      // Parse arguments: eth_rpc <method> [params...]
+      const argsStr = typeof args === 'string' ? args.trim() : ''
+      const parts = argsStr.split(' ')
+
+      if (parts.length < 1) {
+        return {
+          success: false,
+          error: new Error(
+            'Usage: eth_rpc <method> [params...]\n' +
+            'Example: eth_rpc eth_blockNumber\n' +
+            'Example: eth_rpc eth_getBalance 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb latest'
+          ),
+        }
+      }
+
+      const method = parts[0]
+      const params = parts.slice(1)
+
+      const chainId = context.wallet.chainId || 1
+
+      // Build RPC request body
+      const rpcRequest = {
+        jsonrpc: '2.0',
+        method,
+        params,
+        id: 1,
+      }
+
+      const response = await fetch(`/api/1inch/eth_rpc?chainId=${chainId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(rpcRequest),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        return {
+          success: false,
+          error: new Error(errorData.error?.message || errorData.error || 'RPC call failed'),
+        }
+      }
+
+      const data = await response.json()
+
+      if (data.error) {
+        return {
+          success: false,
+          error: new Error(data.error.message || 'RPC error'),
+        }
+      }
+
+      return {
+        success: true,
+        value: {
+          rpcResponse: true,
+          method,
+          result: data.result,
+          resultHex: data.resultHex,
+          chainId,
+        },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}

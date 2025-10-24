@@ -5,7 +5,8 @@
 import type { Plugin, PluginConfig } from '@/plugins'
 import type { ProtocolFiber, ExecutionContext } from '@/core'
 import { createProtocolFiber, addCommandToFiber } from '@/core'
-import { priceCommand, gasCommand, swapCommand, limitorderCommand } from './commands'
+import { priceCommand, gasCommand, swapCommand, limitorderCommand, ethrpcCommand } from './commands'
+import { OneInchAPI } from './api'
 
 /**
  * 1inch Plugin
@@ -47,6 +48,7 @@ export const oneInchPlugin: Plugin = {
     addCommandToFiber(fiber, gasCommand)
     addCommandToFiber(fiber, swapCommand)
     addCommandToFiber(fiber, limitorderCommand)
+    addCommandToFiber(fiber, ethrpcCommand)
 
     return fiber
   },
@@ -84,4 +86,11 @@ export const oneInchPlugin: Plugin = {
       return false
     }
   },
+}
+
+/**
+ * Create a 1inch API instance
+ */
+export function createOneInchPlugin(): OneInchAPI {
+  return new OneInchAPI(process.env.ONEINCH_API_KEY || '')
 }

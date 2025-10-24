@@ -60,9 +60,9 @@ export function AppLayout() {
     const newChart: Chart = {
       id: `${chartType}-${Date.now()}`,
       type: 'price',
-      symbol: chartType.toUpperCase(),
+      symbol: `${chartType.toUpperCase()}/USDC`,
       timeRange: '24h',
-      dataSource: 'Mock',
+      dataSource: '1inch',
       chartMode: chartMode || 'candlestick',
     }
 
@@ -319,7 +319,7 @@ export function AppLayout() {
                   return (
                     <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
                       <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between relative">
-                        <span className="text-sm text-white">{chart.symbol}/USD</span>
+                        <span className="text-sm text-white">{chart.symbol}</span>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => setOpenDropdown(openDropdown === chart.id ? null : chart.id)}
@@ -344,7 +344,7 @@ export function AppLayout() {
                         </div>
                       </div>
                       <PriceChart
-                        symbol={`${chart.symbol}/USD`}
+                        symbol={chart.symbol}
                         timeRange={chart.timeRange}
                         dataSource={chart.dataSource}
                         chartType={chart.chartMode}

@@ -15,8 +15,8 @@ const firaCode = Fira_Code({
 });
 
 export const metadata: Metadata = {
-  title: "The DeFi Terminal",
-  description: "The DeFi Terminal",
+  title: "dappterminal.com",
+  description: "dappterminal.com",
 };
 
 export default function RootLayout({

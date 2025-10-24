@@ -181,4 +181,36 @@ export class OneInchAPI {
     )
     return data
   }
+
+  /**
+   * Get candlestick chart data
+   */
+  async getChartCandle(params: {
+    chainId: number
+    token0: string
+    token1: string
+    period?: string
+  }): Promise<any> {
+    const { chainId, token0, token1, period = 'AllTime' } = params
+    const data = await this.makeRequest(`/charts/v1.0/chart/aggregated/candle/${token0}/${token1}/${period}/${chainId}`, {
+      period,
+    })
+    return data
+  }
+
+  /**
+   * Get line chart data
+   */
+  async getChartLine(params: {
+    chainId: number
+    token0: string
+    token1: string
+    period?: string
+  }): Promise<any> {
+    const { chainId, token0, token1, period = 'AllTime' } = params
+    const data = await this.makeRequest(`/charts/v1.0/chart/line/${token0}/${token1}/${period}/${chainId}`, {
+      period,
+    })
+    return data
+  }
 }
