@@ -1,11 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authenticateRequest, unauthorizedResponse, rateLimitResponse } from '@/lib/auth';
+import { rateLimit, getClientIdentifier } from '@/lib/rate-limit';
 
 const ONEINCH_API_BASE = 'https://api.1inch.dev/web3';
+
+// Allowlist of permitted RPC methods (security hardening)
+const ALLOWED_RPC_METHODS = [
+  // Read-only query methods
+  'eth_blockNumber',
+  'eth_getBalance',
+  'eth_getCode',
+  'eth_getStorageAt',
+  'eth_call',
+  'eth_getBlockByNumber',
+  'eth_getBlockByHash',
+  'eth_getTransactionByHash',
+  'eth_getTransactionReceipt',
+  'eth_getTransactionCount',
+  'eth_getLogs',
+  'eth_estimateGas',
+  'eth_gasPrice',
+  'eth_chainId',
+  // Explicitly DENIED: eth_sendRawTransaction, eth_sendTransaction
+] as const;
 
 // RPC methods that support historical block queries
 const HISTORICAL_METHODS = [
   'eth_getBalance',
-  'eth_getCode', 
+  'eth_getCode',
   'eth_getStorageAt',
   'eth_call'
 ];
@@ -39,11 +61,15 @@ async function getLatestBlockNumber(chainId: string): Promise<number> {
     if (response.ok) {
       const data = await response.json();
       const blockNumber = parseInt(data.result, 16);
-      console.log(`Latest block on chain ${chainId}: ${blockNumber}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Latest block on chain ${chainId}: ${blockNumber}`);
+      }
       return blockNumber;
     }
   } catch (error) {
-    console.error('Failed to get latest block number:', error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Failed to get latest block number:', error);
+    }
   }
   // Return a high number as fallback to use full node by default
   return 999999999;
@@ -93,13 +119,17 @@ function determineNodeType(method: string, params: unknown[], latestBlock: numbe
     try {
       const requestedBlock = parseInt(blockParam, 16);
       const blocksAgo = latestBlock - requestedBlock;
-      
-      console.log(`Block comparison: latest=${latestBlock}, requested=${requestedBlock}, blocksAgo=${blocksAgo}`);
-      
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Block comparison: latest=${latestBlock}, requested=${requestedBlock}, blocksAgo=${blocksAgo}`);
+      }
+
       // Use archive if more than 128 blocks old
       return blocksAgo > 128 ? 'archive' : 'full';
     } catch (error) {
-      console.error('Failed to parse block number:', blockParam, error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed to parse block number:', blockParam, error);
+      }
       return 'full';
     }
   }
@@ -117,8 +147,22 @@ function determineNodeType(method: string, params: unknown[], latestBlock: numbe
 
 export async function POST(request: NextRequest) {
   try {
+    // 1. Authenticate request
+    const auth = authenticateRequest(request);
+    if (!auth.authenticated) {
+      return unauthorizedResponse(auth.reason);
+    }
+
+    // 2. Apply rate limiting (strict for RPC calls)
+    const clientId = getClientIdentifier(request);
+    const rateLimitResult = await rateLimit(clientId, 'STRICT');
+
+    if (!rateLimitResult.success) {
+      return rateLimitResponse(rateLimitResult.reset);
+    }
+
     const apiKey = process.env.ONEINCH_API_KEY;
-    
+
     if (!apiKey) {
       return NextResponse.json(
         { error: '1inch API key not configured' },
@@ -128,9 +172,9 @@ export async function POST(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const chainId = searchParams.get('chainId') || '1';
-    
+
     const body = await request.json() as RPCRequest;
-    
+
     if (!body.jsonrpc || !body.method || !body.params) {
       return NextResponse.json(
         { error: 'Invalid RPC request format' },
@@ -138,7 +182,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`RPC Request: ${body.method} on chain ${chainId}`);
+    // 3. Validate RPC method against allowlist
+    if (!ALLOWED_RPC_METHODS.includes(body.method as typeof ALLOWED_RPC_METHODS[number])) {
+      return NextResponse.json(
+        {
+          error: 'Method not allowed',
+          message: `RPC method '${body.method}' is not permitted`,
+          allowedMethods: ALLOWED_RPC_METHODS
+        },
+        { status: 403 }
+      );
+    }
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`RPC Request: ${body.method} on chain ${chainId}`);
+    }
 
     // ALWAYS get latest block number first (except if we're calling eth_blockNumber itself)
     let latestBlock: number;
@@ -151,15 +209,18 @@ export async function POST(request: NextRequest) {
     
     // Determine node type based on method and parameters
     const nodeType = determineNodeType(body.method, body.params, latestBlock);
-    
-    console.log(`Using ${nodeType} node for ${body.method} (latest block: ${latestBlock})`);
 
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`Using ${nodeType} node for ${body.method} (latest block: ${latestBlock})`);
+    }
 
     // Make the RPC call to 1inch with nodeType as path parameter
     // Based on the 1inch docs: https://api.1inch.dev/{chainId}/{nodeType}
     const url = `${ONEINCH_API_BASE}/${chainId}/${nodeType}`;
-    
-    console.log(`Calling 1inch RPC endpoint: ${url}`);
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`Calling 1inch RPC endpoint: ${url}`);
+    }
     
     const response = await fetch(url, {
       method: 'POST',
@@ -172,8 +233,10 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('1inch RPC error:', response.status, errorText);
-      
+      if (process.env.NODE_ENV === 'development') {
+        console.error('1inch RPC error:', response.status, errorText);
+      }
+
       return NextResponse.json(
         { 
           jsonrpc: '2.0',
@@ -222,7 +285,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data);
 
   } catch (error) {
-    console.error('RPC endpoint error:', error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error('RPC endpoint error:', error);
+    }
     return NextResponse.json(
       {
         jsonrpc: '2.0',

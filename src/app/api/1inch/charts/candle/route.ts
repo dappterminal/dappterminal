@@ -10,7 +10,9 @@ export async function GET(request: NextRequest) {
     const period = searchParams.get('period') || '86400'; // Default to 86400 seconds (24 hours)
     const chainId = searchParams.get('chainId') || '1'; // Default to Ethereum
 
-    console.log('Candle chart request for:', { token0, token1, period, chainId });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Candle chart request for:', { token0, token1, period, chainId });
+    }
 
     if (!token0 || !token1) {
       return NextResponse.json(
@@ -29,7 +31,9 @@ export async function GET(request: NextRequest) {
     // Call 1inch API with the correct URL pattern (aggregated/candle with seconds)
     const url = `https://api.1inch.com/charts/v1.0/chart/aggregated/candle/${token0}/${token1}/${period}/${chainId}`;
 
-    console.log('Calling 1inch charts API:', url);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Calling 1inch charts API:', url);
+    }
 
     const response = await fetch(url, {
       method: 'GET',
@@ -42,7 +46,9 @@ export async function GET(request: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('1inch API error:', response.status, errorText);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('1inch API error:', response.status, errorText);
+      }
       return NextResponse.json(
         { error: `1inch API error: ${response.status}`, details: errorText },
         { status: response.status }
@@ -51,7 +57,9 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json();
 
-    console.log('Candle chart data received:', data ? 'success' : 'empty');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Candle chart data received:', data ? 'success' : 'empty');
+    }
 
     return NextResponse.json({
       token0,
@@ -62,7 +70,9 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: unknown) {
-    console.error('Charts API error:', error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Charts API error:', error);
+    }
     const errorMessage = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json(
       { error: errorMessage },

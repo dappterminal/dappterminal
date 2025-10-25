@@ -21,7 +21,10 @@ interface Chart {
 }
 
 export function AppLayout() {
-  const [cliWidth, setCliWidth] = useState(55) // percentage - CLI at 60%, charts at 40%
+  const [cliWidth, setCliWidth] = useState(55
+
+    
+  ) // percentage - CLI at 60%, charts at 40%
   const [isDragging, setIsDragging] = useState(false)
   const [resizeKey, setResizeKey] = useState(0)
   const [charts, setCharts] = useState<Chart[]>([])

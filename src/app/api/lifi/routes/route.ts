@@ -6,11 +6,22 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { rateLimitResponse } from '@/lib/auth'
+import { rateLimit, getClientIdentifier } from '@/lib/rate-limit'
 
 const LIFI_PROXY_URL = process.env.LIFI_PROXY_URL || 'http://localhost:3001'
 
 export async function POST(request: NextRequest) {
   try {
+    // Note: No authentication required - this is a public API proxy
+    // Apply rate limiting (moderate for bridging queries)
+    const clientId = getClientIdentifier(request)
+    const rateLimitResult = await rateLimit(clientId, 'MODERATE')
+
+    if (!rateLimitResult.success) {
+      return rateLimitResponse(rateLimitResult.reset)
+    }
+
     const body = await request.json()
 
     // Forward request to external LiFi proxy
@@ -27,7 +38,9 @@ export async function POST(request: NextRequest) {
     // Return with appropriate status code
     return NextResponse.json(data, { status: response.status })
   } catch (error) {
-    console.error('[LiFi Routes API] Error:', error)
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[LiFi Routes API] Error:', error)
+    }
     return NextResponse.json(
       {
         success: false,

@@ -244,9 +244,18 @@ export function PriceChart({
       const latestCandle = ohlcData[ohlcData.length - 1]
 
       // Validate latest candle has required data
+      // Only show "No data available" if we're not loading
       if (!latestCandle || latestCandle.close === undefined || latestCandle.open === undefined) {
         return {
-          title: { text: 'No data available', left: 10, top: 10 },
+          title: {
+            text: isLoading ? '' : 'No data available',
+            left: 10,
+            top: 10,
+            textStyle: {
+              color: '#737373',
+              fontSize: 14,
+            }
+          },
           grid: { left: 30, right: 30, bottom: 40, top: 40 },
         }
       }
@@ -371,9 +380,18 @@ export function PriceChart({
       const prices = lineData.map(d => d.price).filter(p => p !== undefined && p !== null && !isNaN(p))
 
       // Check if we have valid price data
+      // Only show "No data available" if we're not loading
       if (prices.length === 0) {
         return {
-          title: { text: 'No data available', left: 10, top: 10 },
+          title: {
+            text: isLoading ? '' : 'No data available',
+            left: 10,
+            top: 10,
+            textStyle: {
+              color: '#737373',
+              fontSize: 14,
+            }
+          },
           grid: { left: 30, right: 30, bottom: 40, top: 40 },
         }
       }
@@ -482,13 +500,23 @@ export function PriceChart({
         ],
       }
     }
-  }, [chartType, chartData, symbol, timeRange])
+  }, [chartType, chartData, symbol, timeRange, isLoading])
 
   const timeRanges: TimeRange[] = ['1m', '5m', '15m', '1h', '4h', '12h', '24h', '1w', '1M', '1Y', 'ALL']
   const dataSources: DataSource[] = ['1inch', 'Binance', 'Coinbase', 'Kraken', 'Mock']
 
   return (
     <div className={`relative ${className}`}>
+      {/* Loading Spinner */}
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/80 z-20 rounded-lg">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 border-4 border-[#404040] border-t-[#3B82F6] rounded-full animate-spin" />
+            <span className="text-sm text-[#737373]">Loading chart data...</span>
+          </div>
+        </div>
+      )}
+
       {/* Chart type toggle - Simple inline controls */}
       <div className="absolute top-2 right-2 z-10 flex gap-0.5 rounded bg-[#262626] p-0.5">
         <button

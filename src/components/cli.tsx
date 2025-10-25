@@ -14,11 +14,19 @@ import { wormholePlugin } from "@/plugins/wormhole"
 import { lifiPlugin } from "@/plugins/lifi"
 import { aaveV3Plugin } from "@/plugins/aave-v3"
 
+interface OutputSegment {
+  text: string
+  color?: string
+  bold?: boolean
+}
+
 interface HistoryItem {
   command: string
   output: string[]
   timestamp: Date
   links?: { text: string; url: string }[] // Optional links to render
+  styledOutput?: OutputSegment[][] // Optional styled output (array of lines, each line is array of segments)
+  prompt?: string // Store the prompt at the time of execution
 }
 
 interface TerminalTab {
@@ -288,14 +296,16 @@ function formatCommandResult(result: CommandResult): string[] {
         slippage: number
       }
       return [
-        `📊 Swap Quote:`,
+        `📊 Swap Quote Retrieved:`,
         `  ${swapData.fromToken.toUpperCase()} → ${swapData.toToken.toUpperCase()}`,
         `  Input: ${swapData.amountIn}`,
         `  Output: ${swapData.amountOut}`,
         `  Gas: ${swapData.gas || 'estimating...'}`,
         `  Slippage: ${swapData.slippage}%`,
         ``,
-        `⚠️  Swap execution not yet implemented - coming soon!`,
+        `⚠️  Feature Status: COMING SOON`,
+        `Swap transaction signing and execution is under development.`,
+        `Quote fetching is functional, but the final swap step is not yet implemented.`,
       ]
     }
 
@@ -338,6 +348,8 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   const [fuzzyMatches, setFuzzyMatches] = useState<string[]>([])
   const [selectedMatchIndex, setSelectedMatchIndex] = useState(0)
   const [isExecuting, setIsExecuting] = useState(false)
+  const [pluginsLoading, setPluginsLoading] = useState(true)
+  const [loadedPlugins, setLoadedPlugins] = useState<string[]>([])
   const terminalRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
@@ -400,49 +412,34 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     // Create execution context
     const context = createExecutionContext()
 
-    // Load 1inch plugin
-    pluginLoader.loadPlugin(oneInchPlugin, undefined, context).then(result => {
-      if (result.success) {
-        console.log('1inch plugin loaded successfully')
-      } else {
-        console.error('Failed to load 1inch plugin:', result.error)
-      }
-    })
+    // Track plugin loading
+    const pluginsToLoad = [
+      { name: '1inch', plugin: oneInchPlugin },
+      { name: 'Stargate', plugin: stargatePlugin },
+      { name: 'Wormhole', plugin: wormholePlugin },
+      { name: 'LiFi', plugin: lifiPlugin },
+      { name: 'Aave v3', plugin: aaveV3Plugin },
+    ]
 
-    // Load Stargate plugin
-    pluginLoader.loadPlugin(stargatePlugin, undefined, context).then(result => {
-      if (result.success) {
-        console.log('Stargate plugin loaded successfully')
-      } else {
-        console.error('Failed to load Stargate plugin:', result.error)
-      }
-    })
+    const loadedPluginNames: string[] = []
 
-    // Load Wormhole plugin
-    pluginLoader.loadPlugin(wormholePlugin, undefined, context).then(result => {
-      if (result.success) {
-        console.log('Wormhole plugin loaded successfully')
-      } else {
-        console.error('Failed to load Wormhole plugin:', result.error)
-      }
-    })
-
-    // Load LiFi plugin
-    pluginLoader.loadPlugin(lifiPlugin, undefined, context).then(result => {
-      if (result.success) {
-        console.log('LiFi plugin loaded successfully')
-      } else {
-        console.error('Failed to load LiFi plugin:', result.error)
-      }
-    })
-
-    // Load Aave v3 plugin
-    pluginLoader.loadPlugin(aaveV3Plugin, undefined, context).then(result => {
-      if (result.success) {
-        console.log('Aave v3 plugin loaded successfully')
-      } else {
-        console.error('Failed to load Aave v3 plugin:', result.error)
-      }
+    // Load all plugins
+    Promise.all(
+      pluginsToLoad.map(({ name, plugin }) =>
+        pluginLoader.loadPlugin(plugin, undefined, context).then(result => {
+          if (result.success) {
+            console.log(`${name} plugin loaded successfully`)
+            loadedPluginNames.push(name)
+            setLoadedPlugins(prev => [...prev, name])
+          } else {
+            console.error(`Failed to load ${name} plugin:`, result.error)
+          }
+          return result
+        })
+      )
+    ).then(() => {
+      setPluginsLoading(false)
+      console.log('All plugins loaded')
     })
 
     // Load command history from localStorage
@@ -468,7 +465,13 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       history: [
         {
           command: "welcome",
-          output: ["Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.1.1). Use at your own risk. Type 'help' to see available commands."],
+          output: [
+            "Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.1.1). Use at your own risk.",
+            "",
+            "⏳ Loading protocols...",
+            "",
+            "Type 'help' to see available commands."
+          ],
           timestamp: new Date()
         }
       ],
@@ -534,6 +537,61 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       localStorage.setItem('defi-terminal-command-history', JSON.stringify(commandHistory))
     }
   }, [commandHistory, mounted])
+
+  // Update welcome message once plugins are loaded
+  useEffect(() => {
+    if (!pluginsLoading && loadedPlugins.length > 0) {
+      setTabs(prevTabs => prevTabs.map(tab => {
+        if (tab.id === '1' && tab.history.length > 0 && tab.history[0].command === 'welcome') {
+          // Create styled output with colored protocol names
+          const protocolLine: OutputSegment[] = [
+            { text: `Loaded ${loadedPlugins.length} protocols: `, color: '#d1d5db' }
+          ]
+
+          // Add each protocol with its color
+          loadedPlugins.forEach((plugin, index) => {
+            // Map plugin names to protocol color keys
+            const protocolKeyMap: Record<string, string> = {
+              '1inch': '1inch',
+              'Stargate': 'stargate',
+              'Wormhole': 'wormhole',
+              'LiFi': 'lifi',
+              'Aave v3': 'aave-v3',
+            }
+            const protocolKey = protocolKeyMap[plugin] || plugin.toLowerCase()
+            const color = PROTOCOL_COLORS[protocolKey] || '#d1d5db'
+
+            protocolLine.push({
+              text: plugin,
+              color: color,
+              bold: true
+            })
+
+            // Add comma separator if not last
+            if (index < loadedPlugins.length - 1) {
+              protocolLine.push({ text: ', ', color: '#d1d5db' })
+            }
+          })
+
+          return {
+            ...tab,
+            history: [{
+              ...tab.history[0],
+              output: [],
+              styledOutput: [
+                [{ text: "Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.1.1). Use at your own risk.", color: '#d1d5db' }],
+                [{ text: "", color: '#d1d5db' }],
+                protocolLine,
+                [{ text: "", color: '#d1d5db' }],
+                [{ text: "Type 'help' to see available commands.", color: '#d1d5db' }]
+              ]
+            }, ...tab.history.slice(1)]
+          }
+        }
+        return tab
+      }))
+    }
+  }, [pluginsLoading, loadedPlugins])
 
   // Sync wallet state to execution context
   useEffect(() => {
@@ -622,6 +680,23 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       return
     }
 
+    // Prevent execution while plugins are still loading
+    if (pluginsLoading) {
+      const warningItem: HistoryItem = {
+        command: trimmedInput,
+        output: ['⏳ Please wait for protocols to finish loading...'],
+        timestamp: new Date(),
+        prompt: String(prompt)
+      }
+      setTabs(prevTabs => prevTabs.map(tab =>
+        tab.id === activeTabId
+          ? { ...tab, history: [...tab.history, warningItem] }
+          : tab
+      ))
+      setCurrentInput("")
+      return
+    }
+
     setIsExecuting(true)
 
     // Ensure lock is always released using try-finally
@@ -703,10 +778,11 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
             const tempHistoryItem: HistoryItem = {
               command: trimmedInput,
               output,
-              timestamp: transferTimestamp
+              timestamp: transferTimestamp,
+              prompt: String(prompt)
             }
 
-            setTabs(tabs.map(tab =>
+            setTabs(prevTabs => prevTabs.map(tab =>
               tab.id === activeTabId
                 ? { ...tab, history: [...tab.history, tempHistoryItem] }
                 : tab
@@ -782,10 +858,11 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
             const tempHistoryItem: HistoryItem = {
               command: trimmedInput,
               output,
-              timestamp: balanceTimestamp
+              timestamp: balanceTimestamp,
+              prompt: String(prompt)
             }
 
-            setTabs(tabs.map(tab =>
+            setTabs(prevTabs => prevTabs.map(tab =>
               tab.id === activeTabId
                 ? { ...tab, history: [...tab.history, tempHistoryItem] }
                 : tab
@@ -860,10 +937,11 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
               const tempHistoryItem: HistoryItem = {
                 command: trimmedInput,
                 output: [],
-                timestamp: commandTimestamp
+                timestamp: commandTimestamp,
+                prompt: String(prompt)
               }
 
-              setTabs(tabs.map(tab =>
+              setTabs(prevTabs => prevTabs.map(tab =>
                 tab.id === activeTabId
                   ? { ...tab, history: [...tab.history, tempHistoryItem] }
                   : tab
@@ -963,7 +1041,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
 
         // Handle clear command
         if (output.length === 0 && result.success && 'cleared' in (result.value as object)) {
-          setTabs(tabs.map(tab =>
+          setTabs(prevTabs => prevTabs.map(tab =>
             tab.id === activeTabId ? { ...tab, history: [] } : tab
           ))
           setCurrentInput("")
@@ -978,7 +1056,8 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     const newHistoryItem: HistoryItem = {
       command: trimmedInput,
       output,
-      timestamp: new Date()
+      timestamp: new Date(),
+      prompt: String(prompt) // Ensure we store a string value, not a reference
     }
 
     setTabs(prevTabs => prevTabs.map(tab =>
@@ -1192,17 +1271,34 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                     {item.command !== "welcome" && (
                       <div className="flex select-text">
                         <span className="text-white-400">
-                          {prompt.split('@')[0]}
-                          <span className="font-semibold">@{prompt.split('@')[1]}</span>
+                          {(item.prompt || prompt).split('@')[0]}
+                          <span className="font-semibold">@{(item.prompt || prompt).split('@')[1]}</span>
                         </span>
                         <span className="text-whiteMa-400 ml-2 font-semibold">{item.command}</span>
                       </div>
                     )}
-                    {item.output.map((line, lineIndex) => (
-                      <p key={lineIndex} className="mt-1 text-gray-300 select-text whitespace-pre-wrap">
-                        {line}
-                      </p>
-                    ))}
+                    {/* Styled output (if available) */}
+                    {item.styledOutput ? (
+                      item.styledOutput.map((line, lineIndex) => (
+                        <p key={`styled-${lineIndex}`} className="mt-1 select-text whitespace-pre-wrap">
+                          {line.map((segment, segIndex) => (
+                            <span
+                              key={`seg-${segIndex}`}
+                              style={{ color: segment.color || '#d1d5db' }}
+                              className={segment.bold ? 'font-bold' : ''}
+                            >
+                              {segment.text}
+                            </span>
+                          ))}
+                        </p>
+                      ))
+                    ) : (
+                      item.output.map((line, lineIndex) => (
+                        <p key={lineIndex} className="mt-1 text-gray-300 select-text whitespace-pre-wrap">
+                          {line}
+                        </p>
+                      ))
+                    )}
                     {item.links && item.links.length > 0 && (
                       <div className="mt-1">
                         {item.links.map((link, linkIndex) => (
