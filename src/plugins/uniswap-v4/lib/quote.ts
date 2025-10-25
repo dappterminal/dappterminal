@@ -84,7 +84,7 @@ export async function getSingleHopQuote(params: QuoteParams): Promise<QuoteResul
     const [amountOut, gasEstimate] = result
 
     // Validate we got a valid quote
-    if (!amountOut || amountOut === 0n) {
+    if (!amountOut || amountOut === BigInt(0)) {
       throw new Error('Invalid quote received from quoter')
     }
 

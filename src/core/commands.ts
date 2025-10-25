@@ -521,6 +521,79 @@ export const chartCommand: Command = {
 }
 
 /**
+ * Swap command - Global alias for token swaps
+ * Routes to the active protocol when possible, otherwise falls back to available swap plugins
+ */
+export const swapAliasCommand: Command = {
+  id: 'swap',
+  scope: 'G_alias',
+  description: 'Swap tokens (use --protocol <1inch|uniswap-v4> to specify)',
+  aliases: ['s'],
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      const rawArgs = typeof args === 'string' ? args : ''
+      const argTokens = rawArgs.split(/\s+/).filter(Boolean)
+      let explicitProtocolFromArgs: string | undefined
+      const filteredTokens: string[] = []
+
+      for (let i = 0; i < argTokens.length; i++) {
+        const token = argTokens[i]
+        if (token === '--protocol' && i + 1 < argTokens.length) {
+          explicitProtocolFromArgs = argTokens[i + 1]
+          i++ // Skip the protocol value
+          continue
+        }
+        filteredTokens.push(token)
+      }
+
+      const sanitizedArgs = filteredTokens.join(' ')
+
+      const candidateProtocols: string[] = []
+      const seen = new Set<string>()
+      const addProtocol = (protocol?: string) => {
+        if (!protocol) return
+        const normalized = protocol.trim().toLowerCase()
+        if (!normalized || seen.has(normalized)) return
+        candidateProtocols.push(normalized)
+        seen.add(normalized)
+      }
+
+      addProtocol(explicitProtocolFromArgs)
+      addProtocol(context.activeProtocol)
+      addProtocol(context.protocolPreferences?.swap)
+      addProtocol('uniswap-v4')
+      addProtocol('1inch')
+      for (const protocolId of registry.getProtocols()) {
+        addProtocol(protocolId)
+      }
+
+      for (const protocol of candidateProtocols) {
+        const fiber = registry.σ(protocol)
+        if (!fiber) {
+          continue
+        }
+
+        const swapCommand = fiber.commands.get('swap')
+        if (swapCommand) {
+          return await swapCommand.run(sanitizedArgs, context)
+        }
+      }
+
+      return {
+        success: false,
+        error: new Error('No swap-capable protocol is currently loaded'),
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
  * Bridge command - Global alias for cross-chain bridging
  * Routes to the active protocol when possible, otherwise falls back to available bridge plugins
  */
@@ -616,6 +689,7 @@ export const coreCommands = [
  * Global alias commands
  */
 export const aliasCommands = [
+  swapAliasCommand,
   bridgeAliasCommand,
 ]
 

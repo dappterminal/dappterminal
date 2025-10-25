@@ -7,6 +7,11 @@
 import type { CommandHandler } from '@/core'
 import type { UniswapV4SwapRequestData } from './types'
 import { prepareSingleHopSwap } from './lib/singleHopSwap'
+import { isNativeToken } from './lib/tokens'
+import { getUniversalRouterAddress, getPermit2Address, ERC20_ABI, PERMIT2_ABI } from './lib/contracts'
+import { readContract, writeContract } from 'wagmi/actions'
+import { config } from '@/lib/wagmi-config'
+import { type Address } from 'viem'
 
 /**
  * Swap Command Handler
@@ -21,8 +26,7 @@ export const swapHandler: CommandHandler<UniswapV4SwapRequestData> = async (data
   // Show initial message with styled output
   ctx.updateStyledHistory([
     [
-      { text: 'Uniswap V4 Swap', color: '#FF69B4', bold: true },
-      { text: ':', color: '#d1d5db' },
+      { text: 'Uniswap V4 Swap:', color: '#FF69B4' },
     ],
     [
       { text: `  ${data.tokenInSymbol} → ${data.tokenOutSymbol}`, color: '#d1d5db' },
@@ -51,13 +55,191 @@ export const swapHandler: CommandHandler<UniswapV4SwapRequestData> = async (data
 
   // Execute Uniswap V4 swap
   try {
+    const { tokenIn, amountIn, chainId } = data.params
+    const universalRouterAddress = getUniversalRouterAddress(chainId)
+    const permit2Address = getPermit2Address(chainId)
+
+    // Check if we need approval (skip for native ETH)
+    if (!isNativeToken(tokenIn.address)) {
+      ctx.updateStyledHistory([
+        [
+          { text: 'Uniswap V4 Swap:', color: '#FF69B4' },
+        ],
+        [
+          { text: `  ${data.tokenInSymbol} → ${data.tokenOutSymbol}`, color: '#d1d5db' },
+        ],
+        [
+          { text: `  Amount: `, color: '#9ca3af' },
+          { text: `${data.amountInFormatted} ${data.tokenInSymbol}`, color: '#d1d5db' },
+        ],
+        [{ text: '', color: '#d1d5db' }],
+        [
+          { text: 'Checking token allowance...', color: '#fbbf24' },
+        ],
+      ])
+
+      // Step 1: Check ERC20 allowance to Permit2
+      const erc20Allowance = await readContract(config, {
+        address: tokenIn.address as Address,
+        abi: ERC20_ABI,
+        functionName: 'allowance',
+        args: [ctx.walletAddress as Address, permit2Address],
+      }) as bigint
+
+      // If ERC20 allowance to Permit2 is insufficient, request approval
+      if (erc20Allowance < amountIn) {
+        ctx.updateStyledHistory([
+          [
+            { text: 'Uniswap V4 Swap:', color: '#FF69B4' },
+          ],
+          [
+            { text: `  ${data.tokenInSymbol} → ${data.tokenOutSymbol}`, color: '#d1d5db' },
+          ],
+          [
+            { text: `  Amount: `, color: '#9ca3af' },
+            { text: `${data.amountInFormatted} ${data.tokenInSymbol}`, color: '#d1d5db' },
+          ],
+          [{ text: '', color: '#d1d5db' }],
+          [
+            { text: 'Step 1/2: Approving token to Permit2...', color: '#fbbf24' },
+          ],
+        ])
+
+        // Approve token to Permit2 (unlimited)
+        const approveTxHash = await writeContract(config, {
+          address: tokenIn.address as Address,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [permit2Address, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')],
+        })
+
+        ctx.updateStyledHistory([
+          [
+            { text: 'Uniswap V4 Swap:', color: '#FF69B4' },
+          ],
+          [
+            { text: `  ${data.tokenInSymbol} → ${data.tokenOutSymbol}`, color: '#d1d5db' },
+          ],
+          [
+            { text: `  Amount: `, color: '#9ca3af' },
+            { text: `${data.amountInFormatted} ${data.tokenInSymbol}`, color: '#d1d5db' },
+          ],
+          [{ text: '', color: '#d1d5db' }],
+          [
+            { text: 'Waiting for Permit2 approval confirmation...', color: '#fbbf24' },
+          ],
+        ])
+
+        // Wait for approval transaction to be mined
+        const { waitForTransactionReceipt } = await import('wagmi/actions')
+        await waitForTransactionReceipt(config, { hash: approveTxHash })
+
+        ctx.updateStyledHistory([
+          [
+            { text: 'Uniswap V4 Swap:', color: '#FF69B4' },
+          ],
+          [
+            { text: `  ${data.tokenInSymbol} → ${data.tokenOutSymbol}`, color: '#d1d5db' },
+          ],
+          [
+            { text: `  Amount: `, color: '#9ca3af' },
+            { text: `${data.amountInFormatted} ${data.tokenInSymbol}`, color: '#d1d5db' },
+          ],
+          [{ text: '', color: '#d1d5db' }],
+          [
+            { text: 'Permit2 approval confirmed!', color: '#10b981' },
+          ],
+        ])
+      }
+
+      // Step 2: Check Permit2 allowance to Universal Router
+      const permit2Allowance = await readContract(config, {
+        address: permit2Address,
+        abi: PERMIT2_ABI,
+        functionName: 'allowance',
+        args: [ctx.walletAddress as Address, tokenIn.address as Address, universalRouterAddress],
+      }) as readonly [bigint, number, number]
+
+      const [permit2Amount] = permit2Allowance
+
+      // If Permit2 allowance to Universal Router is insufficient, request approval
+      if (permit2Amount < amountIn) {
+        ctx.updateStyledHistory([
+          [
+            { text: 'Uniswap V4 Swap:', color: '#FF69B4' },
+          ],
+          [
+            { text: `  ${data.tokenInSymbol} → ${data.tokenOutSymbol}`, color: '#d1d5db' },
+          ],
+          [
+            { text: `  Amount: `, color: '#9ca3af' },
+            { text: `${data.amountInFormatted} ${data.tokenInSymbol}`, color: '#d1d5db' },
+          ],
+          [{ text: '', color: '#d1d5db' }],
+          [
+            { text: 'Step 2/2: Approving Permit2 to Universal Router...', color: '#fbbf24' },
+          ],
+        ])
+
+        // Approve Universal Router via Permit2 (max uint160, 30 days expiration)
+        const expiration = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60 // 30 days
+        const permit2ApproveTxHash = await writeContract(config, {
+          address: permit2Address,
+          abi: PERMIT2_ABI,
+          functionName: 'approve',
+          args: [
+            tokenIn.address as Address,
+            universalRouterAddress,
+            BigInt('0xffffffffffffffffffffffffffffffffffffffff'), // max uint160
+            expiration,
+          ],
+        })
+
+        ctx.updateStyledHistory([
+          [
+            { text: 'Uniswap V4 Swap:', color: '#FF69B4' },
+          ],
+          [
+            { text: `  ${data.tokenInSymbol} → ${data.tokenOutSymbol}`, color: '#d1d5db' },
+          ],
+          [
+            { text: `  Amount: `, color: '#9ca3af' },
+            { text: `${data.amountInFormatted} ${data.tokenInSymbol}`, color: '#d1d5db' },
+          ],
+          [{ text: '', color: '#d1d5db' }],
+          [
+            { text: 'Waiting for final approval confirmation...', color: '#fbbf24' },
+          ],
+        ])
+
+        const { waitForTransactionReceipt } = await import('wagmi/actions')
+        await waitForTransactionReceipt(config, { hash: permit2ApproveTxHash })
+
+        ctx.updateStyledHistory([
+          [
+            { text: 'Uniswap V4 Swap:', color: '#FF69B4' },
+          ],
+          [
+            { text: `  ${data.tokenInSymbol} → ${data.tokenOutSymbol}`, color: '#d1d5db' },
+          ],
+          [
+            { text: `  Amount: `, color: '#9ca3af' },
+            { text: `${data.amountInFormatted} ${data.tokenInSymbol}`, color: '#d1d5db' },
+          ],
+          [{ text: '', color: '#d1d5db' }],
+          [
+            { text: 'All approvals confirmed!', color: '#10b981' },
+          ],
+        ])
+      }
+    }
+
     // Prepare transaction using V4 Planner
     const tx = prepareSingleHopSwap(data.params)
 
     ctx.updateStyledHistory([
       [
-        { text: 'Uniswap V4 Swap', color: '#FF69B4', bold: true },
-        { text: ':', color: '#d1d5db' },
+        { text: 'Uniswap V4 Swap:', color: '#FF69B4' },
       ],
       [
         { text: `  ${data.tokenInSymbol} → ${data.tokenOutSymbol}`, color: '#d1d5db' },
@@ -72,13 +254,12 @@ export const swapHandler: CommandHandler<UniswapV4SwapRequestData> = async (data
       ],
       [{ text: '', color: '#d1d5db' }],
       [
-        { text: 'Please sign the transaction in your wallet...', color: '#fbbf24' },
+        { text: 'Please sign the swap transaction in your wallet...', color: '#fbbf24' },
       ],
     ])
 
     // Send transaction via wagmi
     const { sendTransaction } = await import('wagmi/actions')
-    const { config } = await import('@/lib/wagmi-config')
 
     const txHash = await sendTransaction(config, {
       to: tx.to,
@@ -87,7 +268,6 @@ export const swapHandler: CommandHandler<UniswapV4SwapRequestData> = async (data
     })
 
     // Get block explorer URL
-    const chainId = data.params.chainId
     const explorerUrls: Record<number, string> = {
       1: 'https://etherscan.io',
       8453: 'https://basescan.org',
@@ -99,7 +279,7 @@ export const swapHandler: CommandHandler<UniswapV4SwapRequestData> = async (data
 
     ctx.updateStyledHistory([
       [
-        { text: 'Swap transaction submitted!', color: '#10b981', bold: true },
+        { text: 'Swap transaction submitted!', color: '#10b981' },
       ],
       [
         { text: `  ${data.tokenInSymbol} → ${data.tokenOutSymbol}`, color: '#d1d5db' },
@@ -128,7 +308,7 @@ export const swapHandler: CommandHandler<UniswapV4SwapRequestData> = async (data
     const errorMsg = error instanceof Error ? error.message : String(error)
     ctx.updateStyledHistory([
       [
-        { text: 'Swap failed: ', color: '#ef4444', bold: true },
+        { text: 'Swap failed: ', color: '#ef4444' },
         { text: errorMsg, color: '#fca5a5' },
       ],
     ])

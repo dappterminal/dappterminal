@@ -35,6 +35,9 @@ interface TerminalTab {
   name: string
   history: HistoryItem[]
   executionContext: ExecutionContext
+  currentInput: string
+  commandHistory: string[]
+  historyIndex: number
 }
 
 const MAX_COMMAND_HISTORY = 1000 // Maximum commands to keep in history
@@ -340,9 +343,6 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   const [mounted, setMounted] = useState(false)
   const [tabs, setTabs] = useState<TerminalTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string>("")
-  const [currentInput, setCurrentInput] = useState("")
-  const [commandHistory, setCommandHistory] = useState<string[]>([])
-  const [historyIndex, setHistoryIndex] = useState(-1)
   const [showSettings, setShowSettings] = useState(false)
   const [showSettingsPage, setShowSettingsPage] = useState(false)
   const [showDocsPage, setShowDocsPage] = useState(false)
@@ -366,6 +366,33 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   // Get active tab and its execution context
   const activeTab = tabs.find(tab => tab.id === activeTabId)
   const executionContext = activeTab?.executionContext ?? null
+
+  // Get tab-specific input values
+  const currentInput = activeTab?.currentInput ?? ""
+  const commandHistory = activeTab?.commandHistory ?? []
+  const historyIndex = activeTab?.historyIndex ?? -1
+
+  // Helper to update tab-specific input
+  const updateTabInput = (input: string) => {
+    if (!activeTabId) return
+    setTabs(prevTabs => prevTabs.map(tab =>
+      tab.id === activeTabId ? { ...tab, currentInput: input } : tab
+    ))
+  }
+
+  const updateTabHistory = (history: string[]) => {
+    if (!activeTabId) return
+    setTabs(prevTabs => prevTabs.map(tab =>
+      tab.id === activeTabId ? { ...tab, commandHistory: history } : tab
+    ))
+  }
+
+  const updateTabHistoryIndex = (index: number) => {
+    if (!activeTabId) return
+    setTabs(prevTabs => prevTabs.map(tab =>
+      tab.id === activeTabId ? { ...tab, historyIndex: index } : tab
+    ))
+  }
 
   // Generate prompt based on wallet state and active protocol
   const activeProtocol = executionContext?.activeProtocol
@@ -447,15 +474,15 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
 
     // Load command history from localStorage
     const savedHistory = localStorage.getItem('defi-terminal-command-history')
+    let loadedHistory: string[] = []
     if (savedHistory) {
       try {
         const parsed = JSON.parse(savedHistory)
         if (Array.isArray(parsed)) {
           // Apply sliding window in case saved history exceeds limit
-          const limitedHistory = parsed.length > MAX_COMMAND_HISTORY
+          loadedHistory = parsed.length > MAX_COMMAND_HISTORY
             ? parsed.slice(-MAX_COMMAND_HISTORY)
             : parsed
-          setCommandHistory(limitedHistory)
         }
       } catch {
         // Invalid JSON, ignore
@@ -478,7 +505,10 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
           timestamp: new Date()
         }
       ],
-      executionContext: context
+      executionContext: context,
+      currentInput: "",
+      commandHistory: loadedHistory,
+      historyIndex: -1
     }
     setTabs([initialTab])
     setActiveTabId("1")
@@ -534,12 +564,12 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     }
   }, [fontSize, mounted])
 
-  // Save command history to localStorage whenever it changes
+  // Save command history to localStorage whenever active tab's history changes
   useEffect(() => {
-    if (mounted) {
-      localStorage.setItem('defi-terminal-command-history', JSON.stringify(commandHistory))
+    if (mounted && activeTab) {
+      localStorage.setItem('defi-terminal-command-history', JSON.stringify(activeTab.commandHistory))
     }
-  }, [commandHistory, mounted])
+  }, [activeTab?.commandHistory, mounted])
 
   // Update welcome message once plugins are loaded
   useEffect(() => {
@@ -655,7 +685,10 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
           timestamp: new Date()
         }
       ],
-      executionContext: newContext
+      executionContext: newContext,
+      currentInput: "",
+      commandHistory: [],
+      historyIndex: -1
     }
     setTabs([...tabs, newTab])
     console.log('[Add Tab] New tab created, setting active to:', newId)
@@ -707,7 +740,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
           ? { ...tab, history: [...tab.history, warningItem] }
           : tab
       ))
-      setCurrentInput("")
+      updateTabInput("")
       return
     }
 
@@ -849,15 +882,15 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
             }
 
             // Add to command history and return early
-            setCommandHistory(prev => {
-              const newHistory = [...prev, trimmedInput]
+            updateTabHistory((() => {
+              const newHistory = [...commandHistory, trimmedInput]
               if (newHistory.length > MAX_COMMAND_HISTORY) {
                 return newHistory.slice(-MAX_COMMAND_HISTORY)
               }
               return newHistory
-            })
-            setCurrentInput("")
-            setHistoryIndex(-1)
+            })())
+            updateTabInput("")
+            updateTabHistoryIndex(-1)
             return
           }
           // Handle balance command - fetch balance client-side
@@ -923,15 +956,15 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
             }
 
             // Add to command history and return early
-            setCommandHistory(prev => {
-              const newHistory = [...prev, trimmedInput]
+            updateTabHistory((() => {
+              const newHistory = [...commandHistory, trimmedInput]
               if (newHistory.length > MAX_COMMAND_HISTORY) {
                 return newHistory.slice(-MAX_COMMAND_HISTORY)
               }
               return newHistory
-            })
-            setCurrentInput("")
-            setHistoryIndex(-1)
+            })())
+            updateTabInput("")
+            updateTabHistoryIndex(-1)
             return
           }
           // ========================================
@@ -976,6 +1009,19 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                     return tab
                   }))
                 },
+                updateStyledHistory: (lines: { text: string; color: string }[][]) => {
+                  setTabs(prevTabs => prevTabs.map(tab => {
+                    if (tab.id === activeTabId) {
+                      const updatedHistory = tab.history.map(item =>
+                        item.timestamp === commandTimestamp
+                          ? { ...item, styledOutput: lines }
+                          : item
+                      )
+                      return { ...tab, history: updatedHistory }
+                    }
+                    return tab
+                  }))
+                },
                 addHistoryLinks: (links: { text: string; url: string }[]) => {
                   setTabs(prevTabs => prevTabs.map(tab => {
                     if (tab.id === activeTabId) {
@@ -1013,15 +1059,15 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
               await handler(result.value, { ...executionContext, ...cliContext })
 
               // Update command history
-              setCommandHistory(prev => {
-                const newHistory = [...prev, trimmedInput]
+              updateTabHistory((() => {
+                const newHistory = [...commandHistory, trimmedInput]
                 if (newHistory.length > MAX_COMMAND_HISTORY) {
                   return newHistory.slice(-MAX_COMMAND_HISTORY)
                 }
                 return newHistory
-              })
-              setCurrentInput("")
-              setHistoryIndex(-1)
+              })())
+              updateTabInput("")
+              updateTabHistoryIndex(-1)
               return
             }
           }
@@ -1058,8 +1104,8 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
           setTabs(prevTabs => prevTabs.map(tab =>
             tab.id === activeTabId ? { ...tab, history: [] } : tab
           ))
-          setCurrentInput("")
-          setHistoryIndex(-1)
+          updateTabInput("")
+          updateTabHistoryIndex(-1)
           return
         }
       } catch (error) {
@@ -1081,17 +1127,17 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     ))
 
     // Add to command history with sliding window
-    setCommandHistory(prev => {
-      const newHistory = [...prev, trimmedInput]
+    updateTabHistory((() => {
+      const newHistory = [...commandHistory, trimmedInput]
       // Keep only the last MAX_COMMAND_HISTORY commands
       if (newHistory.length > MAX_COMMAND_HISTORY) {
         return newHistory.slice(-MAX_COMMAND_HISTORY)
       }
       return newHistory
-    })
+    })())
 
-    setCurrentInput("")
-    setHistoryIndex(-1)
+    updateTabInput("")
+    updateTabHistoryIndex(-1)
     } finally {
       // Always release the execution lock
       setIsExecuting(false)
@@ -1111,7 +1157,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         return
       } else if (e.key === "Tab" || e.key === "Enter") {
         e.preventDefault()
-        setCurrentInput(fuzzyMatches[selectedMatchIndex])
+        updateTabInput(fuzzyMatches[selectedMatchIndex])
         setFuzzyMatches([])
         setSelectedMatchIndex(0)
         if (e.key === "Enter") {
@@ -1134,8 +1180,8 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       e.preventDefault()
       if (commandHistory.length > 0) {
         const newIndex = historyIndex === -1 ? commandHistory.length - 1 : Math.max(0, historyIndex - 1)
-        setHistoryIndex(newIndex)
-        setCurrentInput(commandHistory[newIndex])
+        updateTabHistoryIndex(newIndex)
+        updateTabInput(commandHistory[newIndex])
         setFuzzyMatches([])
       }
     } else if (e.key === "ArrowDown") {
@@ -1143,11 +1189,11 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       if (historyIndex !== -1) {
         const newIndex = historyIndex + 1
         if (newIndex >= commandHistory.length) {
-          setHistoryIndex(-1)
-          setCurrentInput("")
+          updateTabHistoryIndex(-1)
+          updateTabInput("")
         } else {
-          setHistoryIndex(newIndex)
-          setCurrentInput(commandHistory[newIndex])
+          updateTabHistoryIndex(newIndex)
+          updateTabInput(commandHistory[newIndex])
         }
         setFuzzyMatches([])
       }
@@ -1358,7 +1404,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                       ref={inputRef}
                       type="text"
                       value={currentInput}
-                      onChange={(e) => setCurrentInput(e.target.value)}
+                      onChange={(e) => updateTabInput(e.target.value)}
                       onKeyDown={handleKeyDown}
                       className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono outline-none caret-gray-400 font-bold"
                       style={{ fontSize: `${fontSize}px` }}
@@ -1381,7 +1427,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                           }`}
                           style={{ fontSize: `${fontSize}px` }}
                           onClick={() => {
-                            setCurrentInput(match)
+                            updateTabInput(match)
                             setFuzzyMatches([])
                             setSelectedMatchIndex(0)
                           }}

@@ -58,6 +58,12 @@ export interface CLIContext {
   updateHistory: (lines: string[]) => void
 
   /**
+   * Update the command history with styled output
+   * Replaces the current command's output with styled segments
+   */
+  updateStyledHistory: (lines: { text: string; color: string }[][]) => void
+
+  /**
    * Add clickable links to the current command's output
    */
   addHistoryLinks: (links: { text: string; url: string }[]) => void
