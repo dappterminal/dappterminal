@@ -4,11 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  '@uniswap/v4-sdk>ethers': npm:ethers@^5.7.0
-  '@uniswap/sdk-core>ethers': npm:ethers@^5.7.0
-  '@uniswap/v3-sdk>ethers': npm:ethers@^5.7.0
-
 importers:
 
   .:
