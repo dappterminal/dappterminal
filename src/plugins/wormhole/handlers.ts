@@ -63,10 +63,9 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     // Import Wormhole SDK and helpers
     const { routes, Wormhole } = await import('@wormhole-foundation/sdk')
     const { initWormholeSDK } = await import('@/lib/wormhole-sdk')
-    const { getWormholeChainName, getChainIdFromName, resolveTokenAddress, formatETA, getRouteInfo, getTokenDecimals } = await import('@/lib/wormhole')
-    const { sendTransaction, getWalletClient, signTransaction } = await import('wagmi/actions')
+    const { getWormholeChainName, getChainIdFromName, resolveTokenAddress, formatETA, getRouteInfo } = await import('@/lib/wormhole')
+    const { sendTransaction, getWalletClient } = await import('wagmi/actions')
     const { config } = await import('@/lib/wagmi-config')
-    const { parseUnits } = await import('viem')
 
     // Get chain IDs
     const destChainId = getChainIdFromName(data.toChain)
@@ -107,7 +106,13 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     const fromTokenAddress = resolveTokenAddress(data.chainId, data.fromToken)
 
     // Resolve chains
-    const resolver = wh.resolver([routes.AutomaticTokenBridgeRoute, routes.AutomaticCCTPRoute, routes.CCTPRoute])
+    // Route priority: fastest to slowest, with TokenBridgeRoute as fallback
+    const resolver = wh.resolver([
+      routes.AutomaticCCTPRoute,        // Fastest for USDC (~15 min)
+      routes.CCTPRoute,                  // Fast for USDC manual
+      routes.AutomaticTokenBridgeRoute, // Automatic with relayer
+      routes.TokenBridgeRoute,           // Slowest - manual fallback
+    ])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const srcChain = wh.getChain(sourceChain as any)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -131,10 +136,13 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     })
 
     // Set sender and receiver on the request
+    const senderAddr = Wormhole.parseAddress(srcChain.chain, data.walletAddress)
+    const receiverAddr = Wormhole.parseAddress(dstChain.chain, data.receiver)
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(transferRequest as any).from = Wormhole.parseAddress(srcChain.chain, data.walletAddress)
+    transferRequest.sender = senderAddr
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(transferRequest as any).to = Wormhole.parseAddress(dstChain.chain, data.receiver)
+    ;(transferRequest as any).receiver = receiverAddr
 
     // Find routes
     const availableRoutes = await resolver.findRoutes(transferRequest)
@@ -143,26 +151,20 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     }
     const route = availableRoutes[0] // Use the first (best) route
 
-    // Convert amount to smallest unit (e.g., "10" USDC -> "10000000")
-    const tokenDecimals = getTokenDecimals(data.fromToken)
-
+    // Validate amount
     if (!data.amount || typeof data.amount !== 'string') {
       throw new Error(`Invalid amount: ${data.amount}`)
     }
 
-    const parsedAmount = parseUnits(data.amount, tokenDecimals)
-    if (parsedAmount === undefined || parsedAmount === null) {
-      throw new Error(`Failed to parse amount: ${data.amount} with decimals: ${tokenDecimals}`)
+    // Validate and get quote
+    // Wormhole SDK expects human-readable decimal string (e.g., "10" not "10000000")
+    const transferParams = {
+      amount: data.amount,
+      options: { nativeGas: 0 }
     }
 
-    const amountInSmallestUnit = parsedAmount.toString()
-
-    // Validate and get quote
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const validation = await (route as any).validate(transferRequest, {
-      amount: amountInSmallestUnit,
-      options: { nativeGas: 0 }
-    })
+    const validation = await (route as any).validate(transferRequest, transferParams)
 
     if (!validation.valid) {
       throw new Error(validation.error || 'Invalid transfer parameters')
@@ -177,7 +179,7 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     const routeType = (route as any)?.constructor?.name || 'Unknown'
     const routeInfo = getRouteInfo(routeType)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const eta = formatETA(quote as any)
+    const eta = formatETA((quote as any).eta ?? routeInfo.estimatedTimeMinutes * 60000)
 
     // Format amounts for display
     const formatAmount = (amount: bigint | string | number, decimals: number) => {
@@ -240,9 +242,14 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
       },
     }
 
-    // Get destination address
+    // Create ChainAddress with chain name string (from quote) and parsed receiver address
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const toAddress = Wormhole.parseAddress(dstChain.chain, data.receiver)
+    const receiverChainAddress = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      chain: (quote as any).destinationToken.token.chain,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      address: (transferRequest as any).receiver
+    }
 
     // Track transaction hashes
     const txHashes: string[] = []
@@ -265,7 +272,7 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     ])
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const receipt = await (route as any).initiate(transferRequest, signer, quote, toAddress)
+    const receipt = await (route as any).initiate(transferRequest, signer, quote, receiverChainAddress)
 
     // Extract transaction hashes from receipt
     if (receipt && receipt.originTxs) {
@@ -301,7 +308,14 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     const errorMsg = error instanceof Error ? error.message : String(error)
 
     // Check if error is about missing receipt but transaction was submitted
-    if (errorMsg && errorMsg.includes('No receipt for')) {
+    // This happens when the SDK successfully sends the tx but fails to fetch the receipt
+    const isReceiptError =
+      errorMsg.includes('No receipt for') ||
+      errorMsg.includes('eth_getTransactionReceipt') ||
+      errorMsg.includes('could not coalesce error')
+
+    if (isReceiptError) {
+      // Try to extract transaction hash from error message
       const txHashMatch = errorMsg.match(/0x[a-fA-F0-9]{64}/)
       const txHash = txHashMatch ? txHashMatch[0] : null
 
@@ -309,14 +323,16 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
         const wormholeScanLink = `https://wormholescan.io/#/tx/${txHash}?network=Mainnet`
 
         ctx.updateHistory([
-          `Bridge transactions submitted!`,
+          `✓ Bridge transaction submitted!`,
+          ``,
           `  ${fromChainName} → ${toChainName}`,
-          `  Token: ${data.fromToken.toUpperCase()}${data.toToken && data.toToken !== data.fromToken ? ` → ${data.toToken.toUpperCase()}` : ''}`,
+          `  ${sourceAmountFormatted} ${data.fromToken.toUpperCase()} → ~${destAmountFormatted} ${data.toToken?.toUpperCase() || data.fromToken.toUpperCase()}`,
+          `  ETA: ${eta}`,
           ``,
           `Transaction Hash: ${txHash}`,
           ``,
-          `Note: Wormhole is processing your transfer.`,
-          `      Funds will arrive automatically at the destination.`,
+          `⏳ Wormhole is processing your transfer.`,
+          `   Funds will arrive automatically at the destination.`,
           ``,
           `Track on WormholeScan:`,
         ])

@@ -20,6 +20,7 @@
     "@rainbow-me/rainbowkit": "^2.2.9",
     "@tanstack/react-query": "^5.90.3",
     "@uniswap/sdk-core": "^7.8.0",
+    "@uniswap/universal-router-sdk": "^4.20.0",
     "@uniswap/v4-sdk": "^1.22.0",
     "@wormhole-foundation/sdk": "^3.8.8",
     "@wormhole-foundation/sdk-connect": "^3.8.8",

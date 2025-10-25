@@ -38,6 +38,9 @@ importers:
       '@uniswap/sdk-core':
         specifier: ^7.8.0
         version: 7.8.0
+      '@uniswap/universal-router-sdk':
+        specifier: ^4.20.0
+        version: 4.20.0(bufferutil@4.0.9)(hardhat@2.26.3(bufferutil@4.0.9)(typescript@5.9.2)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
       '@uniswap/v4-sdk':
         specifier: ^1.22.0
         version: 1.22.0(hardhat@2.26.3(bufferutil@4.0.9)(typescript@5.9.2)(utf-8-validate@5.0.10))
@@ -1399,6 +1402,12 @@ packages:
   '@openzeppelin/contracts@3.4.2-solc-0.7':
     resolution: {integrity: sha512-W6QmqgkADuFcTLzHL8vVoNBtkwjvQRpYIAom7KiUNoLKghyx3FgH0GBjt8NRvigV1ZmMOBllvE1By1C+bi8WpA==}
 
+  '@openzeppelin/contracts@4.7.0':
+    resolution: {integrity: sha512-52Qb+A1DdOss8QvJrijYYPSf32GUg2pGaG/yCxtaA3cu4jduouTdg4XZSMLW9op54m1jH7J8hoajhHKOPsoJFw==}
+
+  '@openzeppelin/contracts@5.0.2':
+    resolution: {integrity: sha512-ytPc6eLGcHHnapAZ9S+5qsdomhjo6QBHTDRRBFfTxXIpsicMhVPouPgmUPebZZZGX7vt9USA+Z+0M0dSVtSUEA==}
+
   '@passwordless-id/webauthn@2.3.1':
     resolution: {integrity: sha512-n75LOVz9J24FhEiLHiAfqC2gxh2wXJ4G+nvMxRy6fTpmhg6lK+tKwp/GZaXZjRXgUtPWHRVMtvCHKQQCfojXmw==}
 
@@ -2495,6 +2504,12 @@ packages:
     resolution: {integrity: sha512-f6UIliwBbRsgVLxIaBANF6w09tYqc6Y/qXdsrbEmXHyFA7ILiKrIwRFXe1yOg8M3cksgVsO9N7yuL2DdCGQKBA==}
     engines: {node: '>=10'}
 
+  '@uniswap/permit2-sdk@1.4.0':
+    resolution: {integrity: sha512-l/aGhfhB93M76vXs4eB8QNwhELE6bs66kh7F1cyobaPtINaVpMmlJv+j3KmHeHwAZIsh7QXyYzhDxs07u0Pe4Q==}
+
+  '@uniswap/router-sdk@2.1.0':
+    resolution: {integrity: sha512-70NQJuu1OMKy1Cb7XxnQ1wJ4CBUH0Fp087gr4X5RHsZODvZAYLjhLLCvbuQjIL1frlA4wrRvw4viHHjo8R9bWQ==}
+
   '@uniswap/sdk-core@7.8.0':
     resolution: {integrity: sha512-Mt/Qb3UswZhM42dhyIh57vOUiljxgD82H3v4aEkp3/zs4JwncnAzbrYBcQZF5RxN1uD3qX1r82YI7aNC8spB5g==}
     engines: {node: '>=10'}
@@ -2504,8 +2519,20 @@ packages:
     engines: {node: '>=10'}
     deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
+  '@uniswap/universal-router-sdk@4.20.0':
+    resolution: {integrity: sha512-cIM7YvvXHyjDNGsa1isgLMN1zm7fSKIvaRpoZxP8Brg0OZ6G5aFPR1hdC8b6IHrJpyNDC7vK1VRvV8jY5CkzAQ==}
+    engines: {node: '>=14'}
+
+  '@uniswap/universal-router@2.0.0-beta.2':
+    resolution: {integrity: sha512-/USVkWZrOCjLeZluR7Yk8SpfWDUKG/MLcOyuxuwnqM1xCJj5ekguSYhct+Yfo/3t9fsZcnL8vSYgz0MKqAomGg==}
+    engines: {node: '>=14'}
+
   '@uniswap/v2-core@1.0.1':
     resolution: {integrity: sha512-MtybtkUPSyysqLY2U210NBDeCHX+ltHt3oADGdjqoThZaFRDKwM6k1Nb3F0A3hk5hwuQvytFWhrWHOEq6nVJ8Q==}
+    engines: {node: '>=10'}
+
+  '@uniswap/v2-sdk@4.16.0':
+    resolution: {integrity: sha512-USMm2qz1xhEX8R0dhd0mHzf6pz5aCLjbtud1ZyUBk+gshhUCFp6NW9UovH0L5hqrH03rTvmqQdfhHMW5m+Sosg==}
     engines: {node: '>=10'}
 
   '@uniswap/v3-core@1.0.0':
@@ -8416,6 +8443,10 @@ snapshots:
 
   '@openzeppelin/contracts@3.4.2-solc-0.7': {}
 
+  '@openzeppelin/contracts@4.7.0': {}
+
+  '@openzeppelin/contracts@5.0.2': {}
+
   '@passwordless-id/webauthn@2.3.1': {}
 
   '@paulmillr/qr@0.2.1': {}
@@ -10208,6 +10239,25 @@ snapshots:
 
   '@uniswap/lib@4.0.1-alpha': {}
 
+  '@uniswap/permit2-sdk@1.4.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)':
+    dependencies:
+      ethers: 5.7.2(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+      tiny-invariant: 1.3.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@uniswap/router-sdk@2.1.0(hardhat@2.26.3(bufferutil@4.0.9)(typescript@5.9.2)(utf-8-validate@5.0.10))':
+    dependencies:
+      '@ethersproject/abi': 5.7.0
+      '@uniswap/sdk-core': 7.8.0
+      '@uniswap/swap-router-contracts': 1.3.1(hardhat@2.26.3(bufferutil@4.0.9)(typescript@5.9.2)(utf-8-validate@5.0.10))
+      '@uniswap/v2-sdk': 4.16.0
+      '@uniswap/v3-sdk': 3.26.0(hardhat@2.26.3(bufferutil@4.0.9)(typescript@5.9.2)(utf-8-validate@5.0.10))
+      '@uniswap/v4-sdk': 1.22.0(hardhat@2.26.3(bufferutil@4.0.9)(typescript@5.9.2)(utf-8-validate@5.0.10))
+    transitivePeerDependencies:
+      - hardhat
+
   '@uniswap/sdk-core@7.8.0':
     dependencies:
       '@ethersproject/address': 5.7.0
@@ -10231,7 +10281,40 @@ snapshots:
     transitivePeerDependencies:
       - hardhat
 
+  '@uniswap/universal-router-sdk@4.20.0(bufferutil@4.0.9)(hardhat@2.26.3(bufferutil@4.0.9)(typescript@5.9.2)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)':
+    dependencies:
+      '@openzeppelin/contracts': 4.7.0
+      '@uniswap/permit2-sdk': 1.4.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+      '@uniswap/router-sdk': 2.1.0(hardhat@2.26.3(bufferutil@4.0.9)(typescript@5.9.2)(utf-8-validate@5.0.10))
+      '@uniswap/sdk-core': 7.8.0
+      '@uniswap/universal-router': 2.0.0-beta.2
+      '@uniswap/v2-core': 1.0.1
+      '@uniswap/v2-sdk': 4.16.0
+      '@uniswap/v3-core': 1.0.0
+      '@uniswap/v3-sdk': 3.26.0(hardhat@2.26.3(bufferutil@4.0.9)(typescript@5.9.2)(utf-8-validate@5.0.10))
+      '@uniswap/v4-sdk': 1.22.0(hardhat@2.26.3(bufferutil@4.0.9)(typescript@5.9.2)(utf-8-validate@5.0.10))
+      bignumber.js: 9.3.1
+      ethers: 5.7.2(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+    transitivePeerDependencies:
+      - bufferutil
+      - hardhat
+      - utf-8-validate
+
+  '@uniswap/universal-router@2.0.0-beta.2':
+    dependencies:
+      '@openzeppelin/contracts': 5.0.2
+      '@uniswap/v2-core': 1.0.1
+      '@uniswap/v3-core': 1.0.0
+
   '@uniswap/v2-core@1.0.1': {}
+
+  '@uniswap/v2-sdk@4.16.0':
+    dependencies:
+      '@ethersproject/address': 5.7.0
+      '@ethersproject/solidity': 5.7.0
+      '@uniswap/sdk-core': 7.8.0
+      tiny-invariant: 1.3.3
+      tiny-warning: 1.0.3
 
   '@uniswap/v3-core@1.0.0': {}
 

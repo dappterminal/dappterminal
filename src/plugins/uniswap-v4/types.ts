@@ -132,9 +132,22 @@ export interface UniswapV4SwapRequestData {
   message: string
 }
 
+export interface UniswapV4MultiHopSwapRequestData {
+  uniswapV4MultiHopSwapRequest: boolean
+  params: MultiHopSwapParams
+  route: Token[]
+  tokenInSymbol: string
+  tokenOutSymbol: string
+  amountInFormatted: string
+  minAmountOutFormatted: string
+  slippageBps: number
+  deadlineSeconds: number
+  message: string
+}
+
 export interface UniswapV4PluginState extends Record<string, unknown> {
   lastSwap?: {
-    params: SingleHopSwapParams
+    params: SingleHopSwapParams | MultiHopSwapParams
     txHash?: string
     timestamp: number
   }
