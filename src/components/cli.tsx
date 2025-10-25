@@ -13,6 +13,7 @@ import { stargatePlugin } from "@/plugins/stargate"
 import { wormholePlugin } from "@/plugins/wormhole"
 import { lifiPlugin } from "@/plugins/lifi"
 import { aaveV3Plugin } from "@/plugins/aave-v3"
+import { uniswapV4Plugin } from "@/plugins/uniswap-v4"
 
 interface OutputSegment {
   text: string
@@ -42,9 +43,10 @@ const MAX_COMMAND_HISTORY = 1000 // Maximum commands to keep in history
 const PROTOCOL_COLORS: Record<string, string> = {
   stargate: '#0FB983',
   '1inch': '#94A6FF',
-  wormhole: '#FF6B9D',
+  wormhole: '#9CA3AF', // Gray
   lifi: '#A855F7',
   'aave-v3': '#2F7CF6',
+  'uniswap-v4': '#FF69B4', // Hot pink
   // Add more protocols here as needed
 }
 
@@ -419,6 +421,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       { name: 'Wormhole', plugin: wormholePlugin },
       { name: 'LiFi', plugin: lifiPlugin },
       { name: 'Aave v3', plugin: aaveV3Plugin },
+      { name: 'Uniswap V4', plugin: uniswapV4Plugin },
     ]
 
     const loadedPluginNames: string[] = []
@@ -550,19 +553,29 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
 
           // Add each protocol with its color
           loadedPlugins.forEach((plugin, index) => {
-            // Map plugin names to protocol color keys
+            // Map plugin names to protocol color keys and display names
             const protocolKeyMap: Record<string, string> = {
               '1inch': '1inch',
               'Stargate': 'stargate',
               'Wormhole': 'wormhole',
               'LiFi': 'lifi',
               'Aave v3': 'aave-v3',
+              'Uniswap V4': 'uniswap-v4',
+            }
+            const displayNameMap: Record<string, string> = {
+              '1inch': '1inch',
+              'Stargate': 'stargate',
+              'Wormhole': 'wormhole',
+              'LiFi': 'lifi',
+              'Aave v3': 'aave-v3',
+              'Uniswap V4': 'uniswap-v4',
             }
             const protocolKey = protocolKeyMap[plugin] || plugin.toLowerCase()
+            const displayName = displayNameMap[plugin] || plugin.toLowerCase()
             const color = PROTOCOL_COLORS[protocolKey] || '#d1d5db'
 
             protocolLine.push({
-              text: plugin,
+              text: displayName,
               color: color,
               bold: true
             })
@@ -630,6 +643,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     pluginLoader.loadPlugin(wormholePlugin, undefined, newContext)
     pluginLoader.loadPlugin(lifiPlugin, undefined, newContext)
     pluginLoader.loadPlugin(aaveV3Plugin, undefined, newContext)
+    pluginLoader.loadPlugin(uniswapV4Plugin, undefined, newContext)
 
     const newTab: TerminalTab = {
       id: newId,
@@ -1272,7 +1286,15 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                       <div className="flex select-text">
                         <span className="text-white-400">
                           {(item.prompt || prompt).split('@')[0]}
-                          <span className="font-semibold">@{(item.prompt || prompt).split('@')[1]}</span>
+                          <span className="font-semibold">@</span>
+                          <span
+                            className="font-semibold"
+                            style={{
+                              color: PROTOCOL_COLORS[(item.prompt || prompt).split('@')[1]?.replace('>', '')] || '#d1d5db'
+                            }}
+                          >
+                            {(item.prompt || prompt).split('@')[1]}
+                          </span>
                         </span>
                         <span className="text-whiteMa-400 ml-2 font-semibold">{item.command}</span>
                       </div>
@@ -1322,7 +1344,15 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                   <div className="flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded">
                     <span className="text-gray-100">
                       {prompt.split('@')[0]}
-                      <span className="font-semibold">@{prompt.split('@')[1]}</span>
+                      <span className="font-semibold">@</span>
+                      <span
+                        className="font-semibold"
+                        style={{
+                          color: PROTOCOL_COLORS[prompt.split('@')[1]?.replace('>', '')] || '#d1d5db'
+                        }}
+                      >
+                        {prompt.split('@')[1]}
+                      </span>
                     </span>
                     <input
                       ref={inputRef}
