@@ -55,7 +55,7 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     `Token: ${data.fromToken.toUpperCase()}${data.toToken && data.toToken !== data.fromToken ? ` → ${data.toToken.toUpperCase()}` : ''}`,
     `Amount: ${data.amount}`,
     ``,
-    `⏳ Initializing Wormhole SDK...`,
+    `Initializing Wormhole SDK...`,
   ])
 
   // Execute Wormhole bridge flow - entirely client-side
@@ -63,9 +63,10 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     // Import Wormhole SDK and helpers
     const { routes, Wormhole } = await import('@wormhole-foundation/sdk')
     const { initWormholeSDK } = await import('@/lib/wormhole-sdk')
-    const { getWormholeChainName, getChainIdFromName, resolveTokenAddress, formatETA, getRouteInfo } = await import('@/lib/wormhole')
-    const { sendTransaction } = await import('wagmi/actions')
+    const { getWormholeChainName, getChainIdFromName, resolveTokenAddress, formatETA, getRouteInfo, getTokenDecimals } = await import('@/lib/wormhole')
+    const { sendTransaction, getWalletClient, signTransaction } = await import('wagmi/actions')
     const { config } = await import('@/lib/wagmi-config')
+    const { parseUnits } = await import('viem')
 
     // Get chain IDs
     const destChainId = getChainIdFromName(data.toChain)
@@ -82,7 +83,7 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
       `Token: ${data.fromToken.toUpperCase()}`,
       `Amount: ${data.amount}`,
       ``,
-      `⏳ Initializing Wormhole SDK...`,
+      `Initializing Wormhole SDK...`,
     ])
 
     // Initialize Wormhole SDK
@@ -91,7 +92,7 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     ctx.updateHistory([
       data.message,
       ``,
-      `⏳ Finding optimal routes...`,
+      `Finding optimal routes...`,
     ])
 
     // Get Wormhole chain names
@@ -123,38 +124,57 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
       throw new Error(`No supported routes for ${data.fromToken}`)
     }
 
-    // Parse sender and receiver addresses
-    const senderAddr = Wormhole.parseAddress(srcChain.chain, data.walletAddress)
-    const receiverAddr = Wormhole.parseAddress(dstChain.chain, data.receiver)
-
     // Create transfer request
     const transferRequest = await routes.RouteTransferRequest.create(wh, {
       source: tokenId,
       destination: destTokens[0],
     })
 
-    // Validate request
+    // Set sender and receiver on the request
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const validated = await (transferRequest as any).validate({
-      amount: data.amount,
-      from: senderAddr,
-      to: receiverAddr,
-    })
+    ;(transferRequest as any).from = Wormhole.parseAddress(srcChain.chain, data.walletAddress)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(transferRequest as any).to = Wormhole.parseAddress(dstChain.chain, data.receiver)
 
-    if (!validated.valid) {
-      throw new Error(validated.error || 'Invalid transfer request')
-    }
-
-    // Get quote
-    const availableRoutes = await resolver.findRoutes(validated.params)
+    // Find routes
+    const availableRoutes = await resolver.findRoutes(transferRequest)
     if (!availableRoutes || availableRoutes.length === 0) {
       throw new Error('No route found for this transfer')
     }
-    const quote = availableRoutes[0] // Use the first (best) route
+    const route = availableRoutes[0] // Use the first (best) route
+
+    // Convert amount to smallest unit (e.g., "10" USDC -> "10000000")
+    const tokenDecimals = getTokenDecimals(data.fromToken)
+
+    if (!data.amount || typeof data.amount !== 'string') {
+      throw new Error(`Invalid amount: ${data.amount}`)
+    }
+
+    const parsedAmount = parseUnits(data.amount, tokenDecimals)
+    if (parsedAmount === undefined || parsedAmount === null) {
+      throw new Error(`Failed to parse amount: ${data.amount} with decimals: ${tokenDecimals}`)
+    }
+
+    const amountInSmallestUnit = parsedAmount.toString()
+
+    // Validate and get quote
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const validation = await (route as any).validate(transferRequest, {
+      amount: amountInSmallestUnit,
+      options: { nativeGas: 0 }
+    })
+
+    if (!validation.valid) {
+      throw new Error(validation.error || 'Invalid transfer parameters')
+    }
+
+    // Get quote with validated params
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const quote = await (route as any).quote(transferRequest, validation.params)
 
     // Get route info for display
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const routeType = (quote as any)?.constructor?.name || 'Unknown'
+    const routeType = (route as any)?.constructor?.name || 'Unknown'
     const routeInfo = getRouteInfo(routeType)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const eta = formatETA(quote as any)
@@ -166,14 +186,17 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
       return (Number(value) / Number(divisor)).toFixed(6)
     }
 
-    const sourceAmountFormatted = formatAmount(validated.params.amount.amount, validated.params.amount.decimals)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sourceAmountFormatted = (quote as any).sourceToken?.amount
+      ? formatAmount((quote as any).sourceToken.amount.amount, (quote as any).sourceToken.amount.decimals)
+      : data.amount
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const destAmountFormatted = (quote as any).destinationToken?.amount
       ? formatAmount((quote as any).destinationToken.amount.amount, (quote as any).destinationToken.amount.decimals)
       : sourceAmountFormatted
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const relayFeeInfo = (quote as any).relayFee ? `  Relay Fee: ${formatAmount((quote as any).relayFee.amount, (quote as any).relayFee.amount.decimals)} ${((quote as any).relayFee.token as { symbol?: string })?.symbol || data.fromToken.toUpperCase()}` : null
+    const relayFeeInfo = (quote as any).relayFee ? `  Relay Fee: ${formatAmount((quote as any).relayFee.amount.amount, (quote as any).relayFee.amount.decimals)} ${((quote as any).relayFee.token as { symbol?: string })?.symbol || data.fromToken.toUpperCase()}` : null
 
     ctx.updateHistory([
       data.message,
@@ -188,84 +211,69 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
       `  Receive: ~${destAmountFormatted} ${data.toToken?.toUpperCase() || data.fromToken.toUpperCase()}`,
       ...(relayFeeInfo ? [relayFeeInfo] : []),
       ``,
-      `⏳ Preparing transaction...`,
+      `Preparing transaction...`,
     ])
 
-    // Start transfer
-    const txHashes: string[] = []
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const receipt = await (quote as any).initiateTransfer({
-      chain: srcChain.chain,
+    // Get wallet client
+    const walletClient = await getWalletClient(config, { chainId: data.chainId })
+    if (!walletClient) {
+      throw new Error('Failed to get wallet client')
+    }
+
+    // Create a proper signer adapter for Wormhole SDK
+    const signer = {
+      chain: () => srcChain.chain,
       address: () => data.walletAddress,
-      signAndSend: async (txs: Array<{
-        transaction: {
-          to: string
-          data: string
-          value?: string | number
-          gasLimit?: string | number
-        }
-        description: string
-      }>) => {
-        const txids: string[] = []
-        for (let i = 0; i < txs.length; i++) {
-          const txn = txs[i]
-          const { transaction, description } = txn
-
-          const stepNum = i + 1
-          const totalSteps = txs.length
-
-          ctx.updateHistory([
-            data.message,
-            ``,
-            `Protocol: Wormhole ${routeInfo.isAutomatic ? '(Automatic)' : '(Manual)'}`,
-            `Route: ${routeInfo.name}`,
-            `ETA: ${eta}`,
-            ``,
-            `From: ${fromChainName}`,
-            `  Send: ${sourceAmountFormatted} ${data.fromToken.toUpperCase()}`,
-            `To: ${toChainName}`,
-            `  Receive: ~${destAmountFormatted} ${data.toToken?.toUpperCase() || data.fromToken.toUpperCase()}`,
-            ...(relayFeeInfo ? [relayFeeInfo, ``] : []),
-            `⏳ Transaction ${stepNum}/${totalSteps}: ${description}`,
-            `  Please sign in your wallet...`,
-          ])
-
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      signAndSend: async (txs: any[]) => {
+        const results = []
+        for (const { transaction } of txs) {
           const txHash = await sendTransaction(config, {
             to: transaction.to as `0x${string}`,
             data: transaction.data as `0x${string}`,
             value: transaction.value ? BigInt(transaction.value) : BigInt(0),
             gas: transaction.gasLimit ? BigInt(transaction.gasLimit) : undefined,
           })
-
-          txids.push(txHash)
-          txHashes.push(txHash)
-
-          ctx.updateHistory([
-            data.message,
-            ``,
-            `Protocol: Wormhole ${routeInfo.isAutomatic ? '(Automatic)' : '(Manual)'}`,
-            `Route: ${routeInfo.name}`,
-            `ETA: ${eta}`,
-            ``,
-            `From: ${fromChainName}`,
-            `  Send: ${sourceAmountFormatted} ${data.fromToken.toUpperCase()}`,
-            `To: ${toChainName}`,
-            `  Receive: ~${destAmountFormatted} ${data.toToken?.toUpperCase() || data.fromToken.toUpperCase()}`,
-            ...(relayFeeInfo ? [relayFeeInfo, ``] : []),
-            `✅ Transaction ${stepNum}/${totalSteps} sent!`,
-            `  ${description}`,
-            `  Hash: ${txHash}`,
-            ``,
-            ...(stepNum < totalSteps ? [`⏳ Preparing next transaction...`] : [`⏳ Waiting for Wormhole to process...`]),
-          ])
-
-          if (stepNum < totalSteps) {
-            await new Promise(resolve => setTimeout(resolve, 1000))
-          }
+          results.push({ txid: txHash })
         }
-        return txids
+        return results
       },
-    })
+    }
+
+    // Get destination address
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const toAddress = Wormhole.parseAddress(dstChain.chain, data.receiver)
+
+    // Track transaction hashes
+    const txHashes: string[] = []
+
+    // Start transfer using route.initiate
+    ctx.updateHistory([
+      data.message,
+      ``,
+      `Protocol: Wormhole ${routeInfo.isAutomatic ? '(Automatic)' : '(Manual)'}`,
+      `Route: ${routeInfo.name}`,
+      `ETA: ${eta}`,
+      ``,
+      `From: ${fromChainName}`,
+      `  Send: ${sourceAmountFormatted} ${data.fromToken.toUpperCase()}`,
+      `To: ${toChainName}`,
+      `  Receive: ~${destAmountFormatted} ${data.toToken?.toUpperCase() || data.fromToken.toUpperCase()}`,
+      ...(relayFeeInfo ? [relayFeeInfo] : []),
+      ``,
+      `Please sign the transaction in your wallet...`,
+    ])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const receipt = await (route as any).initiate(transferRequest, signer, quote, toAddress)
+
+    // Extract transaction hashes from receipt
+    if (receipt && receipt.originTxs) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      receipt.originTxs.forEach((tx: any) => {
+        if (tx.txid) txHashes.push(tx.txid)
+      })
+    }
 
     // Try to get transaction hash from receipt
     const receiptData = receipt as { txid?: string; hash?: string }
@@ -276,7 +284,7 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     const wormholeScanLink = `https://wormholescan.io/#/tx/${lastTxHash}?network=Mainnet`
 
     ctx.updateHistory([
-      `✅ Bridge executed successfully!`,
+      `Bridge executed successfully!`,
       `  ${fromChainName} → ${toChainName}`,
       `  Token: ${data.fromToken.toUpperCase()}${data.toToken && data.toToken !== data.fromToken ? ` → ${data.toToken.toUpperCase()}` : ''}`,
       `  Send: ${sourceAmountFormatted} → Receive: ~${destAmountFormatted}`,
@@ -285,7 +293,7 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
       txHashes.length > 0 ? `Transaction Hashes:` : `Transaction submitted`,
       ...txHashes.map((hash: string, idx: number) => `  ${idx + 1}. ${hash}`),
       ``,
-      `🔍 Track on WormholeScan:`,
+      `Track on WormholeScan:`,
     ])
 
     ctx.addHistoryLinks([{ text: wormholeScanLink, url: wormholeScanLink }])
@@ -301,16 +309,16 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
         const wormholeScanLink = `https://wormholescan.io/#/tx/${txHash}?network=Mainnet`
 
         ctx.updateHistory([
-          `✅ Bridge transactions submitted!`,
+          `Bridge transactions submitted!`,
           `  ${fromChainName} → ${toChainName}`,
           `  Token: ${data.fromToken.toUpperCase()}${data.toToken && data.toToken !== data.fromToken ? ` → ${data.toToken.toUpperCase()}` : ''}`,
           ``,
           `Transaction Hash: ${txHash}`,
           ``,
-          `⚠️  Note: Wormhole is processing your transfer.`,
-          `    Funds will arrive automatically at the destination.`,
+          `Note: Wormhole is processing your transfer.`,
+          `      Funds will arrive automatically at the destination.`,
           ``,
-          `🔍 Track on WormholeScan:`,
+          `Track on WormholeScan:`,
         ])
 
         ctx.addHistoryLinks([{ text: wormholeScanLink, url: wormholeScanLink }])
@@ -318,7 +326,12 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
       }
     }
 
-    ctx.updateHistory([`❌ Bridge failed: ${errorMsg}`])
+    ctx.updateStyledHistory([
+      [
+        { text: 'Bridge failed: ', color: '#ef4444' },
+        { text: errorMsg, color: '#fca5a5' },
+      ],
+    ])
     console.error('[Wormhole Bridge] Error:', error)
   }
 }

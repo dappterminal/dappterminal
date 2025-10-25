@@ -7,7 +7,6 @@ import type { ProtocolFiber, ExecutionContext } from '@/core'
 import { createProtocolFiber, addCommandToFiber } from '@/core'
 import {
   marketsCommand,
-  reservesCommand,
   ratesCommand,
   positionCommand,
   healthCommand,
@@ -40,7 +39,6 @@ export const aaveV3Plugin: Plugin = {
     )
 
     addCommandToFiber(fiber, marketsCommand)
-    addCommandToFiber(fiber, reservesCommand)
     addCommandToFiber(fiber, ratesCommand)
     addCommandToFiber(fiber, positionCommand)
     addCommandToFiber(fiber, healthCommand)

@@ -93,6 +93,25 @@ export const TOKEN_ADDRESSES: Record<number, Record<string, string>> = {
 export const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
 
 /**
+ * Token decimals mapping
+ */
+export const TOKEN_DECIMALS: Record<string, number> = {
+  usdc: 6,
+  usdt: 6,
+  weth: 18,
+  wbtc: 8,
+  eth: 18,
+  native: 18,
+}
+
+/**
+ * Get token decimals
+ */
+export function getTokenDecimals(tokenSymbol: string): number {
+  return TOKEN_DECIMALS[tokenSymbol.toLowerCase()] || 18
+}
+
+/**
  * Get Wormhole chain name from chain ID
  */
 export function getWormholeChainName(chainId: number): string | undefined {

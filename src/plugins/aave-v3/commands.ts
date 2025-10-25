@@ -25,15 +25,6 @@ interface MarketSummary {
   activityScore?: number
 }
 
-interface ReservesResponse {
-  success?: boolean
-  data?: {
-    marketId?: string
-    reserves?: ReserveSnapshot[]
-  } | ReserveSnapshot[]
-  reserves?: ReserveSnapshot[]
-}
-
 interface RatesResponse {
   success?: boolean
   data?: {
@@ -41,20 +32,6 @@ interface RatesResponse {
     rates?: ReserveRate[]
   } | ReserveRate[]
   rates?: ReserveRate[]
-}
-
-interface ReserveSnapshot {
-  id: string
-  symbol: string
-  name?: string
-  totalLiquidityUsd?: number
-  availableLiquidityUsd?: number
-  utilization?: number
-  supplyApy?: number
-  variableBorrowApy?: number
-  stableBorrowApy?: number
-  rewardApr?: number
-  priceUsd?: number
 }
 
 interface ReserveRate {
@@ -163,89 +140,6 @@ export const marketsCommand: Command = {
   },
 }
 
-/**
- * reserves command — display reserve snapshots for a specific market
- *
- * Usage: reserves [<marketId>] [--limit <n>]
- */
-export const reservesCommand: Command = {
-  id: 'reserves',
-  scope: 'G_p',
-  protocol: 'aave-v3',
-  description: 'Show reserve liquidity and utilization for an Aave market',
-  aliases: ['assets'],
-
-  async run(args: unknown, _context: ExecutionContext): Promise<CommandResult> {
-    try {
-      const { marketId, limit } = parseMarketOptions(args)
-
-      const response = await fetch(`/api/aave-v3/reserves?market=${encodeURIComponent(marketId)}`, {
-        method: 'GET',
-        headers: {
-          'accept': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        return {
-          success: false,
-          error: new Error(`Failed to fetch reserves for ${marketId} (status ${response.status})`),
-        }
-      }
-
-      const payload: ReservesResponse = await response.json()
-      const reserves = extractReserves(payload)
-
-      if (!reserves.length) {
-        return {
-          success: false,
-          error: new Error(`No reserves found for market ${marketId}`),
-        }
-      }
-
-      const sorted = [...reserves].sort((a, b) => {
-        const aTvl = a.totalLiquidityUsd ?? 0
-        const bTvl = b.totalLiquidityUsd ?? 0
-        return bTvl - aTvl
-      })
-
-      const slice = sorted.slice(0, limit ?? sorted.length)
-
-      const lines: string[] = [`Aave v3 Reserves — ${marketId}`, '']
-
-      slice.forEach((reserve) => {
-        const tvl = formatUsd(reserve.totalLiquidityUsd)
-        const available = formatUsd(reserve.availableLiquidityUsd)
-        const utilization = formatPercent(reserve.utilization)
-        const supply = formatPercent(reserve.supplyApy)
-        const variable = formatPercent(reserve.variableBorrowApy)
-        const stable = formatPercent(reserve.stableBorrowApy)
-        const reward = formatPercent(reserve.rewardApr)
-
-        lines.push(`  ${reserve.symbol}${reserve.name ? ` (${reserve.name})` : ''}`)
-        lines.push(`    Total: ${tvl} | Available: ${available} | Utilization: ${utilization}`)
-        lines.push(`    Supply APY: ${supply} | Variable Borrow: ${variable} | Stable Borrow: ${stable}`)
-        lines.push(`    Rewards APR: ${reward} | Oracle Price: ${formatUsd(reserve.priceUsd)}`)
-        lines.push('')
-      })
-
-      lines.push(`Total reserves: ${reserves.length}`)
-      if (limit && reserves.length > limit) {
-        lines.push(`Showing top ${limit} by liquidity. Use --limit <n> to adjust.`)
-      }
-
-      return {
-        success: true,
-        value: lines.join('\n'),
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error)),
-      }
-    }
-  },
-}
 
 /**
  * rates command — display APY snapshot for a market
@@ -778,28 +672,6 @@ function extractHealth(payload: PositionResponse | HealthResponse): AaveHealthMe
   }
 
   return undefined
-}
-
-function extractReserves(payload: ReservesResponse): ReserveSnapshot[] {
-  if (!payload) {
-    return []
-  }
-
-  const { data } = payload
-
-  if (Array.isArray(data)) {
-    return data
-  }
-
-  if (data && Array.isArray(data.reserves)) {
-    return data.reserves
-  }
-
-  if (Array.isArray(payload.reserves)) {
-    return payload.reserves
-  }
-
-  return []
 }
 
 function extractRates(payload: RatesResponse): ReserveRate[] {
