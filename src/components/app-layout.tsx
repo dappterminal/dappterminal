@@ -3,27 +3,31 @@
 import { useState, useCallback, useEffect } from 'react'
 import { Terminal as TerminalIcon, Settings, Zap, BarChart3, BookOpen, X, ChevronDown } from "lucide-react"
 import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { useAccount } from 'wagmi'
 import { CLI } from './cli'
 import { PriceChart, PriceChartDropdown } from './charts/price-chart'
 import { PerformanceChart } from './charts/performance-chart'
 import { NetworkGraph } from './charts/network-graph'
+import { PortfolioChart, getPortfolioDisplayAddress } from './charts/portfolio-chart'
 import { Analytics } from './analytics'
 import type { TimeRange, DataSource } from '@/types/charts'
 
 interface Chart {
   id: string
-  type: 'price' | 'performance' | 'network'
+  type: 'price' | 'performance' | 'network' | 'portfolio'
   symbol?: string // For price charts (can be contract address)
   displayLabel?: string // Display name for the chart (e.g., "WBTC/USDC")
   timeRange?: TimeRange
   dataSource?: DataSource
   chartMode?: 'candlestick' | 'line'
+  chainIds?: number[] // For portfolio charts
 }
 
 export function AppLayout() {
+  const { address } = useAccount()
   const [cliWidth, setCliWidth] = useState(55
 
-    
+
   ) // percentage - CLI at 60%, charts at 40%
   const [isDragging, setIsDragging] = useState(false)
   const [resizeKey, setResizeKey] = useState(0)
@@ -61,7 +65,7 @@ export function AppLayout() {
     setCharts(prev => prev.filter(chart => chart.id !== chartId))
   }, [])
 
-  const handleAddChart = useCallback((chartType: string, chartMode?: 'candlestick' | 'line') => {
+  const handleAddChart = useCallback((chartType: string, chartMode?: 'candlestick' | 'line', chainIds?: number[]) => {
     // Map chart types to symbols or contract addresses
     let symbol = `${chartType.toUpperCase()}/USDC`
     let displayLabel = `${chartType.toUpperCase()}/USDC`
@@ -91,6 +95,11 @@ export function AppLayout() {
       newChart.type = 'network'
       newChart.symbol = undefined
       newChart.displayLabel = undefined
+    } else if (chartType === 'portfolio') {
+      newChart.type = 'portfolio'
+      newChart.symbol = undefined
+      newChart.displayLabel = undefined
+      newChart.chainIds = chainIds || [1] // Default to Ethereum if not specified
     }
 
     setCharts(prev => [...prev, newChart])
@@ -426,7 +435,34 @@ export function AppLayout() {
                       </div>
                       <NetworkGraph
                         title=""
-                        height={300}
+                        height={350}
+                        className="p-2"
+                        resizeKey={resizeKey}
+                      />
+                    </div>
+                  )
+                } else if (chart.type === 'portfolio') {
+                  return (
+                    <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
+                      <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
+                        <span className="text-sm text-white">Portfolio</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="text-[#737373] hover:text-white transition-colors"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => closeChart(chart.id)}
+                            className="text-[#737373] hover:text-red-400 transition-colors"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <PortfolioChart
+                        chainIds={chart.chainIds}
+                        height={350}
                         className="p-2"
                         resizeKey={resizeKey}
                       />

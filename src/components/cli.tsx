@@ -336,7 +336,7 @@ function formatCommandResult(result: CommandResult): string[] {
 export interface CLIProps {
   className?: string
   isFullWidth?: boolean
-  onAddChart?: (chartType: string, chartMode?: 'candlestick' | 'line') => void
+  onAddChart?: (chartType: string, chartMode?: 'candlestick' | 'line', chainIds?: number[]) => void
 }
 
 export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProps = {}) {
@@ -784,13 +784,18 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         if (result.success && typeof result.value === 'object' && result.value !== null) {
           // Handle chart command - add chart to analytics panel
           if ('addChart' in result.value && result.value.addChart) {
-            const chartData = result.value as { addChart: boolean; chartType: string; chartMode?: 'candlestick' | 'line' }
+            const chartData = result.value as {
+              addChart: boolean
+              chartType: string
+              chartMode?: 'candlestick' | 'line'
+              chainIds?: number[]
+            }
 
             if (onAddChart) {
-              onAddChart(chartData.chartType, chartData.chartMode)
-              output = [`✅ Added ${chartData.chartType} chart to analytics panel`]
+              onAddChart(chartData.chartType, chartData.chartMode, chartData.chainIds)
+              output = [`Added ${chartData.chartType} chart to analytics panel`]
             } else {
-              output = [`⚠️  Chart panel not available`]
+              output = [`Chart panel not available`]
             }
           }
           // Handle whoami command - enhance with ENS

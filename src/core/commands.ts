@@ -471,6 +471,8 @@ export const transferCommand: Command = {
  *   chart eth --line - Add ETH price chart (line mode)
  *   chart performance - Add performance metrics chart
  *   chart network - Add network graph chart
+ *   chart portfolio [chainIds] - Add portfolio pie chart
+ *   chart balances [chainIds] - Add portfolio pie chart (alias)
  */
 export const chartCommand: Command = {
   id: 'chart',
@@ -486,15 +488,75 @@ export const chartCommand: Command = {
       if (argTokens.length === 0) {
         return {
           success: false,
-          error: new Error('Usage: chart <symbol|type> [--line]\nExamples:\n  chart wbtc\n  chart eth --line\n  chart performance\n  chart network'),
+          error: new Error('Usage: chart <symbol|type> [options]\nExamples:\n  chart wbtc\n  chart eth --line\n  chart performance\n  chart network\n  chart portfolio [chainIds]\n  chart balances 1,8453,42161'),
         }
       }
 
       const chartType = argTokens[0].toLowerCase()
       const isLineMode = argTokens.includes('--line')
 
+      // Handle portfolio/balances chart
+      if (chartType === 'portfolio' || chartType === 'balances') {
+        // Parse chain IDs from arguments
+        let chainIds: number[] = []
+
+        // Look for chain IDs in remaining arguments
+        if (argTokens.length > 1) {
+          const chainIdsArg = argTokens[1]
+
+          // Check if it's comma-separated chain IDs
+          if (/^[\d,\s]+$/.test(chainIdsArg)) {
+            try {
+              chainIds = chainIdsArg.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+
+              // Validate chain IDs
+              const validChainIds = [1, 10, 137, 8453, 42161]
+              const invalidChains = chainIds.filter(id => !validChainIds.includes(id))
+
+              if (invalidChains.length > 0) {
+                return {
+                  success: false,
+                  error: new Error(
+                    `Invalid chain IDs: ${invalidChains.join(', ')}\n` +
+                    `Valid chain IDs: 1 (Ethereum), 10 (Optimism), 137 (Polygon), 8453 (Base), 42161 (Arbitrum)`
+                  ),
+                }
+              }
+            } catch (error) {
+              return {
+                success: false,
+                error: new Error('Failed to parse chain IDs. Use comma-separated numbers (e.g., "1,8453,42161")'),
+              }
+            }
+          }
+        }
+
+        // If no chain IDs specified, use current connected chain or default to Ethereum
+        if (chainIds.length === 0) {
+          chainIds = context.wallet.chainId ? [context.wallet.chainId] : [1]
+        }
+
+        // Check if wallet is connected
+        if (!context.wallet.isConnected || !context.wallet.address) {
+          return {
+            success: false,
+            error: new Error('Wallet not connected. Please connect your wallet to view portfolio.'),
+          }
+        }
+
+        // Return portfolio chart request
+        return {
+          success: true,
+          value: {
+            addChart: true,
+            chartType: 'portfolio',
+            chainIds,
+          },
+        }
+      }
+
       // Validate chart type
-      const validCharts = ['wbtc', 'eth', 'performance', 'network', 'network-graph']
+      const validCharts = ['wbtc', 'eth', 'performance', 'network', 'network-graph', 'portfolio', 'balances']
       if (!validCharts.includes(chartType)) {
         return {
           success: false,

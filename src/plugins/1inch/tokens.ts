@@ -147,6 +147,39 @@ export function resolveTokenAddress(symbol: string, chainId: number): string {
 }
 
 /**
+ * Get common tokens for a specific chain
+ * Returns list of tokens with addresses and decimals for balance checking
+ * @param chainId - Chain ID
+ * @returns Array of token info objects
+ */
+export function getCommonTokensForChain(chainId: number): Array<{
+  symbol: string
+  address: string
+  decimals: number
+  name: string
+}> {
+  const chainTokens = TOKEN_ADDRESSES[chainId]
+
+  if (!chainTokens) {
+    return []
+  }
+
+  return Object.entries(chainTokens).map(([symbol, address]) => {
+    const decimals = TOKEN_DECIMALS[symbol] || 18 // Default to 18 if not found
+
+    // Generate human-readable name from symbol
+    const name = symbol.toUpperCase()
+
+    return {
+      symbol: symbol.toUpperCase(),
+      address,
+      decimals,
+      name,
+    }
+  })
+}
+
+/**
  * Get token decimals
  * @param symbol - Token symbol (e.g., 'eth', 'usdc')
  * @returns Number of decimals (defaults to 18 if unknown)

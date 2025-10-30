@@ -2,7 +2,7 @@
  * Chart types and interfaces for price data and analytics
  */
 
-export type ChartType = 'candlestick' | 'line' | 'bar' | 'area' | 'graph'
+export type ChartType = 'candlestick' | 'line' | 'bar' | 'area' | 'graph' | 'portfolio'
 export type TimeRange = '1m' | '5m' | '15m' | '1h' | '4h' | '12h' | '24h' | '1w' | '1M' | '1Y' | 'ALL'
 export type DataSource = '1inch' | 'Binance' | 'Coinbase' | 'Kraken' | 'Mock' | 'Custom'
 
@@ -88,4 +88,28 @@ export interface ChartConfig {
   theme?: 'dark' | 'light'
   autoRefresh?: boolean
   refreshInterval?: number // milliseconds
+}
+
+/**
+ * Portfolio token balance for pie chart
+ */
+export interface PortfolioTokenBalance {
+  symbol: string
+  name: string
+  tokenAddress: string
+  chainId: number
+  chainName?: string
+  balance: string // raw balance
+  formattedBalance: string // human-readable
+  usdValue: number
+  percentage: number
+}
+
+/**
+ * Portfolio data for pie chart
+ */
+export interface PortfolioData {
+  tokens: PortfolioTokenBalance[]
+  totalUsdValue: number
+  chains: number[]
 }

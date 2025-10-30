@@ -117,12 +117,12 @@ export const swapHandler: CommandHandler<UniswapV4SwapRequestData | UniswapV4Mul
           ],
         ])
 
-        // Approve token to Permit2 (unlimited)
+        // Approve token to Permit2 (exact amount needed)
         const approveTxHash = await writeContract(config, {
           address: tokenIn.address as Address,
           abi: ERC20_ABI,
           functionName: 'approve',
-          args: [permit2Address, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')],
+          args: [permit2Address, amountIn],
         })
 
         ctx.updateStyledHistory([
@@ -193,7 +193,7 @@ export const swapHandler: CommandHandler<UniswapV4SwapRequestData | UniswapV4Mul
           ],
         ])
 
-        // Approve Universal Router via Permit2 (max uint160, 30 days expiration)
+        // Approve Universal Router via Permit2 (exact amount needed, 30 days expiration)
         const expiration = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60 // 30 days
         const permit2ApproveTxHash = await writeContract(config, {
           address: permit2Address,
@@ -202,7 +202,7 @@ export const swapHandler: CommandHandler<UniswapV4SwapRequestData | UniswapV4Mul
           args: [
             tokenIn.address as Address,
             universalRouterAddress,
-            BigInt('0xffffffffffffffffffffffffffffffffffffffff'), // max uint160
+            amountIn, // exact amount needed
             expiration,
           ],
         })
@@ -423,12 +423,12 @@ export const multiHopSwapHandler: CommandHandler<UniswapV4MultiHopSwapRequestDat
           ],
         ])
 
-        // Approve token to Permit2 (unlimited)
+        // Approve token to Permit2 (exact amount needed)
         const approveTxHash = await writeContract(config, {
           address: tokenIn.address as Address,
           abi: ERC20_ABI,
           functionName: 'approve',
-          args: [permit2Address, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')],
+          args: [permit2Address, amountIn],
         })
 
         ctx.updateStyledHistory([
@@ -499,7 +499,7 @@ export const multiHopSwapHandler: CommandHandler<UniswapV4MultiHopSwapRequestDat
           ],
         ])
 
-        // Approve Universal Router via Permit2 (max uint160, 30 days expiration)
+        // Approve Universal Router via Permit2 (exact amount needed, 30 days expiration)
         const expiration = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60 // 30 days
         const permit2ApproveTxHash = await writeContract(config, {
           address: permit2Address,
@@ -508,7 +508,7 @@ export const multiHopSwapHandler: CommandHandler<UniswapV4MultiHopSwapRequestDat
           args: [
             tokenIn.address as Address,
             universalRouterAddress,
-            BigInt('0xffffffffffffffffffffffffffffffffffffffff'), // max uint160
+            amountIn, // exact amount needed
             expiration,
           ],
         })
