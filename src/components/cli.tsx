@@ -746,6 +746,9 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
 
     setIsExecuting(true)
 
+    // Clear input immediately when command starts
+    updateTabInput("")
+
     // Ensure lock is always released using try-finally
     try {
 
@@ -1141,7 +1144,6 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       return newHistory
     })())
 
-    updateTabInput("")
     updateTabHistoryIndex(-1)
     } finally {
       // Always release the execution lock
@@ -1390,86 +1392,88 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                   </div>
                 ))}
 
-                {/* Current Input - sticky on mobile */}
-                <div className="relative md:static sticky bottom-0 bg-[#141414] md:bg-transparent backdrop-blur-sm md:backdrop-blur-none -mx-3 md:mx-0 px-3 md:px-0 py-2 md:py-0">
-                  <div className="flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded">
-                    <span className="text-gray-100">
-                      {prompt.split('@')[0]}
-                      <span className="font-semibold">@</span>
-                      <span
-                        className="font-semibold"
-                        style={{
-                          color: PROTOCOL_COLORS[prompt.split('@')[1]?.replace('>', '')] || '#d1d5db'
-                        }}
-                      >
-                        {prompt.split('@')[1]}
-                      </span>
-                    </span>
-                    <input
-                      ref={inputRef}
-                      type="text"
-                      value={currentInput}
-                      onChange={(e) => updateTabInput(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono outline-none caret-gray-400 font-bold"
-                      style={{ fontSize: `${fontSize}px` }}
-                      autoFocus
-                      spellCheck={false}
-                      autoComplete="off"
-                    />
-                  </div>
-
-                  {/* Fuzzy match suggestions */}
-                  {fuzzyMatches.length > 0 && (
-                    <div className="absolute bottom-full left-0 mb-1 bg-[#1a1a1a] border border-[#262626] rounded-md shadow-lg max-h-48 overflow-y-auto z-10">
-                      {fuzzyMatches.map((match, index) => (
-                        <div
-                          key={`fuzzy-${index}`}
-                          className={`px-3 py-1.5 font-mono cursor-pointer ${
-                            index === selectedMatchIndex
-                              ? 'bg-[#262626] text-yellow-400'
-                              : 'text-gray-300 hover:bg-[#202020]'
-                          }`}
-                          style={{ fontSize: `${fontSize}px` }}
-                          onClick={() => {
-                            updateTabInput(match)
-                            setFuzzyMatches([])
-                            setSelectedMatchIndex(0)
+                {/* Current Input - sticky on mobile - only show when not executing */}
+                {!isExecuting && (
+                  <div className="relative md:static sticky bottom-0 bg-[#141414] md:bg-transparent backdrop-blur-sm md:backdrop-blur-none -mx-3 md:mx-0 px-3 md:px-0 py-2 md:py-0">
+                    <div className="flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded">
+                      <span className="text-gray-100">
+                        {prompt.split('@')[0]}
+                        <span className="font-semibold">@</span>
+                        <span
+                          className="font-semibold"
+                          style={{
+                            color: PROTOCOL_COLORS[prompt.split('@')[1]?.replace('>', '')] || '#d1d5db'
                           }}
                         >
-                          {match}
-                        </div>
-                      ))}
-                      <div className="px-3 py-1 text-xs text-gray-500 border-t border-[#262626]">
-                        ↑↓ navigate • Tab/Enter select • Esc cancel
-                      </div>
+                          {prompt.split('@')[1]}
+                        </span>
+                      </span>
+                      <input
+                        ref={inputRef}
+                        type="text"
+                        value={currentInput}
+                        onChange={(e) => updateTabInput(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono outline-none caret-gray-400 font-bold"
+                        style={{ fontSize: `${fontSize}px` }}
+                        autoFocus
+                        spellCheck={false}
+                        autoComplete="off"
+                      />
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
 
-            {/* Settings Panel */}
-            {showSettings && (
-              <div ref={settingsRef} className="absolute top-24 right-12 bg-black/40 backdrop-blur-sm border border-white/10 rounded-lg px-6 py-4 z-20">
-                <div className="w-80 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-white/50 text-sm">
-                      Text Size
-                    </label>
-                    <span className="text-white/70 text-sm">{fontSize}px</span>
+                    {/* Fuzzy match suggestions */}
+                    {fuzzyMatches.length > 0 && (
+                      <div className="absolute bottom-full left-0 mb-1 bg-[#1a1a1a] border border-[#262626] rounded-md shadow-lg max-h-48 overflow-y-auto z-10">
+                        {fuzzyMatches.map((match, index) => (
+                          <div
+                            key={`fuzzy-${index}`}
+                            className={`px-3 py-1.5 font-mono cursor-pointer ${
+                              index === selectedMatchIndex
+                                ? 'bg-[#262626] text-yellow-400'
+                                : 'text-gray-300 hover:bg-[#202020]'
+                            }`}
+                            style={{ fontSize: `${fontSize}px` }}
+                            onClick={() => {
+                              updateTabInput(match)
+                              setFuzzyMatches([])
+                              setSelectedMatchIndex(0)
+                            }}
+                          >
+                            {match}
+                          </div>
+                        ))}
+                        <div className="px-3 py-1 text-xs text-gray-500 border-t border-[#262626]">
+                          ↑↓ navigate • Tab/Enter select • Esc cancel
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <input
-                    type="range"
-                    min="15"
-                    max="32"
-                    value={fontSize}
-                    onChange={(e) => setFontSize(Number(e.target.value))}
-                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white/70"
-                  />
-                </div>
+                )}
               </div>
-            )}
+
+              {/* Settings Panel */}
+              {showSettings && (
+                <div ref={settingsRef} className="absolute top-24 right-12 bg-black/40 backdrop-blur-sm border border-white/10 rounded-lg px-6 py-4 z-20">
+                  <div className="w-80 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-white/50 text-sm">
+                        Text Size
+                      </label>
+                      <span className="text-white/70 text-sm">{fontSize}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="15"
+                      max="32"
+                      value={fontSize}
+                      onChange={(e) => setFontSize(Number(e.target.value))}
+                      className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white/70"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
   )
 }

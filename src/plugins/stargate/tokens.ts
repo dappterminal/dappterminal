@@ -56,7 +56,7 @@ export function resolveTokenAddress(symbol: string, chainId: number): string {
   if (!token) {
     const available = Object.keys(tokens).join(', ')
     throw new Error(
-      `Token '${symbol}' not supported on chain ${chainId}. Available tokens: ${available}`
+      `Token '${symbol}' not supported on protocol Stargate Bridge. Available tokens: ${available}`
     )
   }
 
