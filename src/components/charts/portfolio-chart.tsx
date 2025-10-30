@@ -8,7 +8,8 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import type { EChartsOption } from 'echarts'
 import { BaseChart } from './base-chart'
 import type { PortfolioData, PortfolioTokenBalance } from '@/types/charts'
-import { useAccount } from 'wagmi'
+import { useAccount, useEnsAddress } from 'wagmi'
+import { mainnet } from 'wagmi/chains'
 import { useTokenBalances } from '@/hooks/useTokenBalances'
 import { getCommonTokensForChain } from '@/plugins/1inch/tokens'
 import { RefreshCw, ChevronDown } from 'lucide-react'
@@ -63,8 +64,17 @@ export function PortfolioChart({
   const [isLoadingPrices, setIsLoadingPrices] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Use provided wallet address or connected account
-  const effectiveAddress = (walletAddress || address) as `0x${string}` | undefined
+  // Check if walletAddress is an ENS name
+  const isEnsName = walletAddress && /\.eth$/.test(walletAddress)
+
+  // Resolve ENS name to address
+  const { data: ensResolvedAddress } = useEnsAddress({
+    name: isEnsName ? walletAddress : undefined,
+    chainId: mainnet.id,
+  })
+
+  // Use resolved ENS address, or provided wallet address, or connected account
+  const effectiveAddress = (ensResolvedAddress || walletAddress || address) as `0x${string}` | undefined
 
   // Get token lists for each chain
   const tokensByChain = useMemo(() => {
@@ -327,10 +337,6 @@ export function PortfolioChart({
         orient: 'vertical',
         right: '5%',
         top: 'center',
-        textStyle: {
-          color: '#E5E5E5',
-          fontSize: 11,
-        },
         formatter: (name: string) => {
           const token = tokens.find(t => {
             const displayName = t.chainId !== chainIds[0] || tokens.filter(t2 => t2.symbol === t.symbol).length > 1
@@ -402,8 +408,10 @@ export function PortfolioChart({
   // The chart container will use the same value for width and height
   const chartHeight = height
 
-  // Format wallet address for display
-  const displayAddress = effectiveAddress
+  // Format wallet address for display - show ENS name if provided, otherwise truncate address
+  const displayAddress = isEnsName
+    ? walletAddress
+    : effectiveAddress
     ? `${effectiveAddress.slice(0, 6)}...${effectiveAddress.slice(-4)}`
     : 'Not connected'
 

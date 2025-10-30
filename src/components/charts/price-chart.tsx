@@ -11,6 +11,26 @@ import type { OHLCData, PricePoint, ChartType, TimeRange, DataSource } from '@/t
 import { generateMockOHLCData, generateMockPricePoints } from '@/lib/charts'
 import { resolveTokenAddress } from '@/plugins/1inch/tokens'
 
+/**
+ * Format price with appropriate decimal places based on magnitude
+ * - Prices >= $1: 2 decimals (e.g., $123.45)
+ * - Prices >= $0.01: 4 decimals (e.g., $0.1234)
+ * - Prices < $0.01: Show significant digits (e.g., $0.00001234)
+ */
+function formatPrice(price: number): string {
+  if (price >= 1) {
+    return price.toFixed(2)
+  } else if (price >= 0.01) {
+    return price.toFixed(4)
+  } else if (price === 0) {
+    return '0.00'
+  } else {
+    // For very small prices, show up to 8 significant figures
+    // Remove trailing zeros
+    return price.toFixed(8).replace(/\.?0+$/, '')
+  }
+}
+
 export interface PriceChartProps {
   data?: OHLCData[] | PricePoint[]
   chartType?: ChartType
@@ -266,17 +286,19 @@ export function PriceChart({
 
       return {
         title: {
-          text: `$${latestPrice.toFixed(2)}  {percent|${priceChange >= 0 ? '+' : ''}${priceChangePercent.toFixed(2)}%}`,
+          text: `$${formatPrice(latestPrice)}  {percent|${priceChange >= 0 ? '+' : ''}${priceChangePercent.toFixed(2)}%}`,
           left: 10,
           top: 10,
           textStyle: {
             color: '#E5E5E5',
             fontSize: 14,
             fontWeight: 600,
+            fontFamily: 'monospace',
             rich: {
               percent: {
                 color: priceChange >= 0 ? '#10B981' : '#EF4444',
                 fontWeight: 600,
+                fontFamily: 'monospace',
               },
             },
           },
@@ -298,10 +320,10 @@ export function PriceChart({
             return `
               <div style="font-family: monospace; font-size: 12px;">
                 <div style="font-weight: bold; margin-bottom: 4px;">${dates[data.dataIndex]}</div>
-                <div>Open: $${open.toFixed(2)}</div>
-                <div>Close: $${close.toFixed(2)}</div>
-                <div>High: $${high.toFixed(2)}</div>
-                <div>Low: $${low.toFixed(2)}</div>
+                <div>Open: $${formatPrice(open)}</div>
+                <div>Close: $${formatPrice(close)}</div>
+                <div>High: $${formatPrice(high)}</div>
+                <div>Low: $${formatPrice(low)}</div>
                 <div>Volume: ${(volume / 1e6).toFixed(2)}M</div>
               </div>
             `
@@ -326,6 +348,9 @@ export function PriceChart({
           scale: true,
           splitArea: {
             show: true,
+          },
+          axisLabel: {
+            formatter: (value: number) => `$${formatPrice(value)}`,
           },
         },
         dataZoom: [
@@ -404,17 +429,19 @@ export function PriceChart({
 
       return {
         title: {
-          text: `$${latestPrice.toFixed(2)}  {percent|${priceChange >= 0 ? '+' : ''}${priceChangePercent.toFixed(2)}%}`,
+          text: `$${formatPrice(latestPrice)}  {percent|${priceChange >= 0 ? '+' : ''}${priceChangePercent.toFixed(2)}%}`,
           left: 10,
           top: 10,
           textStyle: {
             color: '#E5E5E5',
             fontSize: 14,
             fontWeight: 600,
+            fontFamily: 'monospace',
             rich: {
               percent: {
                 color: priceChange >= 0 ? '#10B981' : '#EF4444',
                 fontWeight: 600,
+                fontFamily: 'monospace',
               },
             },
           },
@@ -431,7 +458,7 @@ export function PriceChart({
             return `
               <div style="font-family: monospace; font-size: 12px;">
                 <div style="font-weight: bold; margin-bottom: 4px;">${dates[data.dataIndex]}</div>
-                <div>Price: $${data.value.toFixed(2)}</div>
+                <div>Price: $${formatPrice(data.value)}</div>
               </div>
             `
           },
@@ -451,6 +478,9 @@ export function PriceChart({
         yAxis: {
           type: 'value',
           scale: true,
+          axisLabel: {
+            formatter: (value: number) => `$${formatPrice(value)}`,
+          },
         },
         dataZoom: [
           {

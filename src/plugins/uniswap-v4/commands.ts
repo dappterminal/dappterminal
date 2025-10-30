@@ -248,8 +248,8 @@ export const swapCommand: Command = {
       const deadline = BigInt(Math.floor(Date.now() / 1000) + deadlineSeconds)
 
       // Try single-hop quote first
-      let minAmountOut: bigint
-      let minAmountOutFormatted: string
+      let minAmountOut: bigint | undefined
+      let minAmountOutFormatted: string | undefined
       let usedMultiHop = false
       let route: Token[] | undefined
 
@@ -329,6 +329,14 @@ export const swapCommand: Command = {
             success: false,
             error: new Error(`Failed to get quote: ${errorMsg}`),
           }
+        }
+      }
+
+      // Verify quote was obtained
+      if (minAmountOut === undefined || minAmountOutFormatted === undefined) {
+        return {
+          success: false,
+          error: new Error('Failed to obtain quote for swap'),
         }
       }
 

@@ -21,6 +21,7 @@ interface Chart {
   dataSource?: DataSource
   chartMode?: 'candlestick' | 'line'
   chainIds?: number[] // For portfolio charts
+  walletAddress?: string // For portfolio charts - optional address to view
 }
 
 export function AppLayout() {
@@ -65,10 +66,37 @@ export function AppLayout() {
     setCharts(prev => prev.filter(chart => chart.id !== chartId))
   }, [])
 
-  const handleAddChart = useCallback((chartType: string, chartMode?: 'candlestick' | 'line', chainIds?: number[]) => {
+  const handleAddChart = useCallback((
+    chartType: string,
+    chartMode?: 'candlestick' | 'line',
+    chainIds?: number[],
+    walletAddress?: string,
+    tokenSymbol?: string,
+    tokenName?: string,
+    protocol?: string
+  ) => {
+    // Check if chartType is a contract address (0x followed by 40 hex characters)
+    const isContractAddress = /^0x[a-fA-F0-9]{40}$/.test(chartType)
+
     // Map chart types to symbols or contract addresses
-    let symbol = `${chartType.toUpperCase()}/USDC`
-    let displayLabel = `${chartType.toUpperCase()}/USDC`
+    let symbol = chartType
+    let displayLabel = chartType
+
+    // If it's a contract address, use it as the symbol with /USDC
+    if (isContractAddress) {
+      symbol = `${chartType}/USDC`
+      // Use tokenSymbol for display if available, otherwise use truncated address
+      if (tokenSymbol) {
+        displayLabel = `${tokenSymbol}/USDC`
+      } else {
+        const truncated = `${chartType.slice(0, 6)}...${chartType.slice(-4)}`
+        displayLabel = `${truncated}/USDC`
+      }
+    } else {
+      // For normal symbols, uppercase and append /USDC
+      symbol = `${chartType.toUpperCase()}/USDC`
+      displayLabel = `${chartType.toUpperCase()}/USDC`
+    }
 
     // For WBTC, use the Ethereum mainnet contract address
     if (chartType.toLowerCase() === 'wbtc') {
@@ -77,7 +105,7 @@ export function AppLayout() {
     }
 
     const newChart: Chart = {
-      id: `${chartType}-${Date.now()}`,
+      id: `${tokenSymbol || chartType}-${Date.now()}`,
       type: 'price',
       symbol,
       displayLabel,
@@ -100,6 +128,7 @@ export function AppLayout() {
       newChart.symbol = undefined
       newChart.displayLabel = undefined
       newChart.chainIds = chainIds || [1] // Default to Ethereum if not specified
+      newChart.walletAddress = walletAddress // Optional address to view
     }
 
     setCharts(prev => [...prev, newChart])
@@ -462,6 +491,7 @@ export function AppLayout() {
                       </div>
                       <PortfolioChart
                         chainIds={chart.chainIds}
+                        walletAddress={chart.walletAddress}
                         height={350}
                         className="p-2"
                         resizeKey={resizeKey}

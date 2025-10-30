@@ -471,8 +471,10 @@ export const transferCommand: Command = {
  *   chart eth --line - Add ETH price chart (line mode)
  *   chart performance - Add performance metrics chart
  *   chart network - Add network graph chart
- *   chart portfolio [chainIds] - Add portfolio pie chart
- *   chart balances [chainIds] - Add portfolio pie chart (alias)
+ *   chart portfolio [address] [chainIds] - Add portfolio pie chart
+ *   chart portfolio 0x742d35Cc... - View specific address's portfolio
+ *   chart portfolio vitalik.eth - View ENS name's portfolio
+ *   chart balances [address] [chainIds] - Add portfolio pie chart (alias)
  */
 export const chartCommand: Command = {
   id: 'chart',
@@ -488,40 +490,55 @@ export const chartCommand: Command = {
       if (argTokens.length === 0) {
         return {
           success: false,
-          error: new Error('Usage: chart <symbol|type> [options]\nExamples:\n  chart wbtc\n  chart eth --line\n  chart performance\n  chart network\n  chart portfolio [chainIds]\n  chart balances 1,8453,42161'),
+          error: new Error('Usage: chart <symbol|type> [options]\nExamples:\n  chart wbtc\n  chart eth --line\n  chart pepe --protocol 1inch\n  chart performance\n  chart network\n  chart portfolio [address] [chainIds]\n  chart portfolio 0x742d35Cc...\n  chart portfolio vitalik.eth\n  chart balances 1,8453,42161'),
         }
       }
 
       const chartType = argTokens[0].toLowerCase()
       const isLineMode = argTokens.includes('--line')
 
+      // Parse --protocol flag
+      let explicitProtocol: string | undefined
+      const filteredTokens: string[] = []
+      for (let i = 0; i < argTokens.length; i++) {
+        const token = argTokens[i]
+        if (token === '--protocol' && i + 1 < argTokens.length) {
+          explicitProtocol = argTokens[i + 1]
+          i++ // Skip the protocol value
+          continue
+        }
+        if (token !== '--line') {
+          filteredTokens.push(token)
+        }
+      }
+
       // Handle portfolio/balances chart
       if (chartType === 'portfolio' || chartType === 'balances') {
-        // Parse chain IDs from arguments
+        // Parse chain IDs and optional address from arguments
         let chainIds: number[] = []
+        let walletAddress: string | undefined
 
-        // Look for chain IDs in remaining arguments
+        // Look for arguments
         if (argTokens.length > 1) {
-          const chainIdsArg = argTokens[1]
+          const secondArg = argTokens[1]
 
-          // Check if it's comma-separated chain IDs
-          if (/^[\d,\s]+$/.test(chainIdsArg)) {
-            try {
-              chainIds = chainIdsArg.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+          // Check if it's an Ethereum address (0x followed by 40 hex chars) or ENS name
+          if (/^0x[a-fA-F0-9]{40}$/.test(secondArg) || /\.eth$/.test(secondArg)) {
+            walletAddress = secondArg
 
-              // Validate chain IDs
-              const validChainIds = [1, 10, 137, 8453, 42161]
-              const invalidChains = chainIds.filter(id => !validChainIds.includes(id))
-
-              if (invalidChains.length > 0) {
-                return {
-                  success: false,
-                  error: new Error(
-                    `Invalid chain IDs: ${invalidChains.join(', ')}\n` +
-                    `Valid chain IDs: 1 (Ethereum), 10 (Optimism), 137 (Polygon), 8453 (Base), 42161 (Arbitrum)`
-                  ),
-                }
+            // If there's a third argument, it might be chain IDs
+            if (argTokens.length > 2 && /^[\d,\s]+$/.test(argTokens[2])) {
+              try {
+                chainIds = argTokens[2].split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+              } catch (error) {
+                // Ignore parsing errors, will use defaults
               }
+            }
+          }
+          // Check if it's comma-separated chain IDs
+          else if (/^[\d,\s]+$/.test(secondArg)) {
+            try {
+              chainIds = secondArg.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
             } catch (error) {
               return {
                 success: false,
@@ -531,17 +548,37 @@ export const chartCommand: Command = {
           }
         }
 
+        // Validate chain IDs if provided
+        if (chainIds.length > 0) {
+          const validChainIds = [1, 10, 137, 8453, 42161]
+          const invalidChains = chainIds.filter(id => !validChainIds.includes(id))
+
+          if (invalidChains.length > 0) {
+            return {
+              success: false,
+              error: new Error(
+                `Invalid chain IDs: ${invalidChains.join(', ')}\n` +
+                `Valid chain IDs: 1 (Ethereum), 10 (Optimism), 137 (Polygon), 8453 (Base), 42161 (Arbitrum)`
+              ),
+            }
+          }
+        }
+
         // If no chain IDs specified, use current connected chain or default to Ethereum
         if (chainIds.length === 0) {
           chainIds = context.wallet.chainId ? [context.wallet.chainId] : [1]
         }
 
-        // Check if wallet is connected
-        if (!context.wallet.isConnected || !context.wallet.address) {
-          return {
-            success: false,
-            error: new Error('Wallet not connected. Please connect your wallet to view portfolio.'),
+        // If no address provided, use connected wallet address
+        if (!walletAddress) {
+          // Check if wallet is connected
+          if (!context.wallet.isConnected || !context.wallet.address) {
+            return {
+              success: false,
+              error: new Error('Wallet not connected. Please connect your wallet or provide an address (e.g., "chart portfolio 0x...")'),
+            }
           }
+          walletAddress = context.wallet.address
         }
 
         // Return portfolio chart request
@@ -551,16 +588,56 @@ export const chartCommand: Command = {
             addChart: true,
             chartType: 'portfolio',
             chainIds,
+            walletAddress,
           },
         }
       }
 
-      // Validate chart type
+      // Validate chart type or search for token if 1inch protocol is specified
       const validCharts = ['wbtc', 'eth', 'performance', 'network', 'network-graph', 'portfolio', 'balances']
+
+      // If token is not in valid charts and --protocol 1inch is specified, search for it
+      if (!validCharts.includes(chartType) && explicitProtocol === '1inch') {
+        try {
+          const chainId = context.wallet.chainId || 1
+          const searchUrl = `/api/1inch/tokens/search?query=${encodeURIComponent(chartType)}&chainId=${chainId}`
+
+          const response = await fetch(searchUrl)
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+            return {
+              success: false,
+              error: new Error(errorData.error || `Failed to search for token '${chartType}'`),
+            }
+          }
+
+          const tokenData = await response.json()
+
+          // Return chart request with contract address
+          return {
+            success: true,
+            value: {
+              addChart: true,
+              chartType: tokenData.address, // Use contract address
+              symbol: tokenData.symbol, // Original symbol for display
+              name: tokenData.name, // Full token name
+              chartMode: isLineMode ? 'line' : 'candlestick',
+              protocol: '1inch',
+            },
+          }
+        } catch (error) {
+          return {
+            success: false,
+            error: new Error(`Failed to search for token: ${error instanceof Error ? error.message : String(error)}`),
+          }
+        }
+      }
+
       if (!validCharts.includes(chartType)) {
         return {
           success: false,
-          error: new Error(`Invalid chart type: ${chartType}\nValid types: ${validCharts.join(', ')}`),
+          error: new Error(`Invalid chart type: ${chartType}\nValid types: ${validCharts.join(', ')}\nOr use --protocol 1inch to search for any token`),
         }
       }
 

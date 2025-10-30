@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, KeyboardEvent } from "react"
+import { flushSync } from "react-dom"
 import { Plus, X, ChevronDown } from "lucide-react"
 import { useAccount, useEnsName } from 'wagmi'
 import { mainnet } from 'wagmi/chains'
@@ -336,7 +337,7 @@ function formatCommandResult(result: CommandResult): string[] {
 export interface CLIProps {
   className?: string
   isFullWidth?: boolean
-  onAddChart?: (chartType: string, chartMode?: 'candlestick' | 'line', chainIds?: number[]) => void
+  onAddChart?: (chartType: string, chartMode?: 'candlestick' | 'line', chainIds?: number[], walletAddress?: string, symbol?: string, name?: string, protocol?: string) => void
 }
 
 export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProps = {}) {
@@ -744,10 +745,12 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       return
     }
 
-    setIsExecuting(true)
-
-    // Clear input immediately when command starts
-    updateTabInput("")
+    // Force synchronous state update to hide input before command execution
+    flushSync(() => {
+      setIsExecuting(true)
+      // Clear input immediately when command starts
+      updateTabInput("")
+    })
 
     // Ensure lock is always released using try-finally
     try {
@@ -792,11 +795,16 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
               chartType: string
               chartMode?: 'candlestick' | 'line'
               chainIds?: number[]
+              walletAddress?: string
+              symbol?: string // Token symbol (for display)
+              name?: string // Token name (for display)
+              protocol?: string // Protocol used for search
             }
 
             if (onAddChart) {
-              onAddChart(chartData.chartType, chartData.chartMode, chartData.chainIds)
-              output = [`Added ${chartData.chartType} chart to analytics panel`]
+              onAddChart(chartData.chartType, chartData.chartMode, chartData.chainIds, chartData.walletAddress, chartData.symbol, chartData.name, chartData.protocol)
+              const displayName = chartData.symbol || chartData.chartType
+              output = [`Added ${displayName} chart to analytics panel`]
             } else {
               output = [`Chart panel not available`]
             }

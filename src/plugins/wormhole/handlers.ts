@@ -45,6 +45,11 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
   const fromChainName = chainNames[data.fromChain] || data.fromChain
   const toChainName = chainNames[data.toChain] || data.toChain
 
+  // Variables for amounts (declared here to be accessible in catch block)
+  let sourceAmountFormatted = data.amount
+  let destAmountFormatted = data.amount
+  let eta = 'Unknown'
+
   // Show initial message
   ctx.updateHistory([
     data.message,
@@ -179,7 +184,7 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     const routeType = (route as any)?.constructor?.name || 'Unknown'
     const routeInfo = getRouteInfo(routeType)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const eta = formatETA((quote as any).eta ?? routeInfo.estimatedTimeMinutes * 60000)
+    eta = formatETA((quote as any).eta ?? routeInfo.estimatedTimeMinutes * 60000)
 
     // Format amounts for display
     const formatAmount = (amount: bigint | string | number, decimals: number) => {
@@ -189,11 +194,11 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sourceAmountFormatted = (quote as any).sourceToken?.amount
+    sourceAmountFormatted = (quote as any).sourceToken?.amount
       ? formatAmount((quote as any).sourceToken.amount.amount, (quote as any).sourceToken.amount.decimals)
       : data.amount
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const destAmountFormatted = (quote as any).destinationToken?.amount
+    destAmountFormatted = (quote as any).destinationToken?.amount
       ? formatAmount((quote as any).destinationToken.amount.amount, (quote as any).destinationToken.amount.decimals)
       : sourceAmountFormatted
 
