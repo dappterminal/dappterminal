@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useRef, KeyboardEvent } from "react"
-import { flushSync } from "react-dom"
 import { Plus, X, ChevronDown } from "lucide-react"
 import { useAccount, useEnsName } from 'wagmi'
 import { mainnet } from 'wagmi/chains'
@@ -52,6 +51,26 @@ const PROTOCOL_COLORS: Record<string, string> = {
   'aave-v3': '#2F7CF6',
   'uniswap-v4': '#FF69B4', // Hot pink
   // Add more protocols here as needed
+}
+
+/**
+ * Format price with appropriate decimal places based on magnitude
+ * - Prices >= $1: 2 decimals (e.g., $123.45)
+ * - Prices >= $0.01: 4 decimals (e.g., $0.1234)
+ * - Prices < $0.01: Show significant digits (e.g., $0.00001234)
+ */
+function formatPrice(price: number): string {
+  if (price >= 1) {
+    return price.toFixed(2)
+  } else if (price >= 0.01) {
+    return price.toFixed(4)
+  } else if (price === 0) {
+    return '0.00'
+  } else {
+    // For very small prices, show up to 8 significant figures
+    // Remove trailing zeros
+    return price.toFixed(8).replace(/\.?0+$/, '')
+  }
 }
 
 // Helper to format terminal prompt based on wallet state and active protocol
@@ -234,10 +253,7 @@ function formatCommandResult(result: CommandResult): string[] {
 
       // Format price - with currency=USD, the API returns price directly in USD
       const priceInUsd = typeof priceData.price === 'string' ? parseFloat(priceData.price) : priceData.price
-      const formattedPrice = priceInUsd.toLocaleString('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })
+      const formattedPrice = formatPrice(priceInUsd)
 
       return [
         `${tokenSymbol} ${priceData.token.toUpperCase()} Price:`,
@@ -745,12 +761,10 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       return
     }
 
-    // Force synchronous state update to hide input before command execution
-    flushSync(() => {
-      setIsExecuting(true)
-      // Clear input immediately when command starts
-      updateTabInput("")
-    })
+    // Set executing state to disable input and clear fuzzy matches
+    setIsExecuting(true)
+    setFuzzyMatches([])
+    setSelectedMatchIndex(0)
 
     // Ensure lock is always released using try-finally
     try {
@@ -1154,7 +1168,8 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
 
     updateTabHistoryIndex(-1)
     } finally {
-      // Always release the execution lock
+      // Clear input and release the execution lock
+      updateTabInput("")
       setIsExecuting(false)
     }
   }
@@ -1400,64 +1415,63 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                   </div>
                 ))}
 
-                {/* Current Input - sticky on mobile - only show when not executing */}
-                {!isExecuting && (
-                  <div className="relative md:static sticky bottom-0 bg-[#141414] md:bg-transparent backdrop-blur-sm md:backdrop-blur-none -mx-3 md:mx-0 px-3 md:px-0 py-2 md:py-0">
-                    <div className="flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded">
-                      <span className="text-gray-100">
-                        {prompt.split('@')[0]}
-                        <span className="font-semibold">@</span>
-                        <span
-                          className="font-semibold"
-                          style={{
-                            color: PROTOCOL_COLORS[prompt.split('@')[1]?.replace('>', '')] || '#d1d5db'
+                {/* Current Input - sticky on mobile */}
+                <div className="relative md:static sticky bottom-0 bg-[#141414] md:bg-transparent backdrop-blur-sm md:backdrop-blur-none -mx-3 md:mx-0 px-3 md:px-0 py-2 md:py-0">
+                  <div className={`flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded ${isExecuting ? 'opacity-60' : ''}`}>
+                    <span className="text-gray-100">
+                      {prompt.split('@')[0]}
+                      <span className="font-semibold">@</span>
+                      <span
+                        className="font-semibold"
+                        style={{
+                          color: PROTOCOL_COLORS[prompt.split('@')[1]?.replace('>', '')] || '#d1d5db'
+                        }}
+                      >
+                        {prompt.split('@')[1]}
+                      </span>
+                    </span>
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={currentInput}
+                      onChange={(e) => updateTabInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      disabled={isExecuting}
+                      className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono outline-none caret-gray-400 font-bold disabled:cursor-not-allowed"
+                      style={{ fontSize: `${fontSize}px` }}
+                      autoFocus
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                  </div>
+
+                  {/* Fuzzy match suggestions - only show when not executing */}
+                  {!isExecuting && fuzzyMatches.length > 0 && (
+                    <div className="absolute bottom-full left-0 mb-1 bg-[#1a1a1a] border border-[#262626] rounded-md shadow-lg max-h-48 overflow-y-auto z-10">
+                      {fuzzyMatches.map((match, index) => (
+                        <div
+                          key={`fuzzy-${index}`}
+                          className={`px-3 py-1.5 font-mono cursor-pointer ${
+                            index === selectedMatchIndex
+                              ? 'bg-[#262626] text-yellow-400'
+                              : 'text-gray-300 hover:bg-[#202020]'
+                          }`}
+                          style={{ fontSize: `${fontSize}px` }}
+                          onClick={() => {
+                            updateTabInput(match)
+                            setFuzzyMatches([])
+                            setSelectedMatchIndex(0)
                           }}
                         >
-                          {prompt.split('@')[1]}
-                        </span>
-                      </span>
-                      <input
-                        ref={inputRef}
-                        type="text"
-                        value={currentInput}
-                        onChange={(e) => updateTabInput(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono outline-none caret-gray-400 font-bold"
-                        style={{ fontSize: `${fontSize}px` }}
-                        autoFocus
-                        spellCheck={false}
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    {/* Fuzzy match suggestions */}
-                    {fuzzyMatches.length > 0 && (
-                      <div className="absolute bottom-full left-0 mb-1 bg-[#1a1a1a] border border-[#262626] rounded-md shadow-lg max-h-48 overflow-y-auto z-10">
-                        {fuzzyMatches.map((match, index) => (
-                          <div
-                            key={`fuzzy-${index}`}
-                            className={`px-3 py-1.5 font-mono cursor-pointer ${
-                              index === selectedMatchIndex
-                                ? 'bg-[#262626] text-yellow-400'
-                                : 'text-gray-300 hover:bg-[#202020]'
-                            }`}
-                            style={{ fontSize: `${fontSize}px` }}
-                            onClick={() => {
-                              updateTabInput(match)
-                              setFuzzyMatches([])
-                              setSelectedMatchIndex(0)
-                            }}
-                          >
-                            {match}
-                          </div>
-                        ))}
-                        <div className="px-3 py-1 text-xs text-gray-500 border-t border-[#262626]">
-                          ↑↓ navigate • Tab/Enter select • Esc cancel
+                          {match}
                         </div>
+                      ))}
+                      <div className="px-3 py-1 text-xs text-gray-500 border-t border-[#262626]">
+                        ↑↓ navigate • Tab/Enter select • Esc cancel
                       </div>
-                    )}
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Settings Panel */}

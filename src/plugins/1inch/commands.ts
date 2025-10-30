@@ -24,14 +24,42 @@ export const priceCommand: Command = {
       if (!token) {
         return {
           success: false,
-          error: new Error('Usage: price <token>\nExample: price eth'),
+          error: new Error('Usage: price <token>\nExample: price eth\n       price pepe (auto-search)'),
         }
       }
 
       const chainId = context.wallet.chainId || 1
 
-      // Resolve token symbol to address
-      const tokenAddress = resolveTokenAddress(token, chainId)
+      // Try to resolve token from hardcoded list first
+      let tokenAddress: string
+      let tokenSymbol = token.toUpperCase()
+
+      // resolveTokenAddress returns the symbol if not found (doesn't throw)
+      tokenAddress = resolveTokenAddress(token, chainId)
+
+      // Check if we got a valid address (starts with 0x and has proper length)
+      const isValidAddress = tokenAddress.startsWith('0x') && (tokenAddress.length === 42 || tokenAddress.length === 66)
+
+      if (!isValidAddress) {
+        // Token not in hardcoded list, try searching via 1inch API
+        console.log(`Token '${token}' not in hardcoded list, searching via 1inch API...`)
+
+        const searchUrl = `/api/1inch/tokens/search?query=${encodeURIComponent(token)}&chainId=${chainId}`
+        const searchResponse = await fetch(searchUrl)
+
+        if (!searchResponse.ok) {
+          const errorData = await searchResponse.json().catch(() => ({ error: 'Unknown error' }))
+          return {
+            success: false,
+            error: new Error(errorData.error || `Token '${token}' not found. Try a different symbol or use the contract address.`),
+          }
+        }
+
+        const searchData = await searchResponse.json()
+        tokenAddress = searchData.address
+        tokenSymbol = searchData.symbol
+        console.log(`Found token via search: ${tokenSymbol} at ${tokenAddress}`)
+      }
 
       const response = await fetch(`/api/1inch/prices/price_by_token?chainId=${chainId}&token=${tokenAddress}`)
 
@@ -49,7 +77,7 @@ export const priceCommand: Command = {
         success: true,
         value: {
           tokenPrice: true,
-          token,
+          token: tokenSymbol,
           price: data.price,
           tokenAddress: data.token,
           chainId,

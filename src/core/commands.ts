@@ -807,6 +807,47 @@ export const bridgeAliasCommand: Command = {
 }
 
 /**
+ * Price command - Global alias for token prices
+ * Routes to 1inch by default
+ */
+export const priceAliasCommand: Command = {
+  id: 'price',
+  scope: 'G_alias',
+  description: 'Get token price (defaults to 1inch)',
+  aliases: ['p'],
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      const rawArgs = typeof args === 'string' ? args : ''
+
+      // Try 1inch protocol first
+      const fiber = registry.σ('1inch')
+      if (!fiber) {
+        return {
+          success: false,
+          error: new Error('1inch protocol not loaded'),
+        }
+      }
+
+      const priceCommand = fiber.commands.get('price')
+      if (priceCommand) {
+        return await priceCommand.run(rawArgs, context)
+      }
+
+      return {
+        success: false,
+        error: new Error('Price command not available'),
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
  * All core commands
  */
 export const coreCommands = [
@@ -830,6 +871,7 @@ export const coreCommands = [
 export const aliasCommands = [
   swapAliasCommand,
   bridgeAliasCommand,
+  priceAliasCommand,
 ]
 
 /**
