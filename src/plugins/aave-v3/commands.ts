@@ -4,7 +4,7 @@
 
 import type { Command, CommandResult, ExecutionContext } from '@/core'
 import type { AaveUserPosition, AaveHealthMetrics } from '@/lib/aave'
-import type { AaveV3SupplyRequestData } from './types'
+import type { AaveV3SupplyRequestData, AaveV3WithdrawRequestData } from './types'
 import { getPoolAddress, isSupportedChain } from '@/lib/aave/contracts'
 
 interface MarketsResponse {
@@ -552,6 +552,177 @@ export const supplyCommand: Command = {
       return {
         success: true,
         value: supplyData,
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
+ * Helper function to parse withdraw command arguments
+ */
+function parseWithdrawArgs(args: unknown): { amount?: string; asset?: string } {
+  const tokens = tokenizeArgs(args)
+  let amount: string | undefined
+  let asset: string | undefined
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]
+
+    // Skip flags
+    if (token.startsWith('--')) {
+      continue
+    }
+
+    // First non-flag token is amount (can be "max")
+    if (!amount) {
+      amount = token
+      continue
+    }
+
+    // Second non-flag token is asset
+    if (!asset) {
+      asset = token.toLowerCase()
+      continue
+    }
+  }
+
+  return { amount, asset }
+}
+
+/**
+ * withdraw command — withdraw supplied assets from Aave v3
+ */
+export const withdrawCommand: Command = {
+  id: 'withdraw',
+  scope: 'G_p',
+  protocol: 'aave-v3',
+  description: 'Withdraw supplied assets from Aave v3',
+  aliases: ['wd'],
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult<AaveV3WithdrawRequestData>> {
+    try {
+      // Parse arguments: withdraw <amount|max> <asset>
+      const { amount, asset } = parseWithdrawArgs(args)
+
+      if (!amount || !asset) {
+        return {
+          success: false,
+          error: new Error('Usage: withdraw <amount|max> <asset>\n  Examples:\n    withdraw 100 usdc\n    withdraw max eth\n    withdraw 0.5 wbtc'),
+        }
+      }
+
+      // Check wallet connected
+      if (!context.wallet.address) {
+        return {
+          success: false,
+          error: new Error('Wallet not connected. Please connect your wallet first.'),
+        }
+      }
+
+      // Check chain supported
+      const chainId = context.wallet.chainId || 1
+      if (!isSupportedChain(chainId)) {
+        return {
+          success: false,
+          error: new Error(`Aave V3 not supported on chain ${chainId}. Supported chains: Ethereum (1), Optimism (10), Base (8453), Arbitrum (42161), Polygon (137)`),
+        }
+      }
+
+      // Get pool address for chain
+      const poolAddress = getPoolAddress(chainId)
+      if (!poolAddress) {
+        return {
+          success: false,
+          error: new Error(`Pool address not found for chain ${chainId}`),
+        }
+      }
+
+      // Token addresses for supported assets on each chain (same as supply)
+      const tokenAddresses: Record<number, Record<string, { address: string; decimals: number }>> = {
+        1: { // Ethereum
+          'ETH': { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', decimals: 18 },
+          'WETH': { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', decimals: 18 },
+          'USDC': { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6 },
+          'USDT': { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6 },
+          'DAI': { address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', decimals: 18 },
+          'WBTC': { address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', decimals: 8 },
+        },
+        10: { // Optimism
+          'ETH': { address: '0x4200000000000000000000000000000000000006', decimals: 18 },
+          'WETH': { address: '0x4200000000000000000000000000000000000006', decimals: 18 },
+          'USDC': { address: '0x7F5c764cBc14f9669B88837ca1490cCa17c31607', decimals: 6 },
+          'USDT': { address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', decimals: 6 },
+          'DAI': { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', decimals: 18 },
+          'WBTC': { address: '0x68f180fcCe6836688e9084f035309E29Bf0A2095', decimals: 8 },
+        },
+        8453: { // Base
+          'ETH': { address: '0x4200000000000000000000000000000000000006', decimals: 18 },
+          'WETH': { address: '0x4200000000000000000000000000000000000006', decimals: 18 },
+          'USDC': { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6 },
+        },
+        42161: { // Arbitrum
+          'ETH': { address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1', decimals: 18 },
+          'WETH': { address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1', decimals: 18 },
+          'USDC': { address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', decimals: 6 }, // Native USDC
+          'USDC.E': { address: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8', decimals: 6 }, // Bridged USDC
+          'USDT': { address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', decimals: 6 },
+          'DAI': { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', decimals: 18 },
+          'WBTC': { address: '0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f', decimals: 8 },
+        },
+        137: { // Polygon
+          'WETH': { address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18 },
+          'USDC': { address: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', decimals: 6 },
+          'USDT': { address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', decimals: 6 },
+          'DAI': { address: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063', decimals: 18 },
+          'WBTC': { address: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6', decimals: 8 },
+        },
+      }
+
+      const assetUpper = asset.toUpperCase()
+      const tokenInfo = tokenAddresses[chainId]?.[assetUpper]
+
+      if (!tokenInfo) {
+        const availableAssets = Object.keys(tokenAddresses[chainId] || {}).join(', ')
+        return {
+          success: false,
+          error: new Error(`Asset ${assetUpper} not available on Aave V3 ${getNetworkName(chainId)} market.\nAvailable assets: ${availableAssets || 'None configured'}`),
+        }
+      }
+
+      // Check if this is a native token (ETH) withdrawal
+      const isNative = assetUpper === 'ETH'
+
+      // Check if max withdrawal
+      const isMax = amount.toLowerCase() === 'max'
+
+      // Return withdraw request data for handler
+      const withdrawData: AaveV3WithdrawRequestData = {
+        aaveV3WithdrawRequest: true,
+        params: {
+          marketAddress: poolAddress,
+          underlyingTokenAddress: tokenInfo.address,
+          asset: assetUpper,
+          amount: isMax ? 'max' : amount,
+          amountFormatted: isMax ? 'max' : amount,
+          decimals: tokenInfo.decimals,
+          isNative,
+          isMax,
+          chainId,
+        },
+        displayData: {
+          asset: assetUpper,
+          amount: isMax ? 'MAX' : amount,
+        },
+      }
+
+      return {
+        success: true,
+        value: withdrawData,
       }
     } catch (error) {
       return {

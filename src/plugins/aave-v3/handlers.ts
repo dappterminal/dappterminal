@@ -5,11 +5,11 @@
  */
 
 import type { CommandHandler } from '@/core'
-import type { AaveV3SupplyRequestData } from './types'
+import type { AaveV3SupplyRequestData, AaveV3WithdrawRequestData } from './types'
 import { POOL_ABI, WETH_GATEWAY_ABI, ERC20_ABI, getPoolAddress, getWETHGatewayAddress } from '@/lib/aave/contracts'
 import { readContract, writeContract } from 'wagmi/actions'
 import { config } from '@/lib/wagmi-config'
-import { type Address, parseUnits } from 'viem'
+import { type Address, parseUnits, maxUint256 } from 'viem'
 
 /**
  * Supply Command Handler
@@ -379,9 +379,291 @@ export const supplyHandler: CommandHandler<AaveV3SupplyRequestData> = async (dat
 }
 
 /**
+ * Withdraw Command Handler
+ *
+ * Handles withdrawal transactions from Aave V3 Pool
+ * - Executes withdraw transaction
+ * - Supports max withdrawal (type(uint256).max)
+ * - Supports native ETH withdrawal via WETHGateway
+ * - Progress tracking and UI updates
+ */
+export const withdrawHandler: CommandHandler<AaveV3WithdrawRequestData> = async (data, ctx) => {
+  const { params } = data
+
+  // Show initial message
+  ctx.updateStyledHistory([
+    [
+      { text: 'Aave V3 Withdraw:', color: '#00d4aa' },
+    ],
+    [
+      { text: `  Asset: `, color: '#9ca3af' },
+      { text: `${params.asset}`, color: '#d1d5db' },
+    ],
+    [
+      { text: `  Amount: `, color: '#9ca3af' },
+      { text: params.isMax ? 'MAX' : `${params.amountFormatted} ${params.asset}`, color: '#d1d5db' },
+    ],
+    [{ text: '', color: '#d1d5db' }],
+    [
+      { text: 'Preparing withdrawal...', color: '#fbbf24' },
+    ],
+  ])
+
+  try {
+    const poolAddress = getPoolAddress(params.chainId)
+
+    if (!poolAddress) {
+      throw new Error(`Aave V3 Pool not supported on chain ${params.chainId}`)
+    }
+
+    // Parse amount - use max uint256 for "max" withdrawal
+    const amount = params.isMax
+      ? maxUint256 // type(uint256).max
+      : parseUnits(params.amount, params.decimals)
+
+    // Execute withdraw transaction
+    ctx.updateStyledHistory([
+      [
+        { text: 'Aave V3 Withdraw:', color: '#00d4aa' },
+      ],
+      [
+        { text: `  Asset: `, color: '#9ca3af' },
+        { text: `${params.asset}`, color: '#d1d5db' },
+      ],
+      [
+        { text: `  Amount: `, color: '#9ca3af' },
+        { text: params.isMax ? 'MAX' : `${params.amountFormatted} ${params.asset}`, color: '#d1d5db' },
+      ],
+      [{ text: '', color: '#d1d5db' }],
+      [
+        { text: 'Withdrawing from Aave...', color: '#fbbf24' },
+      ],
+    ])
+
+    let withdrawTxHash: `0x${string}`
+
+    // Native ETH requires WETHGateway, ERC20 uses Pool directly
+    if (params.isNative) {
+      const wethGatewayAddress = getWETHGatewayAddress(params.chainId)
+      if (!wethGatewayAddress) {
+        throw new Error(`WETH Gateway not found for chain ${params.chainId}`)
+      }
+
+      // For WETHGateway withdrawal, we need to approve the gateway to spend aWETH tokens
+      // aTokens follow the pattern: 0x + first 39 chars of underlying + last char
+      // For WETH on Arbitrum: underlying = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1
+      // We need to find the aWETH token address
+
+      // aToken addresses for WETH on each chain
+      const aTokenAddresses: Record<number, Address> = {
+        1: '0x4d5F47FA6A74757f35C14fD3a6Ef8E3C9BC514E8',      // Ethereum aWETH
+        10: '0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8',     // Optimism aWETH
+        8453: '0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7',   // Base aWETH
+        42161: '0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8',  // Arbitrum aWETH
+        137: '0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8',    // Polygon aWETH
+      }
+
+      const aTokenAddress = aTokenAddresses[params.chainId]
+      if (!aTokenAddress) {
+        throw new Error(`aWETH token address not found for chain ${params.chainId}`)
+      }
+
+      // Check current allowance for aWETH
+      const { readContract } = await import('wagmi/actions')
+      const currentAllowance = await readContract(config, {
+        address: aTokenAddress,
+        abi: ERC20_ABI,
+        functionName: 'allowance',
+        args: [ctx.walletAddress as Address, wethGatewayAddress],
+      }) as bigint
+
+      // If allowance is insufficient, request approval
+      if (currentAllowance < amount) {
+        ctx.updateStyledHistory([
+          [
+            { text: 'Aave V3 Withdraw:', color: '#00d4aa' },
+          ],
+          [
+            { text: `  Asset: `, color: '#9ca3af' },
+            { text: `${params.asset}`, color: '#d1d5db' },
+          ],
+          [
+            { text: `  Amount: `, color: '#9ca3af' },
+            { text: params.isMax ? 'MAX' : `${params.amountFormatted} ${params.asset}`, color: '#d1d5db' },
+          ],
+          [{ text: '', color: '#d1d5db' }],
+          [
+            { text: 'Step 1/2: Approving aWETH for WETHGateway...', color: '#fbbf24' },
+          ],
+        ])
+
+        const approveTxHash = await writeContract(config, {
+          address: aTokenAddress,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [wethGatewayAddress, maxUint256],
+        })
+
+        // Wait for approval
+        const { waitForTransactionReceipt } = await import('wagmi/actions')
+        await waitForTransactionReceipt(config, { hash: approveTxHash })
+      }
+
+      // Update status for withdrawal
+      ctx.updateStyledHistory([
+        [
+          { text: 'Aave V3 Withdraw:', color: '#00d4aa' },
+        ],
+        [
+          { text: `  Asset: `, color: '#9ca3af' },
+          { text: `${params.asset}`, color: '#d1d5db' },
+        ],
+        [
+          { text: `  Amount: `, color: '#9ca3af' },
+          { text: params.isMax ? 'MAX' : `${params.amountFormatted} ${params.asset}`, color: '#d1d5db' },
+        ],
+        [{ text: '', color: '#d1d5db' }],
+        [
+          { text: currentAllowance < amount ? 'Step 2/2: Withdrawing from Aave...' : 'Withdrawing from Aave...', color: '#fbbf24' },
+        ],
+      ])
+
+      // Use WETHGateway.withdrawETH for native ETH
+      withdrawTxHash = await writeContract(config, {
+        address: wethGatewayAddress,
+        abi: WETH_GATEWAY_ABI,
+        functionName: 'withdrawETH',
+        args: [
+          poolAddress, // pool
+          amount,
+          ctx.walletAddress as Address, // to
+        ],
+      })
+    } else {
+      // Use Pool.withdraw for ERC20 tokens
+      withdrawTxHash = await writeContract(config, {
+        address: poolAddress,
+        abi: POOL_ABI,
+        functionName: 'withdraw',
+        args: [
+          params.underlyingTokenAddress as Address,
+          amount,
+          ctx.walletAddress as Address, // to
+        ],
+      })
+    }
+
+    ctx.updateStyledHistory([
+      [
+        { text: 'Aave V3 Withdraw:', color: '#00d4aa' },
+      ],
+      [
+        { text: `  Asset: `, color: '#9ca3af' },
+        { text: `${params.asset}`, color: '#d1d5db' },
+      ],
+      [
+        { text: `  Amount: `, color: '#9ca3af' },
+        { text: params.isMax ? 'MAX' : `${params.amountFormatted} ${params.asset}`, color: '#d1d5db' },
+      ],
+      [{ text: '', color: '#d1d5db' }],
+      [
+        { text: 'Waiting for confirmation...', color: '#fbbf24' },
+      ],
+    ])
+
+    // Wait for withdrawal transaction to be mined
+    const { waitForTransactionReceipt } = await import('wagmi/actions')
+    await waitForTransactionReceipt(config, { hash: withdrawTxHash })
+
+    // Generate transaction link
+    const explorerUrls: Record<number, string> = {
+      1: 'https://etherscan.io',
+      10: 'https://optimistic.etherscan.io',
+      8453: 'https://basescan.org',
+      42161: 'https://arbiscan.io',
+      137: 'https://polygonscan.com',
+    }
+    const explorerUrl = explorerUrls[params.chainId] || 'https://etherscan.io'
+    const txLink = `${explorerUrl}/tx/${withdrawTxHash}`
+
+    ctx.updateStyledHistory([
+      [
+        { text: 'Aave V3 Withdraw:', color: '#00d4aa' },
+      ],
+      [
+        { text: `  Asset: `, color: '#9ca3af' },
+        { text: `${params.asset}`, color: '#d1d5db' },
+      ],
+      [
+        { text: `  Amount: `, color: '#9ca3af' },
+        { text: params.isMax ? 'MAX' : `${params.amountFormatted} ${params.asset}`, color: '#d1d5db' },
+      ],
+      [{ text: '', color: '#d1d5db' }],
+      [
+        { text: '✓ Withdrawal successful', color: '#10b981' },
+      ],
+    ])
+
+    // Add transaction link
+    ctx.addHistoryLinks([
+      { text: `View transaction`, url: txLink },
+    ])
+
+  } catch (error: any) {
+    // Extract detailed error information
+    let errorMessage = 'Unknown error'
+    let revertReason = ''
+
+    if (error instanceof Error) {
+      errorMessage = error.message
+
+      // Try to extract revert reason from various error formats
+      if (error.cause) {
+        const cause = error.cause as any
+        revertReason = cause.reason || cause.message || ''
+      }
+
+      // Check for contract revert data
+      if (error.message.includes('reverted')) {
+        const revertMatch = error.message.match(/reverted with reason string '([^']+)'/)
+        if (revertMatch) {
+          revertReason = revertMatch[1]
+        }
+      }
+    }
+
+    const displayError = revertReason || errorMessage
+
+    ctx.updateStyledHistory([
+      [
+        { text: 'Aave V3 Withdraw:', color: '#00d4aa' },
+      ],
+      [
+        { text: `  Asset: `, color: '#9ca3af' },
+        { text: `${params.asset}`, color: '#d1d5db' },
+      ],
+      [
+        { text: `  Amount: `, color: '#9ca3af' },
+        { text: params.isMax ? 'MAX' : `${params.amountFormatted} ${params.asset}`, color: '#d1d5db' },
+      ],
+      [{ text: '', color: '#d1d5db' }],
+      [
+        { text: '✗ Withdrawal failed', color: '#ef4444' },
+      ],
+      [
+        { text: `  ${displayError}`, color: '#ef4444' },
+      ],
+    ])
+
+    throw error
+  }
+}
+
+/**
  * Handler registry for Aave V3 commands
  */
 export const aaveV3Handlers = {
   supply: supplyHandler,
-  // Future: withdraw, borrow, repay, etc.
+  withdraw: withdrawHandler,
+  // Future: borrow, repay, etc.
 }

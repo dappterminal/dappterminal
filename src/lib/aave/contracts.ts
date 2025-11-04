@@ -54,6 +54,17 @@ export const POOL_ABI = [
     stateMutability: 'nonpayable',
     type: 'function'
   },
+  {
+    inputs: [
+      { internalType: 'address', name: 'asset', type: 'address' },
+      { internalType: 'uint256', name: 'amount', type: 'uint256' },
+      { internalType: 'address', name: 'to', type: 'address' }
+    ],
+    name: 'withdraw',
+    outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+    type: 'function'
+  },
 ] as const
 
 /**
@@ -69,6 +80,17 @@ export const WETH_GATEWAY_ABI = [
     name: 'depositETH',
     outputs: [],
     stateMutability: 'payable',
+    type: 'function'
+  },
+  {
+    inputs: [
+      { internalType: 'address', name: 'pool', type: 'address' },
+      { internalType: 'uint256', name: 'amount', type: 'uint256' },
+      { internalType: 'address', name: 'to', type: 'address' }
+    ],
+    name: 'withdrawETH',
+    outputs: [],
+    stateMutability: 'nonpayable',
     type: 'function'
   },
 ] as const

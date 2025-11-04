@@ -27,6 +27,29 @@ export interface AaveV3SupplyRequestData {
 }
 
 /**
+ * Withdraw request data returned by the withdraw command
+ * and handled by the withdraw handler
+ */
+export interface AaveV3WithdrawRequestData {
+  aaveV3WithdrawRequest: true
+  params: {
+    marketAddress: string
+    underlyingTokenAddress: string
+    asset: string // Symbol like "USDC", "ETH", etc.
+    amount: string // String representation of the amount (e.g., "100") or "max"
+    amountFormatted: string // Formatted for display (e.g., "100.0" or "max")
+    decimals: number
+    isNative: boolean // True if withdrawing as native ETH
+    isMax: boolean // True if withdrawing all (max)
+    chainId: number
+  }
+  displayData: {
+    asset: string
+    amount: string
+  }
+}
+
+/**
  * Reserve data structure from Aave GraphQL API
  */
 export interface AaveReserve {

@@ -11,6 +11,7 @@ import {
   positionCommand,
   healthCommand,
   supplyCommand,
+  withdrawCommand,
 } from './commands'
 import { aaveV3Handlers } from './handlers'
 
@@ -47,6 +48,7 @@ export const aaveV3Plugin: Plugin = {
     addCommandToFiber(fiber, positionCommand)
     addCommandToFiber(fiber, healthCommand)
     addCommandToFiber(fiber, supplyCommand)
+    addCommandToFiber(fiber, withdrawCommand)
 
     return fiber
   },
