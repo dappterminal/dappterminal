@@ -10,7 +10,9 @@ import {
   ratesCommand,
   positionCommand,
   healthCommand,
+  supplyCommand,
 } from './commands'
+import { aaveV3Handlers } from './handlers'
 
 export const aaveV3Plugin: Plugin = {
   metadata: {
@@ -31,6 +33,8 @@ export const aaveV3Plugin: Plugin = {
     credentials: {},
   },
 
+  handlers: aaveV3Handlers,
+
   async initialize(_context: ExecutionContext): Promise<ProtocolFiber> {
     const fiber = createProtocolFiber(
       'aave-v3',
@@ -42,6 +46,7 @@ export const aaveV3Plugin: Plugin = {
     addCommandToFiber(fiber, ratesCommand)
     addCommandToFiber(fiber, positionCommand)
     addCommandToFiber(fiber, healthCommand)
+    addCommandToFiber(fiber, supplyCommand)
 
     return fiber
   },

@@ -629,6 +629,7 @@ async function fetchMarketsViaGraphql(options: FetchMarketsOptions): Promise<Aav
   return markets
     .map((market: AaveGraphQLMarket) => {
       const id = pickString(market.address, market.name)
+      
       const name = pickString(market.name)
 
       if (!id || !name) {

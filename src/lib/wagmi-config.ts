@@ -25,7 +25,7 @@ const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'demo-proj
  * Note: Base Account wallet removed to avoid telemetry inline script CSP errors in Next.js 15
  */
 export const config = getDefaultConfig({
-  appName: 'The DeFi Terminal',
+  appName: 'dappterminal.com',
   projectId,
   wallets: [
     {
@@ -34,7 +34,7 @@ export const config = getDefaultConfig({
         safeWallet,
         rainbowWallet,
         metaMaskWallet,
-        walletConnectWallet,
+       walletConnectWallet,
       ],
     },
   ],
