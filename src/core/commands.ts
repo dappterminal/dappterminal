@@ -497,7 +497,7 @@ export const chartCommand: Command = {
       const chartType = argTokens[0].toLowerCase()
       const isLineMode = argTokens.includes('--line')
 
-      // Parse --protocol flag
+      // Parse --protocol flag (or use active protocol context)
       let explicitProtocol: string | undefined
       const filteredTokens: string[] = []
       for (let i = 0; i < argTokens.length; i++) {
@@ -510,6 +510,11 @@ export const chartCommand: Command = {
         if (token !== '--line') {
           filteredTokens.push(token)
         }
+      }
+
+      // If no explicit protocol specified, use the active protocol context
+      if (!explicitProtocol && context.activeProtocol) {
+        explicitProtocol = context.activeProtocol
       }
 
       // Handle portfolio/balances chart

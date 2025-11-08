@@ -593,46 +593,6 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     if (!pluginsLoading && loadedPlugins.length > 0) {
       setTabs(prevTabs => prevTabs.map(tab => {
         if (tab.id === '1' && tab.history.length > 0 && tab.history[0].command === 'welcome') {
-          // Create styled output with colored protocol names
-          const protocolLine: OutputSegment[] = [
-            { text: `Loaded ${loadedPlugins.length} protocols: `, color: '#d1d5db' }
-          ]
-
-          // Add each protocol with its color
-          loadedPlugins.forEach((plugin, index) => {
-            // Map plugin names to protocol color keys and display names
-            const protocolKeyMap: Record<string, string> = {
-              '1inch': '1inch',
-              'Stargate': 'stargate',
-              'Wormhole': 'wormhole',
-              'LiFi': 'lifi',
-              'Aave v3': 'aave-v3',
-              'Uniswap V4': 'uniswap-v4',
-            }
-            const displayNameMap: Record<string, string> = {
-              '1inch': '1inch',
-              'Stargate': 'stargate',
-              'Wormhole': 'wormhole',
-              'LiFi': 'lifi',
-              'Aave v3': 'aave-v3',
-              'Uniswap V4': 'uniswap-v4',
-            }
-            const protocolKey = protocolKeyMap[plugin] || plugin.toLowerCase()
-            const displayName = displayNameMap[plugin] || plugin.toLowerCase()
-            const color = PROTOCOL_COLORS[protocolKey] || '#d1d5db'
-
-            protocolLine.push({
-              text: displayName,
-              color: color,
-              bold: true
-            })
-
-            // Add comma separator if not last
-            if (index < loadedPlugins.length - 1) {
-              protocolLine.push({ text: ', ', color: '#d1d5db' })
-            }
-          })
-
           return {
             ...tab,
             history: [{
@@ -640,8 +600,6 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
               output: [],
               styledOutput: [
                 [{ text: "Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.1.1). Use at your own risk.", color: '#d1d5db' }],
-                [{ text: "", color: '#d1d5db' }],
-                protocolLine,
                 [{ text: "", color: '#d1d5db' }],
                 [{ text: "Type 'help' to see available commands.", color: '#d1d5db' }]
               ]
@@ -677,7 +635,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   }, [address, chainId, isConnected, isConnecting, activeTabId])
 
   const addNewTab = () => {
-    const newId = (tabs.length + 1).toString()
+    const newId = Date.now().toString()
     console.log('[Add Tab] Creating new tab with id:', newId)
     console.log('[Add Tab] Current tabs before add:', tabs.map(t => ({ id: t.id, name: t.name })))
 
@@ -1369,8 +1327,9 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                               color: PROTOCOL_COLORS[(item.prompt || prompt).split('@')[1]?.replace('>', '')] || '#d1d5db'
                             }}
                           >
-                            {(item.prompt || prompt).split('@')[1]}
+                            {(item.prompt || prompt).split('@')[1]?.replace('>', '')}
                           </span>
+                          <span className="font-semibold text-white">&gt;</span>
                         </span>
                         <span className="text-whiteMa-400 ml-2 font-semibold">{item.command}</span>
                       </div>
@@ -1427,8 +1386,9 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                           color: PROTOCOL_COLORS[prompt.split('@')[1]?.replace('>', '')] || '#d1d5db'
                         }}
                       >
-                        {prompt.split('@')[1]}
+                        {prompt.split('@')[1]?.replace('>', '')}
                       </span>
+                      <span className="font-semibold text-white">&gt;</span>
                     </span>
                     <input
                       ref={inputRef}

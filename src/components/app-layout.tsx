@@ -206,7 +206,7 @@ export function AppLayout() {
         {/* Sidebar - hidden on mobile */}
         <aside className="hidden md:flex w-20 flex-col items-center bg-[#141414] py-6 border-r border-[#262626]">
           <div className="p-2 mb-10">
-            {/* Logo placeholder */}
+            <span className="text-white text-lg font-semibold" style={{ fontFamily: 'var(--font-fira-code)' }}>dT</span>
           </div>
           <nav className="flex flex-col items-center space-y-8 flex-1">
             {/* Terminal Icon with Tooltip */}
