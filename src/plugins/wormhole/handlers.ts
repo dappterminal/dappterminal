@@ -5,6 +5,7 @@
  */
 
 import type { CommandHandler } from '@/core'
+import { trackSwapTransaction } from '@/lib/tracking/swaps'
 
 /**
  * Bridge Handler Data
@@ -294,6 +295,29 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
 
     const lastTxHash = txHashes.length > 0 ? txHashes[txHashes.length - 1] : 'pending'
     const wormholeScanLink = `https://wormholescan.io/#/tx/${lastTxHash}?network=Mainnet`
+
+    // Track bridge transaction in database
+    if (txHashes.length > 0) {
+      trackSwapTransaction({
+        txHash: lastTxHash,
+        chainId: data.chainId,
+        protocol: 'wormhole',
+        command: 'bridge',
+        txType: 'bridge',
+        walletAddress: data.walletAddress,
+        tokenIn: data.fromToken,
+        tokenOut: data.toToken || data.fromToken,
+        amountIn: data.amount,
+        amountOut: destAmountFormatted,
+        route: {
+          fromChain: data.fromChain,
+          toChain: data.toChain,
+          routeType: routeType,
+          eta,
+          txHashes,
+        },
+      }).catch(err => console.error('Failed to track Wormhole bridge:', err))
+    }
 
     ctx.updateHistory([
       `Bridge executed successfully!`,

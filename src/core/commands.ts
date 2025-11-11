@@ -6,6 +6,7 @@
 
 import type { Command, CommandResult, ExecutionContext } from './types'
 import { registry } from './command-registry'
+import { requestCommand, statusCommand, historyCommand as faucetHistoryCommand } from '@/plugins/faucet'
 
 /**
  * Help command - displays available commands
@@ -868,6 +869,10 @@ export const coreCommands = [
   balanceCommand,
   transferCommand,
   chartCommand,
+  // Faucet commands
+  requestCommand,
+  statusCommand,
+  faucetHistoryCommand,
 ]
 
 /**

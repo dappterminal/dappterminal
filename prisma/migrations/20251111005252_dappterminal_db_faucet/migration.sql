@@ -1,0 +1,2 @@
+-- RenameIndex
+ALTER INDEX "rate_limit_records_identifier_identifierType_network_windowStar" RENAME TO "rate_limit_records_identifier_identifierType_network_window_key";

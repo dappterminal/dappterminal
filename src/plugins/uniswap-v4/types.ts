@@ -79,6 +79,7 @@ export interface PathKey {
 
 export interface UniswapContracts {
   poolManager: Address
+  positionManager: Address
   quoter: Address
   stateView: Address
   universalRouter: Address
@@ -151,4 +152,109 @@ export interface UniswapV4PluginState extends Record<string, unknown> {
     txHash?: string
     timestamp: number
   }
+  positions?: Map<string, LiquidityPosition>
+}
+
+/**
+ * Liquidity Position Types
+ */
+export interface LiquidityPosition {
+  tokenId: bigint
+  token0: Token
+  token1: Token
+  fee: FeeAmount
+  tickLower: number
+  tickUpper: number
+  liquidity: bigint
+  minPrice: number
+  maxPrice: number
+  feesEarned0?: bigint
+  feesEarned1?: bigint
+  poolKey: PoolKey
+}
+
+export interface PriceRange {
+  minPrice: number
+  maxPrice: number
+  minTick: number
+  maxTick: number
+}
+
+export interface AddLiquidityParams {
+  token0: Token
+  token1: Token
+  amount0: bigint
+  amount1: bigint
+  minPrice?: number
+  maxPrice?: number
+  fee: FeeAmount
+  recipient: Address
+  deadline: bigint
+  slippageBps: number
+  usePermit2: boolean
+  chainId: number
+}
+
+export interface RemoveLiquidityParams {
+  tokenId: bigint
+  position: LiquidityPosition
+  liquidityPercentage: number // 0-100
+  minAmount0?: bigint
+  minAmount1?: bigint
+  recipient: Address
+  deadline: bigint
+  burnToken: boolean
+  chainId: number
+}
+
+export interface Permit2BatchData {
+  details: {
+    token: Address
+    amount: string
+    expiration: string
+    nonce: string
+  }[]
+  spender: Address
+  sigDeadline: string
+}
+
+export interface Permit2Signature {
+  owner: Address
+  permitBatch: Permit2BatchData
+  signature: `0x${string}`
+}
+
+/**
+ * Plugin request data types for liquidity operations
+ */
+export interface UniswapV4AddLiquidityRequestData {
+  uniswapV4AddLiquidityRequest: boolean
+  params: AddLiquidityParams
+  token0Symbol: string
+  token1Symbol: string
+  amount0Formatted: string
+  amount1Formatted: string
+  priceRange?: PriceRange
+  estimatedGas?: bigint
+  message: string
+}
+
+export interface UniswapV4RemoveLiquidityRequestData {
+  uniswapV4RemoveLiquidityRequest: boolean
+  params: RemoveLiquidityParams
+  token0Symbol: string
+  token1Symbol: string
+  liquidityPercentage: number
+  estimatedAmount0?: string
+  estimatedAmount1?: string
+  message: string
+}
+
+export interface UniswapV4DiscoverRequestData {
+  uniswapV4DiscoverRequest: boolean
+  token0?: Token
+  token1?: Token
+  pairs?: Array<[Token, Token]>
+  chainId: number
+  message: string
 }

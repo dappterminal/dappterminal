@@ -7,9 +7,13 @@
 import type { Command, CommandResult, ExecutionContext } from '@/core/types'
 import { resolveToken } from './lib/tokens'
 import { parseUnits, formatUnits } from 'viem'
-import type { UniswapV4PluginState, SingleHopSwapParams, MultiHopSwapParams, Token } from './types'
+import type { UniswapV4PluginState, SingleHopSwapParams, MultiHopSwapParams, Token, AddLiquidityParams, FeeAmount } from './types'
 import { getSingleHopQuote, getMultiHopQuote } from './lib/quote'
 import { getCommonIntermediateTokens } from './lib/multiHopSwap'
+import { FEE_AMOUNTS } from './types'
+import { priceToTick, getNearestUsableTick } from './lib/positionManager'
+import { getTickSpacing, createPoolKey, getKnownPoolsForPair } from './lib/poolUtils'
+import { findExistingPoolForPair } from './lib/discoverPools'
 
 // Helper to get plugin state
 function getUniswapV4State(context: ExecutionContext): UniswapV4PluginState {
@@ -411,6 +415,483 @@ export const swapCommand: Command = {
             message: `Ready to swap ${amountInFormatted} ${tokenIn.symbol} for ~${minAmountOutFormatted} ${tokenOut.symbol}`,
           },
         }
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
+ * Liquidity Command (unified for add/remove)
+ *
+ * Manage liquidity positions on Uniswap V4
+ * Usage: liquidity <add|remove> ...
+ */
+export const liquidityCommand: Command = {
+  id: 'liquidity',
+  scope: 'G_p',
+  protocol: 'uniswap-v4',
+  description: 'Manage liquidity on Uniswap V4 (add/remove)',
+  aliases: ['liq', 'lp'],
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      const argsStr = typeof args === 'string' ? args.trim() : ''
+      const parts = argsStr.split(' ').filter(p => p)
+
+      if (parts.length === 0) {
+        return {
+          success: false,
+          error: new Error(
+            'Usage: liquidity <add|remove> ...\\n\\n' +
+            'Add liquidity:\\n' +
+            '  liquidity add <token0> <token1> <amount0> <amount1> [options]\\n\\n' +
+            'Remove liquidity:\\n' +
+            '  liquidity remove <token0> <token1> <percentage> [options]\\n\\n' +
+            'Examples:\\n' +
+            '  liquidity add eth usdc 1 2000\\n' +
+            '  liquidity add eth usdc 1 2000 --min-price 1800 --max-price 2200\\n' +
+            '  liquidity remove eth usdc 50\\n' +
+            '  liquidity remove eth usdc 100 --burn'
+          ),
+        }
+      }
+
+      const subcommand = parts[0].toLowerCase()
+      const remainingArgs = parts.slice(1).join(' ')
+
+      if (subcommand === 'add') {
+        return addLiquidityCommand.run(remainingArgs, context)
+      } else if (subcommand === 'remove') {
+        return removeLiquidityCommand.run(remainingArgs, context)
+      } else {
+        return {
+          success: false,
+          error: new Error(
+            `Unknown subcommand: ${subcommand}\\n\\n` +
+            'Valid subcommands: add, remove\\n\\n' +
+            'Usage: liquidity <add|remove> ...'
+          ),
+        }
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
+ * Add Liquidity Command (internal)
+ *
+ * Add liquidity to a Uniswap V4 pool
+ * Called by liquidityCommand
+ */
+const addLiquidityCommand: Command = {
+  id: 'liquidity-add-internal',
+  scope: 'G_p',
+  protocol: 'uniswap-v4',
+  description: 'Add liquidity to a Uniswap V4 pool',
+  aliases: [],
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      // Parse arguments
+      const argsStr = typeof args === 'string' ? args.trim() : ''
+      const parts = argsStr.split(' ').filter(p => p && !p.startsWith('--'))
+
+      if (parts.length < 4) {
+        return {
+          success: false,
+          error: new Error(
+            'Usage: liquidity add <token0> <token1> <amount0> <amount1> [--min-price X] [--max-price Y] [--fee tier] [--use-permit2]\\n\\n' +
+            'Examples:\\n' +
+            '  liquidity add eth usdc 1 2000                         (full range)\\n' +
+            '  liquidity add eth usdc 1 2000 --min-price 1800 --max-price 2200\\n' +
+            '  liquidity add eth usdc 1 2000 --fee 500               (0.05% fee tier)\\n' +
+            '  liquidity add wbtc eth 0.1 2 --use-permit2            (use Permit2 for approvals)\\n\\n' +
+            'Fee tiers: 100 (0.01%), 500 (0.05%), 3000 (0.3%), 10000 (1%)\\n' +
+            'Default: 3000 (0.3%)'
+          ),
+        }
+      }
+
+      const [token0Input, token1Input, amount0Input, amount1Input] = parts
+
+      // Verify wallet is connected
+      if (!context.wallet?.isConnected || !context.wallet.address || !context.wallet.chainId) {
+        return {
+          success: false,
+          error: new Error('Wallet not connected. Please connect your wallet first.'),
+        }
+      }
+
+      const chainId = context.wallet.chainId
+
+      // Resolve tokens
+      const token0 = resolveToken(token0Input, chainId)
+      const token1 = resolveToken(token1Input, chainId)
+
+      if (!token0 || !token1) {
+        return {
+          success: false,
+          error: new Error(
+            `Token not found. Token0: ${token0Input}, Token1: ${token1Input}\\n` +
+            `Make sure tokens exist on the current chain (${chainId})`
+          ),
+        }
+      }
+
+      // Validate token pair
+      if (token0.address.toLowerCase() === token1.address.toLowerCase()) {
+        return {
+          success: false,
+          error: new Error('Cannot add liquidity with the same token twice'),
+        }
+      }
+
+      // Parse amounts
+      const amount0 = parseUnits(amount0Input, token0.decimals)
+      const amount1 = parseUnits(amount1Input, token1.decimals)
+
+      if (amount0 <= BigInt(0) || amount1 <= BigInt(0)) {
+        return {
+          success: false,
+          error: new Error('Amounts must be greater than 0'),
+        }
+      }
+
+      // Parse fee tier (default: 3000 = 0.3%)
+      let fee: FeeAmount = FEE_AMOUNTS.MEDIUM
+      const feeIndex = argsStr.indexOf('--fee')
+      if (feeIndex !== -1) {
+        const afterFee = argsStr.substring(feeIndex + 5).trim()
+        const feeValue = parseInt(afterFee.split(' ')[0])
+        if ([100, 500, 3000, 10000].includes(feeValue)) {
+          fee = feeValue as FeeAmount
+        } else {
+          return {
+            success: false,
+            error: new Error(`Invalid fee tier: ${feeValue}. Must be 100, 500, 3000, or 10000`),
+          }
+        }
+      }
+
+      // Parse price range
+      let minPrice: number | undefined
+      let maxPrice: number | undefined
+
+      const minPriceIndex = argsStr.indexOf('--min-price')
+      if (minPriceIndex !== -1) {
+        const afterMinPrice = argsStr.substring(minPriceIndex + 11).trim()
+        const minPriceValue = parseFloat(afterMinPrice.split(' ')[0])
+        if (!isNaN(minPriceValue) && minPriceValue > 0) {
+          minPrice = minPriceValue
+        }
+      }
+
+      const maxPriceIndex = argsStr.indexOf('--max-price')
+      if (maxPriceIndex !== -1) {
+        const afterMaxPrice = argsStr.substring(maxPriceIndex + 11).trim()
+        const maxPriceValue = parseFloat(afterMaxPrice.split(' ')[0])
+        if (!isNaN(maxPriceValue) && maxPriceValue > 0) {
+          maxPrice = maxPriceValue
+        }
+      }
+
+      // Validate price range
+      if (minPrice !== undefined && maxPrice !== undefined && minPrice >= maxPrice) {
+        return {
+          success: false,
+          error: new Error('Min price must be less than max price'),
+        }
+      }
+
+      // Check for use-permit2 flag
+      const usePermit2 = argsStr.includes('--use-permit2')
+
+      // Calculate deadline (20 minutes from now)
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200)
+
+      // Check if this is a known pool
+      const knownPools = getKnownPoolsForPair(token0.symbol, token1.symbol, chainId)
+      let poolMessage = ''
+      if (knownPools.length > 0) {
+        poolMessage = `\\nKnown pools for ${token0.symbol}/${token1.symbol}:\\n`
+        knownPools.forEach(pool => {
+          poolMessage += `  - ${pool.description}\\n`
+        })
+      }
+
+      // Build add liquidity parameters
+      const params: AddLiquidityParams = {
+        token0,
+        token1,
+        amount0,
+        amount1,
+        minPrice,
+        maxPrice,
+        fee,
+        recipient: context.wallet.address,
+        deadline,
+        slippageBps: 50, // Default 0.5% slippage
+        usePermit2,
+        chainId,
+      }
+
+      // Format amounts for display
+      const amount0Formatted = formatUnits(amount0, token0.decimals)
+      const amount1Formatted = formatUnits(amount1, token1.decimals)
+
+      // Build price range message
+      let priceRangeMsg = 'Full range (no limits)'
+      if (minPrice !== undefined || maxPrice !== undefined) {
+        priceRangeMsg = `Price range: ${minPrice?.toFixed(2) ?? '∞'} to ${maxPrice?.toFixed(2) ?? '∞'}`
+      }
+
+      // Return add liquidity request
+      return {
+        success: true,
+        value: {
+          uniswapV4AddLiquidityRequest: true,
+          params,
+          token0Symbol: token0.symbol,
+          token1Symbol: token1.symbol,
+          amount0Formatted,
+          amount1Formatted,
+          message: `Ready to add ${amount0Formatted} ${token0.symbol} + ${amount1Formatted} ${token1.symbol} to pool (Fee: ${fee / 10000}%)\\n${priceRangeMsg}\\nApproval method: ${usePermit2 ? 'Permit2 (signature)' : 'Standard ERC20'}${poolMessage}`,
+        },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
+ * Remove Liquidity Command (internal)
+ *
+ * Remove liquidity from a Uniswap V4 position
+ * Called by liquidityCommand
+ */
+const removeLiquidityCommand: Command = {
+  id: 'liquidity-remove-internal',
+  scope: 'G_p',
+  protocol: 'uniswap-v4',
+  description: 'Remove liquidity from a Uniswap V4 position',
+  aliases: [],
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      // Parse arguments
+      const argsStr = typeof args === 'string' ? args.trim() : ''
+      const parts = argsStr.split(' ').filter(p => p && !p.startsWith('--'))
+
+      if (parts.length < 3) {
+        return {
+          success: false,
+          error: new Error(
+            'Usage: liquidity remove <token0> <token1> <percentage> [--fee tier] [--burn]\\n\\n' +
+            'Examples:\\n' +
+            '  liquidity remove eth usdc 100                 (remove all liquidity)\\n' +
+            '  liquidity remove eth usdc 50                  (remove 50%)\\n' +
+            '  liquidity remove eth usdc 100 --fee 500       (specify fee tier)\\n' +
+            '  liquidity remove wbtc eth 100 --burn          (burn NFT after removal)\\n\\n' +
+            'Fee tiers: 100 (0.01%), 500 (0.05%), 3000 (0.3%), 10000 (1%)\\n' +
+            'Default: 3000 (0.3%)'
+          ),
+        }
+      }
+
+      const [token0Input, token1Input, percentageInput] = parts
+
+      // Verify wallet is connected
+      if (!context.wallet?.isConnected || !context.wallet.address || !context.wallet.chainId) {
+        return {
+          success: false,
+          error: new Error('Wallet not connected. Please connect your wallet first.'),
+        }
+      }
+
+      const chainId = context.wallet.chainId
+
+      // Resolve tokens
+      const token0 = resolveToken(token0Input, chainId)
+      const token1 = resolveToken(token1Input, chainId)
+
+      if (!token0 || !token1) {
+        return {
+          success: false,
+          error: new Error(
+            `Token not found. Token0: ${token0Input}, Token1: ${token1Input}\\n` +
+            `Make sure tokens exist on the current chain (${chainId})`
+          ),
+        }
+      }
+
+      // Parse percentage
+      const percentage = parseFloat(percentageInput)
+      if (isNaN(percentage) || percentage <= 0 || percentage > 100) {
+        return {
+          success: false,
+          error: new Error('Percentage must be between 0 and 100'),
+        }
+      }
+
+      // Parse fee tier (default: 3000 = 0.3%)
+      let fee: FeeAmount = FEE_AMOUNTS.MEDIUM
+      const feeIndex = argsStr.indexOf('--fee')
+      if (feeIndex !== -1) {
+        const afterFee = argsStr.substring(feeIndex + 5).trim()
+        const feeValue = parseInt(afterFee.split(' ')[0])
+        if ([100, 500, 3000, 10000].includes(feeValue)) {
+          fee = feeValue as FeeAmount
+        } else {
+          return {
+            success: false,
+            error: new Error(`Invalid fee tier: ${feeValue}. Must be 100, 500, 3000, or 10000`),
+          }
+        }
+      }
+
+      // Check for burn flag
+      const burnToken = argsStr.includes('--burn')
+
+      // Store request info to be processed by handler
+      // Handler will need to query user's positions to find the right tokenId
+      return {
+        success: true,
+        value: {
+          uniswapV4RemoveLiquidityRequest: true,
+          token0Symbol: token0.symbol,
+          token1Symbol: token1.symbol,
+          token0,
+          token1,
+          fee,
+          percentage,
+          burnToken,
+          chainId,
+          message: `Ready to remove ${percentage}% liquidity from ${token0.symbol}/${token1.symbol} pool (Fee: ${fee / 10000}%)\\n${burnToken ? 'Will burn NFT after removal' : 'Will keep NFT'}\\n\\nNote: Handler will find your position for this pool.`,
+        },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
+ * Discover Pools Command
+ *
+ * Scan for existing V4 pools to find which token pairs have liquidity
+ * Usage: discover [token1] [token2]
+ */
+export const discoverCommand: Command = {
+  id: 'discover',
+  scope: 'G_p',
+  protocol: 'uniswap-v4',
+  description: 'Discover which V4 pools exist on the current chain',
+  aliases: ['find-pools'],
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      const argsStr = typeof args === 'string' ? args.trim() : ''
+      const parts = argsStr.split(' ').filter((p) => p && !p.startsWith('--'))
+
+      // Verify wallet is connected
+      if (!context.wallet?.isConnected || !context.wallet.chainId) {
+        return {
+          success: false,
+          error: new Error('Wallet not connected. Please connect your wallet first.'),
+        }
+      }
+
+      const chainId = context.wallet.chainId
+
+      // Import getPublicClient
+      const { getPublicClient } = await import('wagmi/actions')
+      const { config } = await import('@/lib/wagmi-config')
+      const { getTokensByChainId } = await import('./lib/tokens')
+
+      const client = getPublicClient(config, { chainId })
+      if (!client) {
+        return {
+          success: false,
+          error: new Error('Failed to get public client'),
+        }
+      }
+
+      const tokens = getTokensByChainId(chainId)
+
+      // If specific tokens provided, check just that pair
+      if (parts.length >= 2) {
+        const [token1Input, token2Input] = parts
+        const token1 = resolveToken(token1Input, chainId)
+        const token2 = resolveToken(token2Input, chainId)
+
+        if (!token1 || !token2) {
+          return {
+            success: false,
+            error: new Error(`Tokens not found: ${token1Input}, ${token2Input}`),
+          }
+        }
+
+        return {
+          success: true,
+          value: {
+            uniswapV4DiscoverRequest: true,
+            token0: token1,
+            token1: token2,
+            chainId,
+            message: `Scanning for ${token1.symbol}/${token2.symbol} pools across all fee tiers...`,
+          },
+        }
+      }
+
+      // Otherwise, scan common pairs
+      const commonPairs: Array<[Token, Token]> = []
+
+      // Get common tokens for scanning
+      const tokenList = Object.values(tokens)
+      const commonTokenSymbols = ['ETH', 'WETH', 'USDC', 'USDT', 'DAI', 'WBTC', 'ARB']
+      const commonTokens = tokenList.filter((t) =>
+        commonTokenSymbols.includes(t.symbol.toUpperCase())
+      )
+
+      // Create pairs (avoid duplicates)
+      for (let i = 0; i < commonTokens.length; i++) {
+        for (let j = i + 1; j < commonTokens.length; j++) {
+          // Skip ETH/WETH pair as they're the same
+          if (
+            (commonTokens[i].symbol === 'ETH' && commonTokens[j].symbol === 'WETH') ||
+            (commonTokens[i].symbol === 'WETH' && commonTokens[j].symbol === 'ETH')
+          ) {
+            continue
+          }
+          commonPairs.push([commonTokens[i], commonTokens[j]])
+        }
+      }
+
+      return {
+        success: true,
+        value: {
+          uniswapV4DiscoverRequest: true,
+          pairs: commonPairs,
+          chainId,
+          message: `Scanning ${commonPairs.length} common token pairs for V4 pools...\\nThis may take a minute.`,
+        },
       }
     } catch (error) {
       return {

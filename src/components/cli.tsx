@@ -670,6 +670,45 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     setActiveTabId(newId)
   }
 
+  const createProtocolTab = (protocolId: string) => {
+    const newId = Date.now().toString()
+    console.log('[Add Protocol Tab] Creating new tab for protocol:', protocolId, 'with id:', newId)
+
+    // Create a new execution context for this tab
+    const newContext = createExecutionContext()
+
+    // Load plugins for the new context
+    pluginLoader.loadPlugin(oneInchPlugin, undefined, newContext)
+    pluginLoader.loadPlugin(stargatePlugin, undefined, newContext)
+    pluginLoader.loadPlugin(wormholePlugin, undefined, newContext)
+    pluginLoader.loadPlugin(lifiPlugin, undefined, newContext)
+    pluginLoader.loadPlugin(aaveV3Plugin, undefined, newContext)
+    pluginLoader.loadPlugin(uniswapV4Plugin, undefined, newContext)
+
+    // Set the active protocol in the context
+    newContext.activeProtocol = protocolId
+
+    const newTab: TerminalTab = {
+      id: newId,
+      name: protocolId,
+      history: [
+        {
+          command: "welcome",
+          output: [`Welcome to ${protocolId} terminal. Type 'help' to see available commands.`],
+          timestamp: new Date()
+        }
+      ],
+      executionContext: newContext,
+      currentInput: "",
+      commandHistory: [],
+      historyIndex: -1
+    }
+    setTabs([...tabs, newTab])
+    console.log('[Add Protocol Tab] New protocol tab created, setting active to:', newId)
+    setActiveTabId(newId)
+    setShowSettings(false) // Close settings menu
+  }
+
   const closeTab = (tabId: string) => {
     console.log('[Close Tab] Attempting to close tab:', tabId)
     console.log('[Close Tab] Current tabs:', tabs.map(t => ({ id: t.id, name: t.name })))
@@ -1437,21 +1476,73 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
               {/* Settings Panel */}
               {showSettings && (
                 <div ref={settingsRef} className="absolute top-24 right-12 bg-black/40 backdrop-blur-sm border border-white/10 rounded-lg px-6 py-4 z-20">
-                  <div className="w-80 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-white/50 text-sm">
-                        Text Size
-                      </label>
-                      <span className="text-white/70 text-sm">{fontSize}px</span>
+                  <div className="w-80 space-y-4">
+                    {/* Text Size Section */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-white/50 text-sm">
+                          Text Size
+                        </label>
+                        <span className="text-white/70 text-sm">{fontSize}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="15"
+                        max="32"
+                        value={fontSize}
+                        onChange={(e) => setFontSize(Number(e.target.value))}
+                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white/70"
+                      />
                     </div>
-                    <input
-                      type="range"
-                      min="15"
-                      max="32"
-                      value={fontSize}
-                      onChange={(e) => setFontSize(Number(e.target.value))}
-                      className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white/70"
-                    />
+
+                    {/* Divider */}
+                    <div className="border-t border-white/10"></div>
+
+                    {/* New Terminal Section */}
+                    <div className="space-y-2">
+                      <label className="text-white/50 text-sm">
+                        New Terminal
+                      </label>
+                      <div className="space-y-1">
+                        {/* Default Terminal */}
+                        <button
+                          onClick={() => {
+                            addNewTab()
+                            setShowSettings(false)
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-md text-sm text-white/70 hover:text-white hover:bg-white/5 transition-colors"
+                        >
+                          <span className="font-medium">Default</span>
+                          <span className="text-white/40 text-xs ml-2">(defi)</span>
+                        </button>
+
+                        {/* Protocol Terminals */}
+                        {loadedPlugins.length > 0 && (
+                          <>
+                            <div className="text-white/30 text-xs px-3 py-1">Protocols</div>
+                            {[
+                              { id: '1inch', name: '1inch' },
+                              { id: 'stargate', name: 'Stargate' },
+                              { id: 'wormhole', name: 'Wormhole' },
+                              { id: 'lifi', name: 'LiFi' },
+                              { id: 'aave-v3', name: 'Aave V3' },
+                              { id: 'uniswap-v4', name: 'Uniswap V4' },
+                            ].map(protocol => (
+                              <button
+                                key={protocol.id}
+                                onClick={() => createProtocolTab(protocol.id)}
+                                className="w-full text-left px-3 py-2 rounded-md text-sm hover:bg-white/5 transition-colors"
+                                style={{
+                                  color: PROTOCOL_COLORS[protocol.id] || '#d1d5db'
+                                }}
+                              >
+                                {protocol.name}
+                              </button>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

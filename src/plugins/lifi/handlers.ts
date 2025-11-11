@@ -5,6 +5,7 @@
  */
 
 import type { CommandHandler } from '@/core'
+import { trackSwapTransaction } from '@/lib/tracking/swaps'
 
 /**
  * LiFi Route Object (from LiFi SDK)
@@ -163,6 +164,30 @@ export const bridgeHandler: CommandHandler<LiFiBridgeRequestData> = async (data,
     })
 
     console.log('[LiFi Bridge] Executed route:', executedRoute)
+
+    // Track bridge transactions in database
+    if (txHashes.length > 0) {
+      // Track the primary transaction (last one is typically the bridge tx)
+      const primaryTxHash = txHashes[txHashes.length - 1]
+      trackSwapTransaction({
+        txHash: primaryTxHash,
+        chainId: data.fromChain,
+        protocol: 'lifi',
+        command: 'bridge',
+        txType: 'bridge',
+        walletAddress: data.walletAddress,
+        tokenIn: data.fromToken,
+        tokenOut: data.toToken || data.fromToken,
+        amountIn: data.amount,
+        amountOut: data.amountOut,
+        route: {
+          fromChain: data.fromChain,
+          toChain: data.toChain,
+          steps: data.steps.length,
+          txHashes,
+        },
+      }).catch(err => console.error('Failed to track LiFi bridge:', err))
+    }
 
     // Get final transaction link
     const finalTxLink = txLink || executedRoute?.steps?.[0]?.execution?.internalTxLink

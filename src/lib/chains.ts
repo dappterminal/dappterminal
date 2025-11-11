@@ -113,6 +113,63 @@ export const SUPPORTED_CHAINS: Record<number, ChainConfig> = {
     rpcUrls: ['https://api.avax.network/ext/bc/C/rpc'],
     blockExplorerUrls: ['https://snowtrace.io'],
   },
+
+  // ============================================================================
+  // TESTNETS - For development and faucet support
+  // ============================================================================
+
+  // Sepolia Testnet
+  11155111: {
+    id: 11155111,
+    name: 'Sepolia',
+    nativeCurrency: {
+      name: 'Sepolia Ether',
+      symbol: 'SEP',
+      decimals: 18,
+    },
+    rpcUrls: [
+      'https://rpc.sepolia.org',
+      'https://sepolia.infura.io/v3/YOUR_INFURA_KEY',
+      'https://eth-sepolia.public.blastapi.io',
+    ],
+    blockExplorerUrls: ['https://sepolia.etherscan.io'],
+    testnet: true,
+  },
+
+  // Holesky Testnet
+  17000: {
+    id: 17000,
+    name: 'Holesky',
+    nativeCurrency: {
+      name: 'Holesky Ether',
+      symbol: 'HOL',
+      decimals: 18,
+    },
+    rpcUrls: [
+      'https://rpc.holesky.ethpandaops.io',
+      'https://ethereum-holesky.publicnode.com',
+      'https://1rpc.io/holesky',
+    ],
+    blockExplorerUrls: ['https://holesky.etherscan.io'],
+    testnet: true,
+  },
+
+  // Optimism Sepolia Testnet
+  11155420: {
+    id: 11155420,
+    name: 'Optimism Sepolia',
+    nativeCurrency: {
+      name: 'Sepolia Ether',
+      symbol: 'SEP',
+      decimals: 18,
+    },
+    rpcUrls: [
+      'https://sepolia.optimism.io',
+      'https://optimism-sepolia.blockpi.network/v1/rpc/public',
+    ],
+    blockExplorerUrls: ['https://sepolia-optimism.etherscan.io'],
+    testnet: true,
+  },
 } as const
 
 /**
@@ -188,4 +245,38 @@ export function getProtocolSupportedChains(
   protocol: keyof typeof PROTOCOL_CHAIN_SUPPORT
 ): number[] {
   return [...PROTOCOL_CHAIN_SUPPORT[protocol]]
+}
+
+/**
+ * Check if a chain is a testnet
+ */
+export function isTestnet(chainId: number): boolean {
+  const config = getChainConfig(chainId)
+  return config?.testnet === true
+}
+
+/**
+ * Get all testnet chain IDs
+ */
+export function getTestnetChainIds(): number[] {
+  return getSupportedChainIds().filter(isTestnet)
+}
+
+/**
+ * Get all mainnet chain IDs
+ */
+export function getMainnetChainIds(): number[] {
+  return getSupportedChainIds().filter((chainId) => !isTestnet(chainId))
+}
+
+/**
+ * Faucet-supported testnet chains
+ */
+export const FAUCET_SUPPORTED_CHAINS = [11155111, 17000, 11155420] as const
+
+/**
+ * Check if faucet is available for a chain
+ */
+export function isFaucetSupported(chainId: number): boolean {
+  return FAUCET_SUPPORTED_CHAINS.includes(chainId as any)
 }

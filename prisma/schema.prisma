@@ -1,0 +1,237 @@
+// Prisma schema for DeFi Terminal Faucet System
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Tracks all faucet requests and their status
+model FaucetRequest {
+  id          String    @id @default(cuid())
+
+  // User identification
+  address     String    // Wallet address requesting tokens
+  ipAddress   String?   // IP address for rate limiting
+
+  // Network and amount
+  network     String    // "sepolia", "holesky", "optimism-sepolia"
+  chainId     Int       // Network chain ID
+  amount      String    // Amount in wei (stored as string for precision)
+
+  // Transaction details
+  txHash      String?   // Transaction hash after sending
+  status      String    @default("pending") // "pending", "processing", "completed", "failed"
+  errorMessage String?  // Error message if failed
+
+  // Timestamps
+  createdAt   DateTime  @default(now())
+  processedAt DateTime? // When transaction was sent
+  completedAt DateTime? // When transaction was confirmed
+
+  // Indexes for efficient queries
+  @@index([address, network, createdAt])
+  @@index([ipAddress, createdAt])
+  @@index([txHash])
+  @@index([status, createdAt])
+  @@map("faucet_requests")
+}
+
+// Tracks rate limiting for addresses and IPs
+model RateLimitRecord {
+  id          String   @id @default(cuid())
+
+  // Identifier (address or IP)
+  identifier  String   // Wallet address or IP address
+  identifierType String // "address" or "ip"
+  network     String   // Network name or "global" for cross-network limits
+
+  // Rate limit tracking
+  requestCount Int     @default(1)
+  windowStart DateTime // Start of the current time window
+  windowEnd   DateTime // End of the current time window
+  lastRequest DateTime @default(now())
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Unique constraint: one record per identifier+network+window
+  @@unique([identifier, identifierType, network, windowStart])
+  @@index([identifier, network, windowEnd])
+  @@index([windowEnd]) // For cleanup of expired records
+  @@map("rate_limit_records")
+}
+
+// Configuration for each supported network
+model FaucetConfig {
+  id        String   @id @default(cuid())
+
+  // Network identification
+  network   String   @unique // "sepolia", "holesky", "optimism-sepolia"
+  chainId   Int      @unique
+
+  // Faucet settings
+  amount    String   // Amount to distribute in wei (stored as string)
+  enabled   Boolean  @default(true)
+
+  // Rate limiting settings (in seconds)
+  cooldownPeriod Int  @default(86400) // Default: 24 hours
+
+  // Display information
+  displayName String // "Sepolia Testnet", "Holesky", etc.
+  symbol      String // "SEP", "HOL", "ETH"
+
+  // RPC configuration
+  rpcUrl      String // RPC endpoint URL
+
+  // Wallet balance threshold (alert if below this)
+  minBalance  String? // Minimum balance in wei before alerting
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("faucet_configs")
+}
+
+// Audit log for tracking faucet operations
+model FaucetAuditLog {
+  id          String   @id @default(cuid())
+
+  // Event details
+  eventType   String   // "request_created", "transaction_sent", "transaction_confirmed", "rate_limit_hit", "error"
+  severity    String   // "info", "warning", "error"
+
+  // Related entities
+  requestId   String?  // Related FaucetRequest ID
+  address     String?  // Wallet address involved
+  network     String?  // Network involved
+
+  // Event data
+  message     String   // Human-readable message
+  metadata    Json?    // Additional structured data
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+
+  @@index([eventType, createdAt])
+  @@index([severity, createdAt])
+  @@index([requestId])
+  @@index([address, createdAt])
+  @@map("faucet_audit_logs")
+}
+
+// ====================================
+// SWAP & BRIDGE TRANSACTION TRACKING
+// ====================================
+
+// Tracks all swap and bridge transactions across protocols
+model SwapTransaction {
+  id          String    @id @default(cuid())
+
+  // Transaction details
+  txHash      String    @unique
+  chainId     Int
+  blockNumber BigInt?
+  status      String    @default("pending") // "pending", "confirmed", "failed"
+
+  // Protocol information
+  protocol    String    // "uniswap-v4", "1inch", "lifi", "stargate", "wormhole"
+  command     String    // "swap", "multihop", "bridge", etc.
+  txType      String    @default("swap") // "swap" or "bridge"
+
+  // User information
+  walletAddress String
+
+  // Token swap/bridge details
+  tokenIn     String    // Token symbol or address
+  tokenOut    String    // Token symbol or address
+  amountIn    String    // Amount in (stored as string for precision)
+  amountOut   String    // Amount out (stored as string for precision)
+
+  // Gas metrics
+  gasUsed     String?   // Gas used (stored as string)
+  gasPrice    String?   // Gas price in wei (stored as string)
+
+  // Route information (for multi-hop swaps)
+  route       Json?     // Array of tokens/pools for complex routes
+
+  // Timestamps
+  createdAt   DateTime  @default(now())
+  confirmedAt DateTime?
+  failedAt    DateTime?
+
+  // Indexes for efficient queries
+  @@index([walletAddress, createdAt])
+  @@index([protocol, createdAt])
+  @@index([chainId, createdAt])
+  @@index([txHash])
+  @@index([status, createdAt])
+  @@index([txType, createdAt])
+  @@map("swap_transactions")
+}
+
+// Aggregated protocol volume and statistics
+model ProtocolVolume {
+  id              String   @id @default(cuid())
+
+  // Aggregation dimensions
+  date            DateTime @db.Date
+  protocol        String
+  chainId         Int
+
+  // Volume metrics
+  totalTransactions Int     @default(0)
+  successfulTxs     Int     @default(0)
+  failedTxs         Int     @default(0)
+
+  // User metrics
+  uniqueUsers       Int     @default(0)
+
+  // Volume tracking (stored as string for precision)
+  // Note: USD conversion would require price oracle integration
+  totalVolumeIn     String  @default("0")
+  totalVolumeOut    String  @default("0")
+
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Unique constraint: one record per date/protocol/chain
+  @@unique([date, protocol, chainId])
+  @@index([protocol, date])
+  @@index([chainId, date])
+  @@index([date])
+  @@map("protocol_volumes")
+}
+
+// User-specific swap activity summary
+model UserSwapActivity {
+  id            String   @id @default(cuid())
+
+  walletAddress String
+  protocol      String
+  chainId       Int
+
+  // Activity statistics
+  totalSwaps    Int      @default(1)
+  totalBridges  Int      @default(0)
+  lastTxAt      DateTime @default(now())
+  firstTxAt     DateTime @default(now())
+
+  // Volume totals (stored as string for precision)
+  totalVolumeIn String   @default("0")
+
+  // Timestamps
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([walletAddress, protocol, chainId])
+  @@index([walletAddress])
+  @@index([lastTxAt])
+  @@map("user_swap_activities")
+}

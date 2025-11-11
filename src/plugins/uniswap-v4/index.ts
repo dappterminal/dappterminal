@@ -1,13 +1,13 @@
 /**
  * Uniswap V4 Plugin
  *
- * Decentralized exchange integration for single-hop swaps on Uniswap V4
+ * Decentralized exchange integration for swaps and liquidity on Uniswap V4
  */
 
 import type { Plugin } from '../types'
 import type { ExecutionContext, ProtocolFiber } from '@/core/types'
 import { createProtocolFiber, addCommandToFiber } from '@/core/monoid'
-import { swapCommand } from './commands'
+import { swapCommand, liquidityCommand, discoverCommand } from './commands'
 import { uniswapV4Handlers } from './handlers'
 
 export const uniswapV4Plugin: Plugin = {
@@ -15,8 +15,8 @@ export const uniswapV4Plugin: Plugin = {
     id: 'uniswap-v4',
     name: 'Uniswap V4',
     version: '1.0.0',
-    description: 'Single-hop swaps on Uniswap V4 DEX',
-    tags: ['dex', 'swap', 'uniswap', 'v4'],
+    description: 'Swaps and liquidity management on Uniswap V4 DEX',
+    tags: ['dex', 'swap', 'liquidity', 'uniswap', 'v4'],
   },
 
   defaultConfig: {
@@ -39,11 +39,13 @@ export const uniswapV4Plugin: Plugin = {
     const fiber = createProtocolFiber(
       'uniswap-v4',
       'Uniswap V4',
-      'Single-hop swaps on Uniswap V4 DEX'
+      'Swaps and liquidity management on Uniswap V4 DEX'
     )
 
     // Register commands
     addCommandToFiber(fiber, swapCommand)
+    addCommandToFiber(fiber, liquidityCommand)
+    addCommandToFiber(fiber, discoverCommand)
 
     // Initialize protocol state
     if (!context.protocolState) {

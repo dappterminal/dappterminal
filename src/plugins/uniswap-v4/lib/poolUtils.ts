@@ -211,3 +211,213 @@ export function getFeeTierName(fee: number): string {
       return `${fee / 10000}%`
   }
 }
+
+/**
+ * Known Pool Configuration
+ */
+export interface KnownPool {
+  token0Symbol: string
+  token1Symbol: string
+  fee: number
+  description: string
+  chainId: number
+}
+
+/**
+ * Registry of known/popular Uniswap V4 pools
+ * These pools are commonly used and likely to have liquidity
+ */
+export const KNOWN_POOLS: KnownPool[] = [
+  // Ethereum Mainnet
+  {
+    token0Symbol: 'ETH',
+    token1Symbol: 'USDC',
+    fee: FEE_AMOUNTS.LOW,
+    description: 'ETH/USDC 0.05%',
+    chainId: 1,
+  },
+  {
+    token0Symbol: 'ETH',
+    token1Symbol: 'USDC',
+    fee: FEE_AMOUNTS.MEDIUM,
+    description: 'ETH/USDC 0.3%',
+    chainId: 1,
+  },
+  {
+    token0Symbol: 'ETH',
+    token1Symbol: 'USDT',
+    fee: FEE_AMOUNTS.LOW,
+    description: 'ETH/USDT 0.05%',
+    chainId: 1,
+  },
+  {
+    token0Symbol: 'ETH',
+    token1Symbol: 'DAI',
+    fee: FEE_AMOUNTS.LOW,
+    description: 'ETH/DAI 0.05%',
+    chainId: 1,
+  },
+  {
+    token0Symbol: 'WBTC',
+    token1Symbol: 'ETH',
+    fee: FEE_AMOUNTS.MEDIUM,
+    description: 'WBTC/ETH 0.3%',
+    chainId: 1,
+  },
+  {
+    token0Symbol: 'USDC',
+    token1Symbol: 'USDT',
+    fee: FEE_AMOUNTS.LOWEST,
+    description: 'USDC/USDT 0.01%',
+    chainId: 1,
+  },
+  {
+    token0Symbol: 'USDC',
+    token1Symbol: 'DAI',
+    fee: FEE_AMOUNTS.LOWEST,
+    description: 'USDC/DAI 0.01%',
+    chainId: 1,
+  },
+
+  // Base Mainnet
+  {
+    token0Symbol: 'ETH',
+    token1Symbol: 'USDC',
+    fee: FEE_AMOUNTS.LOW,
+    description: 'ETH/USDC 0.05%',
+    chainId: 8453,
+  },
+  {
+    token0Symbol: 'ETH',
+    token1Symbol: 'USDbC',
+    fee: FEE_AMOUNTS.LOW,
+    description: 'ETH/USDbC 0.05%',
+    chainId: 8453,
+  },
+  {
+    token0Symbol: 'ETH',
+    token1Symbol: 'DAI',
+    fee: FEE_AMOUNTS.LOW,
+    description: 'ETH/DAI 0.05%',
+    chainId: 8453,
+  },
+
+  // Optimism
+  {
+    token0Symbol: 'ETH',
+    token1Symbol: 'USDC',
+    fee: FEE_AMOUNTS.LOW,
+    description: 'ETH/USDC 0.05%',
+    chainId: 10,
+  },
+  {
+    token0Symbol: 'ETH',
+    token1Symbol: 'OP',
+    fee: FEE_AMOUNTS.MEDIUM,
+    description: 'ETH/OP 0.3%',
+    chainId: 10,
+  },
+  {
+    token0Symbol: 'ETH',
+    token1Symbol: 'USDT',
+    fee: FEE_AMOUNTS.LOW,
+    description: 'ETH/USDT 0.05%',
+    chainId: 10,
+  },
+  {
+    token0Symbol: 'USDC',
+    token1Symbol: 'USDT',
+    fee: FEE_AMOUNTS.LOWEST,
+    description: 'USDC/USDT 0.01%',
+    chainId: 10,
+  },
+
+  // Arbitrum One
+  {
+    token0Symbol: 'ETH',
+    token1Symbol: 'USDC',
+    fee: FEE_AMOUNTS.LOW,
+    description: 'ETH/USDC 0.05%',
+    chainId: 42161,
+  },
+  {
+    token0Symbol: 'ETH',
+    token1Symbol: 'ARB',
+    fee: FEE_AMOUNTS.MEDIUM,
+    description: 'ETH/ARB 0.3%',
+    chainId: 42161,
+  },
+  {
+    token0Symbol: 'WBTC',
+    token1Symbol: 'ETH',
+    fee: FEE_AMOUNTS.MEDIUM,
+    description: 'WBTC/ETH 0.3%',
+    chainId: 42161,
+  },
+  {
+    token0Symbol: 'USDC',
+    token1Symbol: 'USDT',
+    fee: FEE_AMOUNTS.LOWEST,
+    description: 'USDC/USDT 0.01%',
+    chainId: 42161,
+  },
+]
+
+/**
+ * Get known pools for a specific chain
+ */
+export function getKnownPoolsByChain(chainId: number): KnownPool[] {
+  return KNOWN_POOLS.filter((pool) => pool.chainId === chainId)
+}
+
+/**
+ * Find a known pool by token symbols and fee
+ */
+export function findKnownPool(
+  token0Symbol: string,
+  token1Symbol: string,
+  fee: number,
+  chainId: number
+): KnownPool | undefined {
+  const upperToken0 = token0Symbol.toUpperCase()
+  const upperToken1 = token1Symbol.toUpperCase()
+
+  return KNOWN_POOLS.find(
+    (pool) =>
+      pool.chainId === chainId &&
+      pool.fee === fee &&
+      ((pool.token0Symbol === upperToken0 && pool.token1Symbol === upperToken1) ||
+        (pool.token0Symbol === upperToken1 && pool.token1Symbol === upperToken0))
+  )
+}
+
+/**
+ * Check if a pool is in the known pools registry
+ */
+export function isKnownPool(
+  token0Symbol: string,
+  token1Symbol: string,
+  fee: number,
+  chainId: number
+): boolean {
+  return findKnownPool(token0Symbol, token1Symbol, fee, chainId) !== undefined
+}
+
+/**
+ * Get all possible pools for a token pair (all fee tiers)
+ */
+export function getKnownPoolsForPair(
+  token0Symbol: string,
+  token1Symbol: string,
+  chainId: number
+): KnownPool[] {
+  const upperToken0 = token0Symbol.toUpperCase()
+  const upperToken1 = token1Symbol.toUpperCase()
+
+  return KNOWN_POOLS.filter(
+    (pool) =>
+      pool.chainId === chainId &&
+      ((pool.token0Symbol === upperToken0 && pool.token1Symbol === upperToken1) ||
+        (pool.token0Symbol === upperToken1 && pool.token1Symbol === upperToken0))
+  )
+}

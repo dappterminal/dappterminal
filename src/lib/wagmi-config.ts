@@ -15,6 +15,9 @@ import {
   base,
   optimism,
   polygon,
+  sepolia,
+  holesky,
+  optimismSepolia,
 } from 'wagmi/chains'
 
 // Get WalletConnect project ID from environment
@@ -44,6 +47,10 @@ export const config = getDefaultConfig({
     base,
     optimism,
     polygon,
+    // Testnets for faucet support
+    sepolia,
+    holesky,
+    optimismSepolia,
   ],
   ssr: true, // Enable for Next.js
 })
