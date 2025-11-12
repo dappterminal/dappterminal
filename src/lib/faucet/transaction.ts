@@ -39,6 +39,8 @@ export async function processFaucetRequest(
 ): Promise<FaucetTransactionResult> {
   const { address, network, ipAddress } = request
 
+  console.log('[Faucet] Processing request:', { address, network, ipAddress })
+
   // Validate address format
   if (!isAddress(address)) {
     throw new Error('Invalid Ethereum address format')
@@ -50,8 +52,17 @@ export async function processFaucetRequest(
     throw new Error(`Network ${network} is not supported or is disabled`)
   }
 
+  console.log('[Faucet] Network config:', {
+    network: networkConfig.network,
+    chainId: networkConfig.chainId,
+    rpcUrl: networkConfig.rpcUrl,
+    amount: networkConfig.amountDisplay
+  })
+
   // Check faucet balance before creating request
+  console.log('[Faucet] Checking faucet balance...')
   const { balance, isLow } = await checkFaucetBalance(network)
+  console.log('[Faucet] Balance check complete:', { balance: balance.toString(), isLow })
   const requiredAmount = BigInt(networkConfig.amount)
 
   if (balance < requiredAmount) {

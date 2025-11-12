@@ -88,19 +88,38 @@ export async function checkFaucetBalance(
     throw new Error(`Unknown network: ${network}`)
   }
 
+  console.log('[Wallet] Creating public client for:', networkConfig.network)
+  console.log('[Wallet] RPC URL:', networkConfig.rpcUrl)
+
   const publicClient = getFaucetPublicClient(networkConfig)
   const account = getFaucetAccount()
-  const balance = await publicClient.getBalance({ address: account.address })
-  const balanceFormatted = formatEther(balance)
 
-  // Check if balance is below minimum threshold
-  const minBalance = networkConfig.minBalance ? BigInt(networkConfig.minBalance) : BigInt(0)
-  const isLow = balance < minBalance
+  console.log('[Wallet] Fetching balance for address:', account.address)
 
-  return {
-    balance,
-    balanceFormatted,
-    isLow,
+  try {
+    // Add timeout to prevent hanging
+    const balancePromise = publicClient.getBalance({ address: account.address })
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('RPC request timeout after 30s')), 30000)
+    )
+
+    const balance = await Promise.race([balancePromise, timeoutPromise])
+    console.log('[Wallet] Balance fetched:', balance.toString())
+
+    const balanceFormatted = formatEther(balance)
+
+    // Check if balance is below minimum threshold
+    const minBalance = networkConfig.minBalance ? BigInt(networkConfig.minBalance) : BigInt(0)
+    const isLow = balance < minBalance
+
+    return {
+      balance,
+      balanceFormatted,
+      isLow,
+    }
+  } catch (error: any) {
+    console.error('[Wallet] Error fetching balance:', error.message)
+    throw new Error(`Failed to fetch balance: ${error.message}`)
   }
 }
 

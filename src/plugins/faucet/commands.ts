@@ -16,12 +16,13 @@ import type {
 
 /**
  * Request testnet tokens
- * Usage: request sepolia [address]
+ * Usage: faucet <network> [address]
+ * If address is not provided, uses connected wallet address
  */
 export const requestCommand: Command<FaucetRequestArgs, FaucetRequestResult> = {
   id: 'request',
   scope: 'G_core',
-  description: 'Request testnet tokens from the faucet',
+  description: 'Request testnet tokens from the faucet. Usage: faucet <network> [address]',
   aliases: ['faucet'],
 
   async run(args: FaucetRequestArgs | unknown, context: ExecutionContext): Promise<CommandResult<FaucetRequestResult>> {
@@ -44,8 +45,10 @@ export const requestCommand: Command<FaucetRequestArgs, FaucetRequestResult> = {
         return {
           success: false,
           error: new Error(
-            'Network is required. Usage: request <network> [address]\n' +
-            'Available networks: sepolia, holesky, optimism-sepolia'
+            'Network is required. Usage: faucet <network> [address]\n' +
+            'Available networks: sepolia, holesky, optimism-sepolia\n' +
+            'Example: faucet sepolia (uses connected wallet)\n' +
+            'Example: faucet sepolia 0x123... (uses specific address)'
           ),
         }
       }
@@ -57,8 +60,9 @@ export const requestCommand: Command<FaucetRequestArgs, FaucetRequestResult> = {
         return {
           success: false,
           error: new Error(
-            'No address specified and no wallet connected.\n' +
-            'Either connect a wallet or provide an address: request <network> <address>'
+            'No wallet connected and no address specified.\n' +
+            'Either connect a wallet with: connect <address>\n' +
+            'Or provide an address: faucet <network> <address>'
           ),
         }
       }
