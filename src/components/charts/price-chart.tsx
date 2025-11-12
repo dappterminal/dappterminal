@@ -65,6 +65,19 @@ export function PriceChart({
   // Cache for API data to avoid refetching
   const cacheRef = useRef<Map<string, OHLCData[] | PricePoint[]>>(new Map())
 
+  // Sync props with internal state
+  useEffect(() => {
+    setTimeRange(initialTimeRange)
+  }, [initialTimeRange])
+
+  useEffect(() => {
+    setDataSource(initialDataSource)
+  }, [initialDataSource])
+
+  useEffect(() => {
+    setChartType(initialChartType as 'candlestick' | 'line')
+  }, [initialChartType])
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -82,9 +95,9 @@ export function PriceChart({
     }
   }, [showDropdown])
 
-  // Fetch data from 1inch API
+  // Fetch data from APIs
   useEffect(() => {
-    if (dataSource !== '1inch' || data) {
+    if ((dataSource !== '1inch' && dataSource !== 'CoinGecko') || data) {
       setApiData(null)
       return
     }
@@ -103,6 +116,80 @@ export function PriceChart({
 
       setIsLoading(true)
       try {
+        // Handle CoinGecko data source
+        if (dataSource === 'CoinGecko') {
+          // Parse symbol (e.g., "ETH/USDC" -> base=ETH)
+          const [baseSymbol] = symbol.split('/').map(s => s.trim())
+
+          // Map common symbols to CoinGecko IDs
+          const symbolToCoinId: Record<string, string> = {
+            'BTC': 'bitcoin',
+            'ETH': 'ethereum',
+            'USDC': 'usd-coin',
+            'USDT': 'tether',
+            'DAI': 'dai',
+            'WBTC': 'wrapped-bitcoin',
+            'WETH': 'weth',
+            'MATIC': 'matic-network',
+            'LINK': 'chainlink',
+            'UNI': 'uniswap',
+            'AAVE': 'aave',
+          }
+
+          // Try to resolve symbol to coin ID
+          const coinId = symbolToCoinId[baseSymbol.toUpperCase()] || baseSymbol.toLowerCase()
+
+          // Map time range to days for CoinGecko
+          const timeRangeToDays: Record<TimeRange, number | 'max'> = {
+            '1m': 1,
+            '5m': 1,
+            '15m': 1,
+            '1h': 1,
+            '4h': 1,
+            '12h': 1,
+            '24h': 1,
+            '1w': 7,
+            '1M': 30,
+            '1Y': 365,
+            'ALL': 'max',
+          }
+
+          const days = timeRangeToDays[timeRange] || 7
+
+          const endpoint = `/api/coingecko/ohlc/${coinId}?days=${days}&vs_currency=usd`
+
+          const response = await fetch(endpoint)
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}))
+            console.error('CoinGecko API error:', errorData)
+            throw new Error('Failed to fetch CoinGecko chart data')
+          }
+
+          const result = await response.json()
+
+          console.log('CoinGecko API response:', result)
+
+          // Transform OHLC data to our format
+          if (result.data && Array.isArray(result.data)) {
+            const transformedData: OHLCData[] = result.data.map((point: any) => ({
+              timestamp: new Date(point.time_open).getTime(),
+              open: point.open || 0,
+              high: point.high || 0,
+              low: point.low || 0,
+              close: point.close || 0,
+              volume: point.volume || 0,
+            }))
+
+            console.log('Transformed CoinGecko data sample:', transformedData.slice(0, 3))
+            cacheRef.current.set(cacheKey, transformedData)
+            setApiData(transformedData)
+          }
+
+          setIsLoading(false)
+          return
+        }
+
         // Parse symbol (e.g., "ETH/USDC" -> token0=ETH, token1=USDC)
         const [token0Symbol, token1Symbol = 'USDC'] = symbol.split('/').map(s => s.trim())
 
@@ -533,7 +620,7 @@ export function PriceChart({
   }, [chartType, chartData, symbol, timeRange, isLoading])
 
   const timeRanges: TimeRange[] = ['1m', '5m', '15m', '1h', '4h', '12h', '24h', '1w', '1M', '1Y', 'ALL']
-  const dataSources: DataSource[] = ['1inch', 'Binance', 'Coinbase', 'Kraken', 'Mock']
+  const dataSources: DataSource[] = ['1inch', 'CoinGecko', 'Coinbase', 'Kraken', 'Mock']
 
   return (
     <div className={`relative ${className}`}>
@@ -594,7 +681,7 @@ export function PriceChartDropdown({
   onToggleDropdown,
 }: PriceChartDropdownProps) {
   const timeRanges: TimeRange[] = ['1m', '5m', '15m', '1h', '4h', '12h', '24h', '1w', '1M', '1Y', 'ALL']
-  const dataSources: DataSource[] = ['1inch', 'Binance', 'Coinbase', 'Kraken', 'Mock']
+  const dataSources: DataSource[] = ['1inch', 'CoinGecko', 'Coinbase', 'Kraken', 'Mock']
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

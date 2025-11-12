@@ -64,12 +64,19 @@ export const requestCommand: Command<FaucetRequestArgs, FaucetRequestResult> = {
       }
 
       // Call faucet API
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+
+      // Add API key if available
+      const apiKey = process.env.NEXT_PUBLIC_CLIENT_API_KEY
+      if (apiKey) {
+        headers['x-api-key'] = apiKey
+      }
+
       const response = await fetch('/api/faucet/request', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.CLIENT_API_KEY || '',
-        },
+        headers,
         body: JSON.stringify({
           network,
           address: targetAddress,
@@ -143,11 +150,15 @@ export const statusCommand: Command<FaucetStatusArgs, FaucetStatusResult> = {
       if (txHash) params.append('txHash', txHash)
 
       // Call faucet API
+      const headers: Record<string, string> = {}
+      const apiKey = process.env.NEXT_PUBLIC_CLIENT_API_KEY
+      if (apiKey) {
+        headers['x-api-key'] = apiKey
+      }
+
       const response = await fetch(`/api/faucet/status?${params.toString()}`, {
         method: 'GET',
-        headers: {
-          'x-api-key': process.env.CLIENT_API_KEY || '',
-        },
+        headers,
       })
 
       const result = await response.json()
@@ -220,11 +231,15 @@ export const historyCommand: Command<FaucetHistoryArgs, FaucetHistoryResult> = {
       if (limit) params.append('limit', limit.toString())
 
       // Call faucet API
+      const headers: Record<string, string> = {}
+      const apiKey = process.env.NEXT_PUBLIC_CLIENT_API_KEY
+      if (apiKey) {
+        headers['x-api-key'] = apiKey
+      }
+
       const response = await fetch(`/api/faucet/history?${params.toString()}`, {
         method: 'GET',
-        headers: {
-          'x-api-key': process.env.CLIENT_API_KEY || '',
-        },
+        headers,
       })
 
       const result = await response.json()

@@ -279,7 +279,7 @@ export function AppLayout() {
           {/* Header - responsive height and padding */}
           <header className="flex items-center justify-between h-16 md:h-20 px-4 md:px-8 border-b border-[#262626] flex-shrink-0">
             <div className="flex items-center space-x-8 text-base">
-              <h1 className="text-lg md:text-xl font-bold text-white">dappterminal.com</h1>
+              <img src="/dappterminal-logo-horizontal-white.svg" alt="dappTerminal" className="h-6 md:h-8" />
             </div>
             <div className="flex items-center space-x-2 md:space-x-4">
               <ConnectButton.Custom>

@@ -38,7 +38,17 @@ export function validateApiKey(request: Request): boolean {
 export function isLocalhost(request: Request): boolean {
   const forwardedFor = request.headers.get('x-forwarded-for')
   const realIp = request.headers.get('x-real-ip')
-  const ip = forwardedFor?.split(',')[0].trim() || realIp || ''
+  let ip = forwardedFor?.split(',')[0].trim() || realIp || ''
+
+  // If no IP headers are present, assume localhost in development
+  if (!ip || ip === '') {
+    return process.env.NODE_ENV === 'development'
+  }
+
+  // Handle IPv6-mapped IPv4 addresses (e.g., ::ffff:192.168.1.72)
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.substring(7) // Remove ::ffff: prefix
+  }
 
   return (
     ip === '127.0.0.1' ||
@@ -46,7 +56,22 @@ export function isLocalhost(request: Request): boolean {
     ip === 'localhost' ||
     ip.startsWith('192.168.') ||
     ip.startsWith('10.') ||
-    ip.startsWith('172.')
+    ip.startsWith('172.16.') ||
+    ip.startsWith('172.17.') ||
+    ip.startsWith('172.18.') ||
+    ip.startsWith('172.19.') ||
+    ip.startsWith('172.20.') ||
+    ip.startsWith('172.21.') ||
+    ip.startsWith('172.22.') ||
+    ip.startsWith('172.23.') ||
+    ip.startsWith('172.24.') ||
+    ip.startsWith('172.25.') ||
+    ip.startsWith('172.26.') ||
+    ip.startsWith('172.27.') ||
+    ip.startsWith('172.28.') ||
+    ip.startsWith('172.29.') ||
+    ip.startsWith('172.30.') ||
+    ip.startsWith('172.31.')
   )
 }
 
@@ -59,24 +84,47 @@ export function authenticateRequest(request: Request): {
   authenticated: boolean
   reason?: string
 } {
-  // In development, allow localhost without API key
-  if (process.env.NODE_ENV === 'development' && isLocalhost(request)) {
+  // Debug logging
+  const isDev = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV
+  const isLocal = isLocalhost(request)
+  const apiKey = request.headers.get('x-api-key')
+  const forwardedFor = request.headers.get('x-forwarded-for')
+  const realIp = request.headers.get('x-real-ip')
+  const configuredApiKey = process.env.CLIENT_API_KEY
+
+  console.log('[Auth Debug]', {
+    NODE_ENV: process.env.NODE_ENV,
+    isDevelopment: isDev,
+    isLocalhost: isLocal,
+    hasApiKey: !!apiKey,
+    apiKeyValue: apiKey,
+    expectedApiKey: configuredApiKey,
+    forwardedFor,
+    realIp,
+  })
+
+  // In development, allow localhost without API key OR if no CLIENT_API_KEY is configured
+  if (isDev && (isLocal || !configuredApiKey)) {
+    console.log('[Auth] Allowing request in development mode')
     return { authenticated: true }
   }
 
   // Check API key
   if (validateApiKey(request)) {
+    console.log('[Auth] Valid API key provided')
     return { authenticated: true }
   }
 
   // Check if no API key was provided
-  if (!request.headers.get('x-api-key')) {
+  if (!apiKey) {
+    console.log('[Auth] Missing API key')
     return {
       authenticated: false,
       reason: 'Missing x-api-key header',
     }
   }
 
+  console.log('[Auth] Invalid API key')
   return {
     authenticated: false,
     reason: 'Invalid API key',

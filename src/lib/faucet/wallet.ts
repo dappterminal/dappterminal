@@ -5,7 +5,7 @@
  * Uses viem for transaction creation and signing.
  */
 
-import { createWalletClient, http, type Address, type Hash, formatEther } from 'viem'
+import { createWalletClient, createPublicClient, http, type Address, type Hash, formatEther } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { sepolia, holesky, optimismSepolia } from 'viem/chains'
 import { getFaucetWalletPrivateKey, getFaucetNetworkConfig, type FaucetNetworkConfig } from './config'
@@ -53,6 +53,22 @@ export function getFaucetWalletClient(networkConfig: FaucetNetworkConfig) {
 }
 
 /**
+ * Get public client for reading blockchain data
+ */
+export function getFaucetPublicClient(networkConfig: FaucetNetworkConfig) {
+  const chain = CHAIN_MAP[networkConfig.chainId as keyof typeof CHAIN_MAP]
+
+  if (!chain) {
+    throw new Error(`Unsupported chain ID: ${networkConfig.chainId}`)
+  }
+
+  return createPublicClient({
+    chain,
+    transport: http(networkConfig.rpcUrl),
+  })
+}
+
+/**
  * Get the faucet wallet address
  */
 export function getFaucetWalletAddress(): Address {
@@ -72,8 +88,9 @@ export async function checkFaucetBalance(
     throw new Error(`Unknown network: ${network}`)
   }
 
-  const client = getFaucetWalletClient(networkConfig)
-  const balance = await client.getBalance({ address: client.account.address })
+  const publicClient = getFaucetPublicClient(networkConfig)
+  const account = getFaucetAccount()
+  const balance = await publicClient.getBalance({ address: account.address })
   const balanceFormatted = formatEther(balance)
 
   // Check if balance is below minimum threshold
@@ -168,17 +185,18 @@ export async function estimateFaucetGas(
     throw new Error(`Unknown network: ${network}`)
   }
 
-  const client = getFaucetWalletClient(networkConfig)
+  const publicClient = getFaucetPublicClient(networkConfig)
+  const account = getFaucetAccount()
 
   try {
-    const gasEstimate = await client.estimateGas({
+    const gasEstimate = await publicClient.estimateGas({
       to: recipientAddress,
       value: amount,
-      account: client.account,
+      account: account.address,
     })
 
     // Get current gas price
-    const gasPrice = await client.getGasPrice()
+    const gasPrice = await publicClient.getGasPrice()
     const gasCost = gasEstimate * gasPrice
 
     return {

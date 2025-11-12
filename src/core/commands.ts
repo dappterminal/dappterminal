@@ -7,6 +7,7 @@
 import type { Command, CommandResult, ExecutionContext } from './types'
 import { registry } from './command-registry'
 import { requestCommand, statusCommand, historyCommand as faucetHistoryCommand } from '@/plugins/faucet'
+import { cpriceCommand, coinsearchCommand, cchartCommand } from '@/plugins/coinpaprika'
 
 /**
  * Help command - displays available commands
@@ -470,6 +471,8 @@ export const transferCommand: Command = {
  * Usage:
  *   chart wbtc - Add WBTC price chart
  *   chart eth --line - Add ETH price chart (line mode)
+ *   chart btc --protocol coinpaprika - Add BTC chart from CoinPaprika
+ *   chart pepe --protocol 1inch - Add PEPE chart from 1inch
  *   chart performance - Add performance metrics chart
  *   chart network - Add network graph chart
  *   chart portfolio [address] [chainIds] - Add portfolio pie chart
@@ -491,7 +494,7 @@ export const chartCommand: Command = {
       if (argTokens.length === 0) {
         return {
           success: false,
-          error: new Error('Usage: chart <symbol|type> [options]\nExamples:\n  chart wbtc\n  chart eth --line\n  chart pepe --protocol 1inch\n  chart performance\n  chart network\n  chart portfolio [address] [chainIds]\n  chart portfolio 0x742d35Cc...\n  chart portfolio vitalik.eth\n  chart balances 1,8453,42161'),
+          error: new Error('Usage: chart <symbol|type> [options]\nExamples:\n  chart wbtc\n  chart eth --line\n  chart pepe --protocol 1inch\n  chart btc --protocol coinpaprika\n  chart performance\n  chart network\n  chart portfolio [address] [chainIds]\n  chart portfolio 0x742d35Cc...\n  chart portfolio vitalik.eth\n  chart balances 1,8453,42161'),
         }
       }
 
@@ -599,8 +602,25 @@ export const chartCommand: Command = {
         }
       }
 
-      // Validate chart type or search for token if 1inch protocol is specified
+      // Validate chart type or search for token if protocol is specified
       const validCharts = ['wbtc', 'eth', 'performance', 'network', 'network-graph', 'portfolio', 'balances']
+
+      // If token is not in valid charts and --protocol coinpaprika is specified, route to cchart
+      if (!validCharts.includes(chartType) && explicitProtocol === 'coinpaprika') {
+        const allCommands = registry.getAllCommands()
+        const cchartCmd = allCommands.find((cmd: Command) => cmd.id === 'cchart')
+
+        if (cchartCmd) {
+          // Build args for cchart command
+          const cchartArgs = isLineMode ? `${chartType} --line` : chartType
+          return await cchartCmd.run(cchartArgs, context)
+        } else {
+          return {
+            success: false,
+            error: new Error('CoinPaprika plugin not loaded. Please ensure coinpaprika plugin is enabled.'),
+          }
+        }
+      }
 
       // If token is not in valid charts and --protocol 1inch is specified, search for it
       if (!validCharts.includes(chartType) && explicitProtocol === '1inch') {
@@ -643,7 +663,7 @@ export const chartCommand: Command = {
       if (!validCharts.includes(chartType)) {
         return {
           success: false,
-          error: new Error(`Invalid chart type: ${chartType}\nValid types: ${validCharts.join(', ')}\nOr use --protocol 1inch to search for any token`),
+          error: new Error(`Invalid chart type: ${chartType}\nValid types: ${validCharts.join(', ')}\nOr use --protocol <1inch|coinpaprika> to search for any token`),
         }
       }
 
@@ -814,35 +834,84 @@ export const bridgeAliasCommand: Command = {
 
 /**
  * Price command - Global alias for token prices
- * Routes to 1inch by default
+ * Routes to the active protocol when possible, otherwise falls back to available price sources
  */
 export const priceAliasCommand: Command = {
   id: 'price',
   scope: 'G_alias',
-  description: 'Get token price (defaults to 1inch)',
+  description: 'Get token price (use --protocol <1inch|coinpaprika> to specify)',
   aliases: ['p'],
 
   async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
     try {
       const rawArgs = typeof args === 'string' ? args : ''
+      const argTokens = rawArgs.split(/\s+/).filter(Boolean)
+      let explicitProtocolFromArgs: string | undefined
+      const filteredTokens: string[] = []
 
-      // Try 1inch protocol first
-      const fiber = registry.σ('1inch')
-      if (!fiber) {
-        return {
-          success: false,
-          error: new Error('1inch protocol not loaded'),
+      // Parse --protocol flag
+      for (let i = 0; i < argTokens.length; i++) {
+        const token = argTokens[i]
+        if (token === '--protocol' && i + 1 < argTokens.length) {
+          explicitProtocolFromArgs = argTokens[i + 1]
+          i++ // Skip the protocol value
+          continue
         }
+        filteredTokens.push(token)
       }
 
-      const priceCommand = fiber.commands.get('price')
-      if (priceCommand) {
-        return await priceCommand.run(rawArgs, context)
+      const sanitizedArgs = filteredTokens.join(' ')
+
+      // Build priority list of protocols to try
+      const candidateProtocols: string[] = []
+      const seen = new Set<string>()
+      const addProtocol = (protocol?: string) => {
+        if (!protocol) return
+        const normalized = protocol.trim().toLowerCase()
+        if (!normalized || seen.has(normalized)) return
+        candidateProtocols.push(normalized)
+        seen.add(normalized)
+      }
+
+      // Priority order:
+      // 1. Explicit --protocol flag
+      // 2. Active protocol
+      // 3. User preference
+      // 4. Default: 1inch
+      // 5. Fallback: coinpaprika
+      addProtocol(explicitProtocolFromArgs)
+      addProtocol(context.activeProtocol)
+      addProtocol(context.protocolPreferences?.price)
+      addProtocol('1inch')
+      addProtocol('coinpaprika')
+
+      // Try each protocol in order
+      for (const protocol of candidateProtocols) {
+        // For coinpaprika, use the cprice command directly
+        if (protocol === 'coinpaprika') {
+          const allCommands = registry.getAllCommands()
+          const cpriceCmd = allCommands.find(cmd => cmd.id === 'cprice')
+          if (cpriceCmd) {
+            return await cpriceCmd.run(sanitizedArgs, context)
+          }
+          continue
+        }
+
+        // For other protocols, look for price command in their fiber
+        const fiber = registry.σ(protocol)
+        if (!fiber) {
+          continue
+        }
+
+        const priceCommand = fiber.commands.get('price')
+        if (priceCommand) {
+          return await priceCommand.run(sanitizedArgs, context)
+        }
       }
 
       return {
         success: false,
-        error: new Error('Price command not available'),
+        error: new Error('No price-capable protocol is currently loaded'),
       }
     } catch (error) {
       return {
@@ -873,6 +942,10 @@ export const coreCommands = [
   requestCommand,
   statusCommand,
   faucetHistoryCommand,
+  // CoinPaprika commands
+  cpriceCommand,
+  coinsearchCommand,
+  cchartCommand,
 ]
 
 /**
