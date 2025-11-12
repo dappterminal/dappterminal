@@ -48,11 +48,11 @@ export const oneInchPlugin: Plugin = {
     )
 
     // Add commands to the fiber
-    addCommandToFiber(fiber, priceCommand)
-    addCommandToFiber(fiber, gasCommand)
-    addCommandToFiber(fiber, swapCommand)
-    addCommandToFiber(fiber, limitorderCommand)
-    addCommandToFiber(fiber, ethrpcCommand)
+    addCommandToFiber(fiber, priceCommand as any)
+    addCommandToFiber(fiber, gasCommand as any)
+    addCommandToFiber(fiber, swapCommand as any)
+    addCommandToFiber(fiber, limitorderCommand as any)
+    addCommandToFiber(fiber, ethrpcCommand as any)
 
     return fiber
   },

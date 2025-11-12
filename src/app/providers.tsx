@@ -4,6 +4,7 @@
  * Client-side providers for wagmi and RainbowKit
  */
 
+import { useState, useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { WagmiProvider } from 'wagmi'
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
@@ -37,13 +38,63 @@ customTheme.colors.connectButtonText = 'white'
 customTheme.colors.connectButtonTextError = '#EF4444'
 
 export function Providers({ children }: { children: React.ReactNode }) {
+  const [isLoading, setIsLoading] = useState(true)
+  const [isClient, setIsClient] = useState(false)
+
+  // Check if we should show loading screen (production or explicitly enabled)
+  const shouldShowLoading =
+    process.env.NODE_ENV === 'production' ||
+    process.env.NEXT_PUBLIC_SHOW_LOADING_SCREEN === 'true'
+
+  useEffect(() => {
+    // Mark as client-side rendered
+    setIsClient(true)
+
+    // Only show loading screen if enabled
+    if (shouldShowLoading) {
+      // Simulate loading time for smooth transition
+      const timer = setTimeout(() => {
+        setIsLoading(false)
+      }, 800) // 800ms loading duration
+
+      return () => clearTimeout(timer)
+    } else {
+      // In development, skip loading screen
+      setIsLoading(false)
+    }
+  }, [shouldShowLoading])
+
+  // Pass loading state to children through context
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={customTheme}>
-          {children}
+          {typeof window !== 'undefined' && children}
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   )
+}
+
+// Export loading state for use in page.tsx
+export function useAppLoading() {
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const shouldShowLoading =
+      process.env.NODE_ENV === 'production' ||
+      process.env.NEXT_PUBLIC_SHOW_LOADING_SCREEN === 'true'
+
+    if (shouldShowLoading) {
+      const timer = setTimeout(() => {
+        setIsLoading(false)
+      }, 800)
+
+      return () => clearTimeout(timer)
+    } else {
+      setIsLoading(false)
+    }
+  }, [])
+
+  return isLoading
 }

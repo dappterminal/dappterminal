@@ -172,7 +172,7 @@ export async function signPermit2Batch(
     domain,
     types: PERMIT_BATCH_TYPES,
     primaryType: 'PermitBatch',
-    message: batchData,
+    message: batchData as any,
   })
 
   return signature

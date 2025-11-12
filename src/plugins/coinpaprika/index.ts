@@ -42,9 +42,9 @@ export const coinpaprikaPlugin: Plugin = {
     )
 
     // Add commands to fiber
-    addCommandToFiber(fiber, cpriceCommand)
-    addCommandToFiber(fiber, coinsearchCommand)
-    addCommandToFiber(fiber, cchartCommand)
+    addCommandToFiber(fiber, cpriceCommand as any)
+    addCommandToFiber(fiber, coinsearchCommand as any)
+    addCommandToFiber(fiber, cchartCommand as any)
 
     // Preload coin registry (lazy load on first use)
     // This will happen automatically when first command is executed

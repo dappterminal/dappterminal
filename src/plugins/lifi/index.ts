@@ -52,14 +52,14 @@ export const lifiPlugin: Plugin = {
     )
 
     // Register commands
-    addCommandToFiber(fiber, healthCommand)
-    addCommandToFiber(fiber, quoteCommand)
-    addCommandToFiber(fiber, routesCommand)
-    addCommandToFiber(fiber, bridgeCommand)
-    addCommandToFiber(fiber, executeCommand)
-    addCommandToFiber(fiber, prepareStepCommand)
-    addCommandToFiber(fiber, chainsCommand)
-    addCommandToFiber(fiber, statusCommand)
+    addCommandToFiber(fiber, healthCommand as any)
+    addCommandToFiber(fiber, quoteCommand as any)
+    addCommandToFiber(fiber, routesCommand as any)
+    addCommandToFiber(fiber, bridgeCommand as any)
+    addCommandToFiber(fiber, executeCommand as any)
+    addCommandToFiber(fiber, prepareStepCommand as any)
+    addCommandToFiber(fiber, chainsCommand as any)
+    addCommandToFiber(fiber, statusCommand as any)
 
     // Initialize protocol state
     if (!context.protocolState) {

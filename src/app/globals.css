@@ -134,4 +134,19 @@
     font-feature-settings: "liga" 0;
     font-variant-ligatures: none;
   }
+
+  /* Loading screen animations */
+  @keyframes fadeOut {
+    0% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  .animate-fadeOut {
+    animation: fadeOut 0.5s ease-out forwards;
+    animation-delay: 0.3s;
+  }
+
+  .animate-blink {
+    animation: terminal-blink 1s infinite;
+  }
 }

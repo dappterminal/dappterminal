@@ -962,11 +962,11 @@ export const aliasCommands = [
  */
 export function registerCoreCommands(): void {
   for (const command of coreCommands) {
-    registry.registerCoreCommand(command)
+    registry.registerCoreCommand(command as Command<unknown, unknown>)
   }
 
   // Register alias commands
   for (const command of aliasCommands) {
-    registry.registerAliasedCommand(command)
+    registry.registerAliasedCommand(command as Command<unknown, unknown>)
   }
 }

@@ -39,9 +39,9 @@ export const faucetPlugin: Plugin = {
     )
 
     // Add commands to the fiber
-    addCommandToFiber(fiber, requestCommand)
-    addCommandToFiber(fiber, statusCommand)
-    addCommandToFiber(fiber, historyCommand)
+    addCommandToFiber(fiber, requestCommand as any)
+    addCommandToFiber(fiber, statusCommand as any)
+    addCommandToFiber(fiber, historyCommand as any)
 
     return fiber
   },

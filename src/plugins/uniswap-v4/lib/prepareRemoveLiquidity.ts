@@ -108,8 +108,8 @@ export async function prepareRemoveLiquidity(
     deadline: deadline.toString(),
     burnToken: burnToken || liquidityPercentage === 100,
     collectOptions: {
-      expectedCurrencyOwed0: minAmount0 || 0n,
-      expectedCurrencyOwed1: minAmount1 || 0n,
+      expectedCurrencyOwed0: minAmount0 || BigInt(0),
+      expectedCurrencyOwed1: minAmount1 || BigInt(0),
       recipient,
     },
   }
@@ -186,6 +186,6 @@ export async function estimateRemoveLiquidityGas(
     return gas
   } catch (error) {
     // Return a reasonable default if estimation fails
-    return 400_000n
+    return BigInt(400000)
   }
 }

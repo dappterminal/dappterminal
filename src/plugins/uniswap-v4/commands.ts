@@ -825,7 +825,7 @@ export const discoverCommand: Command = {
       const { config } = await import('@/lib/wagmi-config')
       const { getTokensByChainId } = await import('./lib/tokens')
 
-      const client = getPublicClient(config, { chainId })
+      const client = getPublicClient(config, { chainId: chainId as any })
       if (!client) {
         return {
           success: false,

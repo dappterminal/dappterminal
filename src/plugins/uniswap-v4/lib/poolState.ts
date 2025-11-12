@@ -96,7 +96,7 @@ export async function fetchPoolState(
     })
 
     // Validate pool state
-    if (poolState.sqrtPriceX96 === 0n) {
+    if (poolState.sqrtPriceX96 === BigInt(0)) {
       throw new Error(
         'Pool does not exist or is not initialized (sqrtPriceX96 = 0). ' +
           'Try a different fee tier: --fee 500 (0.05%), --fee 3000 (0.3%), --fee 10000 (1%)'

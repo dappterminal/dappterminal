@@ -150,6 +150,6 @@ export async function estimateAddLiquidityGas(
     return gas
   } catch (error) {
     // Return a reasonable default if estimation fails
-    return 500_000n
+    return BigInt(500000)
   }
 }

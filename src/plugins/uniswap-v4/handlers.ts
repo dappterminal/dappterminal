@@ -12,9 +12,9 @@ import { isNativeToken } from './lib/tokens'
 import { getUniversalRouterAddress, getPermit2Address, ERC20_ABI, PERMIT2_ABI, getPositionManagerAddress, POSITION_MANAGER_ABI } from './lib/contracts'
 import { readContract, writeContract, getPublicClient } from 'wagmi/actions'
 import { config } from '@/lib/wagmi-config'
-import { type Address } from 'viem'
+import { type Address, createPublicClient, http } from 'viem'
 import { getUserPositions, findPositionsForPool } from './lib/positionManager'
-import { createPoolKey } from './poolUtils'
+import { createPoolKey } from './lib/poolUtils'
 import { prepareAddLiquidity } from './lib/prepareAddLiquidity'
 import { prepareRemoveLiquidityByPool } from './lib/prepareRemoveLiquidity'
 import { trackSwapTransaction } from '@/lib/tracking/swaps'
@@ -285,18 +285,20 @@ export const swapHandler: CommandHandler<UniswapV4SwapRequestData | UniswapV4Mul
     })
 
     // Track swap transaction in database
-    trackSwapTransaction({
-      txHash,
-      chainId,
-      protocol: 'uniswap-v4',
-      command: 'swap',
-      txType: 'swap',
-      walletAddress: ctx.walletAddress,
-      tokenIn: singleHopData.tokenInSymbol,
-      tokenOut: singleHopData.tokenOutSymbol,
-      amountIn: amountIn.toString(),
-      amountOut: singleHopData.params.minAmountOut.toString(),
-    }).catch(err => console.error('Failed to track swap:', err))
+    if (ctx.walletAddress) {
+      trackSwapTransaction({
+        txHash,
+        chainId,
+        protocol: 'uniswap-v4',
+        command: 'swap',
+        txType: 'swap',
+        walletAddress: ctx.walletAddress,
+        tokenIn: singleHopData.tokenInSymbol,
+        tokenOut: singleHopData.tokenOutSymbol,
+        amountIn: amountIn.toString(),
+        amountOut: singleHopData.params.minAmountOut.toString(),
+      }).catch(err => console.error('Failed to track swap:', err))
+    }
 
     // Get block explorer URL
     const explorerUrls: Record<number, string> = {
@@ -605,19 +607,21 @@ export const multiHopSwapHandler: CommandHandler<UniswapV4MultiHopSwapRequestDat
     })
 
     // Track multi-hop swap transaction in database
-    trackSwapTransaction({
-      txHash,
-      chainId,
-      protocol: 'uniswap-v4',
-      command: 'multihop',
-      txType: 'swap',
-      walletAddress: ctx.walletAddress,
-      tokenIn: data.tokenInSymbol,
-      tokenOut: data.tokenOutSymbol,
-      amountIn: amountIn.toString(),
-      amountOut: data.params.minAmountOut.toString(),
-      route: data.route.map(t => ({ symbol: t.symbol, address: t.address })),
-    }).catch(err => console.error('Failed to track multi-hop swap:', err))
+    if (ctx.walletAddress) {
+      trackSwapTransaction({
+        txHash,
+        chainId,
+        protocol: 'uniswap-v4',
+        command: 'multihop',
+        txType: 'swap',
+        walletAddress: ctx.walletAddress,
+        tokenIn: data.tokenInSymbol,
+        tokenOut: data.tokenOutSymbol,
+        amountIn: amountIn.toString(),
+        amountOut: data.params.minAmountOut.toString(),
+        route: data.route.map(t => ({ symbol: t.symbol, address: t.address })),
+      }).catch(err => console.error('Failed to track multi-hop swap:', err))
+    }
 
     // Get block explorer URL
     const explorerUrls: Record<number, string> = {
@@ -763,10 +767,10 @@ export const addLiquidityHandler: CommandHandler<UniswapV4AddLiquidityRequestDat
     ])
 
     // Get public client for pool state fetching
-    const publicClient = getPublicClient(config, { chainId })
+    const publicClient = getPublicClient(config, { chainId: chainId as any })
 
     // Prepare add liquidity transaction
-    const tx = await prepareAddLiquidity(data.params, publicClient!)
+    const tx = await prepareAddLiquidity(data.params, publicClient as any)
 
     ctx.updateStyledHistory([
       [
@@ -900,7 +904,7 @@ export const removeLiquidityHandler: CommandHandler<UniswapV4RemoveLiquidityRequ
     ],
     [
       { text: `  Percentage: `, color: '#9ca3af' },
-      { text: `${data.percentage}%`, color: '#d1d5db' },
+      { text: `${data.liquidityPercentage}%`, color: '#d1d5db' },
     ],
     [{ text: '', color: '#d1d5db' }],
     [
@@ -909,7 +913,8 @@ export const removeLiquidityHandler: CommandHandler<UniswapV4RemoveLiquidityRequ
   ])
 
   try {
-    const { token0, token1, fee, percentage, burnToken, chainId } = data
+    const { position, liquidityPercentage, burnToken, chainId } = data.params
+    const { token0, token1, fee } = position
 
     // Create a public client to query positions
     const publicClient = createPublicClient({
@@ -1031,7 +1036,7 @@ export const discoverHandler: CommandHandler<UniswapV4DiscoverRequestData> = asy
   ctx.updateStyledHistory([[{ text: 'Discovering V4 Pools...', color: '#FF69B4' }]])
 
   try {
-    const publicClient = getPublicClient(config, { chainId: data.chainId })
+    const publicClient = getPublicClient(config, { chainId: data.chainId as any })
     if (!publicClient) {
       throw new Error('Failed to get public client')
     }
@@ -1046,7 +1051,7 @@ export const discoverHandler: CommandHandler<UniswapV4DiscoverRequestData> = asy
         data.token0,
         data.token1,
         data.chainId,
-        publicClient
+        publicClient as any
       )
 
       if (result) {
@@ -1085,7 +1090,7 @@ export const discoverHandler: CommandHandler<UniswapV4DiscoverRequestData> = asy
         [{ text: '', color: '#d1d5db' }],
       ])
 
-      const results = await discoverPoolsForPairs(data.pairs, data.chainId, publicClient)
+      const results = await discoverPoolsForPairs(data.pairs, data.chainId, publicClient as any)
 
       if (results.length === 0) {
         ctx.updateStyledHistory([

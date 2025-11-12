@@ -30,7 +30,7 @@ export async function getUserPositionTokenIds(
     args: [userAddress],
   })) as bigint
 
-  if (balance === 0n) {
+  if (balance === BigInt(0)) {
     return []
   }
 
@@ -218,7 +218,7 @@ export function findPositionsForPool(
  * Check if a position has liquidity
  */
 export function hasLiquidity(position: LiquidityPosition): boolean {
-  return position.liquidity > 0n
+  return position.liquidity > BigInt(0)
 }
 
 /**
@@ -232,7 +232,7 @@ export function calculateLiquidityToRemove(
     throw new Error('Percentage must be between 0 and 100')
   }
 
-  return (totalLiquidity * BigInt(Math.floor(percentage * 100))) / 10000n
+  return (totalLiquidity * BigInt(Math.floor(percentage * 100))) / BigInt(10000)
 }
 
 /**
@@ -261,7 +261,7 @@ export function tickToPriceSDK(
   token1: SDKToken,
   tick: number
 ): Price<SDKToken, SDKToken> {
-  return sdkTickToPrice(token0, token1, tick)
+  return sdkTickToPrice(token0, token1, tick) as Price<SDKToken, SDKToken>
 }
 
 /**
@@ -288,12 +288,12 @@ export function calculateTicksFromPriceRange(
   // Calculate ticks from prices
   const tickLower =
     minPrice !== undefined
-      ? getNearestUsableTick(priceToTickSDK(token0, token1, minPrice), tickSpacing)
+      ? getNearestUsableTick(priceToTickSDK(token0 as SDKToken, token1 as SDKToken, minPrice), tickSpacing)
       : MIN_TICK
 
   const tickUpper =
     maxPrice !== undefined
-      ? getNearestUsableTick(priceToTickSDK(token0, token1, maxPrice), tickSpacing)
+      ? getNearestUsableTick(priceToTickSDK(token0 as SDKToken, token1 as SDKToken, maxPrice), tickSpacing)
       : MAX_TICK
 
   // Validate range
