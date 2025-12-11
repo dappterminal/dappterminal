@@ -3,8 +3,47 @@
  */
 
 import type { Command, ExecutionContext, CommandResult } from '@/core'
-import { coinRegistry } from './data/coin-registry'
-import type { TickerResponse } from './types'
+import type { CoinEntry, TickerResponse } from './types'
+
+interface ResolveResponse {
+  coinId: string
+}
+
+interface SearchResponse {
+  results: CoinEntry[]
+}
+
+async function resolveCoinId(symbol: string): Promise<string | null> {
+  const response = await fetch(
+    `/api/coinpaprika/registry/resolve?symbol=${encodeURIComponent(symbol)}`
+  )
+
+  if (response.status === 404) {
+    return null
+  }
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.error || `HTTP ${response.status}`)
+  }
+
+  const data: ResolveResponse = await response.json()
+  return data.coinId
+}
+
+async function searchRegistry(query: string, limit: number): Promise<CoinEntry[]> {
+  const response = await fetch(
+    `/api/coinpaprika/registry/search?query=${encodeURIComponent(query)}&limit=${limit}`
+  )
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.error || `HTTP ${response.status}`)
+  }
+
+  const data: SearchResponse = await response.json()
+  return data.results
+}
 
 /**
  * Command: cprice
@@ -33,8 +72,8 @@ export const cpriceCommand: Command = {
         }
       }
 
-      // Step 1: Resolve symbol to CoinPaprika ID
-      const coinId = await coinRegistry.resolveSymbol(symbol)
+      // Step 1: Resolve symbol to CoinPaprika ID via API (keeps 9MB JSON server-side)
+      const coinId = await resolveCoinId(symbol)
 
       if (!coinId) {
         return {
@@ -151,8 +190,8 @@ export const coinsearchCommand: Command = {
         }
       }
 
-      // Perform fuzzy search (limit to top 15 results)
-      const results = await coinRegistry.fuzzySearch(query, 15)
+      // Perform fuzzy search through server API (limit to top 15 results)
+      const results = await searchRegistry(query, 15)
 
       if (results.length === 0) {
         return {
@@ -227,8 +266,8 @@ export const cchartCommand: Command = {
       // Check for line mode flag
       const isLineMode = argTokens.includes('--line')
 
-      // Step 1: Resolve symbol to CoinPaprika ID
-      const coinId = await coinRegistry.resolveSymbol(symbol)
+      // Step 1: Resolve symbol to CoinPaprika ID via API
+      const coinId = await resolveCoinId(symbol)
 
       if (!coinId) {
         return {

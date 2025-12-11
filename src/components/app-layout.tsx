@@ -30,26 +30,7 @@ export function AppLayout() {
   const [cliWidth, setCliWidth] = useState(55) // percentage - CLI at 55%, charts at 45%
   const [isDragging, setIsDragging] = useState(false)
   const [resizeKey, setResizeKey] = useState(0)
-  const [charts, setCharts] = useState<Chart[]>([
-    {
-      id: 'eth-default',
-      type: 'price',
-      symbol: 'ETH/USDC',
-      displayLabel: 'ETH/USDC',
-      timeRange: '24h',
-      dataSource: '1inch',
-      chartMode: 'candlestick',
-    },
-    {
-      id: 'wbtc-default',
-      type: 'price',
-      symbol: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/USDC',
-      displayLabel: 'WBTC/USDC',
-      timeRange: '24h',
-      dataSource: '1inch',
-      chartMode: 'candlestick',
-    }
-  ])
+  const [charts, setCharts] = useState<Chart[]>([])
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [currentView, setCurrentView] = useState<'terminal' | 'settings'>('terminal')
@@ -224,25 +205,7 @@ export function AppLayout() {
               </div>
             </div>
 
-            {/* Automation Icon with Tooltip */}
-            <div className="relative group">
-              <a href="#" className="text-[#737373] opacity-50 pointer-events-none block p-2 rounded-lg transition-colors">
-                <Zap className="w-6 h-6" />
-              </a>
-              <div className="absolute left-full ml-2 px-3 py-1.5 bg-[#1a1a1a] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 border border-[#262626]">
-                Automation (Coming Soon)
-              </div>
-            </div>
 
-            {/* Analytics Icon with Tooltip */}
-            <div className="relative group">
-              <a href="#" className="text-[#737373] opacity-50 pointer-events-none block p-2 rounded-lg transition-colors">
-                <BarChart3 className="w-6 h-6" />
-              </a>
-              <div className="absolute left-full ml-2 px-3 py-1.5 bg-[#1a1a1a] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 border border-[#262626]">
-                Analytics (Coming Soon)
-              </div>
-            </div>
           </nav>
 
           {/* Bottom Icons */}

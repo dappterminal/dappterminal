@@ -7,7 +7,7 @@
 import type { Command, CommandResult, ExecutionContext } from './types'
 import { registry } from './command-registry'
 import { requestCommand, statusCommand, historyCommand as faucetHistoryCommand } from '@/plugins/faucet'
-import { cpriceCommand, coinsearchCommand, cchartCommand } from '@/plugins/coinpaprika'
+import { cpriceCommand, coinsearchCommand, cchartCommand } from '@/plugins/coinpaprika/commands'
 
 /**
  * Help command - displays available commands
