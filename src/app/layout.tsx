@@ -31,11 +31,10 @@ export default function RootLayout({
         className={`${inter.variable} ${firaCode.variable} antialiased font-sans`}
         suppressHydrationWarning
       >
-        <Analytics>
         <Providers>
           {children}
         </Providers>
-        </Analytics>
+        <Analytics />
       </body>
     </html>
   );

@@ -30,26 +30,7 @@ export function AppLayout() {
   const [cliWidth, setCliWidth] = useState(55) // percentage - CLI at 55%, charts at 45%
   const [isDragging, setIsDragging] = useState(false)
   const [resizeKey, setResizeKey] = useState(0)
-  const [charts, setCharts] = useState<Chart[]>([
-    {
-      id: 'eth-default',
-      type: 'price',
-      symbol: 'ETH/USDC',
-      displayLabel: 'ETH/USDC',
-      timeRange: '24h',
-      dataSource: '1inch',
-      chartMode: 'candlestick',
-    },
-    {
-      id: 'wbtc-default',
-      type: 'price',
-      symbol: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/USDC',
-      displayLabel: 'WBTC/USDC',
-      timeRange: '24h',
-      dataSource: '1inch',
-      chartMode: 'candlestick',
-    }
-  ])
+  const [charts, setCharts] = useState<Chart[]>([])
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [currentView, setCurrentView] = useState<'terminal' | 'settings'>('terminal')
