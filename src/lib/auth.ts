@@ -92,16 +92,6 @@ export function authenticateRequest(request: Request): {
   const realIp = request.headers.get('x-real-ip')
   const configuredApiKey = process.env.CLIENT_API_KEY
 
-  console.log('[Auth Debug]', {
-    NODE_ENV: process.env.NODE_ENV,
-    isDevelopment: isDev,
-    isLocalhost: isLocal,
-    hasApiKey: !!apiKey,
-    apiKeyValue: apiKey,
-    expectedApiKey: configuredApiKey,
-    forwardedFor,
-    realIp,
-  })
 
   // In development, allow localhost without API key OR if no CLIENT_API_KEY is configured
   if (isDev && (isLocal || !configuredApiKey)) {

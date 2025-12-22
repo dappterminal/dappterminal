@@ -1,173 +1,68 @@
-# Security & Production Audit Fixes
+ Security Findings
 
-This document details the security and production improvements implemented based on the production audit report.
+  - src/lib/auth.ts:95-104 logs both the supplied x-api-key header
+    and the configured CLIENT_API_KEY on every authenticated
+    request, so a single compromised log stream leaks the secret API
+    key and the caller’s key/value pair; strip the key values from
+    logs or wrap them in a debug flag and redact before emitting.
+  - All analytics endpoints (src/app/api/analytics/user-history/
+    route.ts:24-83, src/app/api/analytics/protocol-volume/
+    route.ts:17-94, src/app/api/analytics/global-stats/route.ts:17-
+    35) skip authenticateRequest, meaning anyone can scrape every
+    user’s wallet history and protocol stats; protect them with the
+    same API-key gate/rate limiting you use elsewhere or move the
+    aggregation behind server-side-only RPCs.
+  - Most 1inch proxy routes (src/app/api/1inch/orderbook/limit/
+    create/route.ts:1-130, src/app/api/1inch/orderbook/limit/submit/
+    route.ts:1-62, src/app/api/1inch/charts/candle/route.ts:1-67,
+    src/app/api/1inch/charts/line/route.ts:1-66, src/app/api/1inch/
+    swap/classic/quote/route.ts:1-35, src/app/api/1inch/tokens/
+    search/route.ts:1-67) are unauthenticated GET/POST endpoints
+    that forward requests with your ONEINCH_API_KEY, so any
+    anonymous user can burn your quota or spam the limit-order API
+    under your key; enforce API key checks and per-IP throttling, or
+    proxy through an authenticated backend job instead of exposing
+    the raw proxy.
+  - The faucet endpoint trusts x-forwarded-for/x-real-ip headers
+    directly (src/app/api/faucet/request/route.ts:61-70), so a
+    caller can spoof any IP to bypass the rate limiter; rely on
+    request.ip or a trusted proxy header provided by your hosting
+    platform and reject user-controlled headers.
+  - The generic rate limiter is process-local (src/lib/rate-
+    limit.ts:15-107), so it resets whenever a serverless worker
+    spins up and doesn’t coordinate across instances; in production
+    you effectively have no rate limit and multiple dangling
+    setIntervals. Move limits to a shared store (Redis/Upstash) or
+    use your database as the source of truth.
 
-## Critical Issues - FIXED ✅
+  Performance / Reliability
 
-### 1. API Route Authentication & Rate Limiting
+  - Token balance formatting and Wormhole quotes cast bigint amounts
+    to Number (src/hooks/useTokenBalances.ts:96-107, src/plugins/
+    wormhole/handlers.ts:191-208), which overflows past 2^53 and
+    silently misreports balances/fees for large positions; replace
+    the conversions with formatUnits/viem helpers that operate on
+    bigints to keep precision.
+  - The CLI component ships dozens of unconditional console.log
+    calls (src/components/cli.tsx:421-446, src/components/
+    cli.tsx:713-1320) that leak user actions (protocol selection,
+    tab names, wallet state) and slow the terminal on every
+    keystroke; remove or guard them behind a development flag and
+    rely on structured logging if you need analytics.
+  - PriceChart caches every request in an ever-growing Map and logs
+    full responses (src/components/charts/price-chart.tsx:105-158);
+    switching tokens/time ranges for a while leaks memory in the
+    browser and floods devtools. Add an LRU/size cap and remove the
+    noisy logging once the API is stable.
+  - package.json:6-13 forces next build --turbopack, which is still
+    experimental for production bundles; the build can silently
+    skip optimizations/features that the stable Rust compiler path
+    supports. Unless you need a specific Turbopack feature, stick
+    with next build for releases and keep Turbopack for dev (next
+    dev --turbopack is fine).
 
-**Problem**: API routes (`eth_rpc`, `lifi/routes`, `gas`) forwarded API-keyed traffic without authentication or throttling, allowing any browser to drain quotas or incur costs.
-
-**Solution**:
-- Created `src/lib/auth.ts` - API key-based authentication system
-- Created `src/lib/rate-limit.ts` - In-memory rate limiting with configurable presets
-- Applied authentication and rate limiting to all sensitive API routes:
-  - `src/app/api/1inch/eth_rpc/route.ts`
-  - `src/app/api/lifi/routes/route.ts`
-  - `src/app/api/1inch/gas/route.ts`
-
-**Configuration**:
-- Set `CLIENT_API_KEY` environment variable for production
-- Development mode allows localhost without API key
-- Rate limits: STRICT (10/min), MODERATE (30/min), RELAXED (100/min)
-
-### 2. RPC Method Allowlist
-
-**Problem**: `eth_rpc` route allowed arbitrary RPC methods including dangerous ones like `sendRawTransaction`.
-
-**Solution**:
-- Implemented explicit allowlist of read-only RPC methods
-- Blocked transaction-sending methods (`eth_sendRawTransaction`, `eth_sendTransaction`)
-- Returns 403 with clear error for disallowed methods
-
-**Allowed Methods**:
-```typescript
-'eth_blockNumber', 'eth_getBalance', 'eth_getCode', 'eth_getStorageAt',
-'eth_call', 'eth_getBlockByNumber', 'eth_getBlockByHash',
-'eth_getTransactionByHash', 'eth_getTransactionReceipt',
-'eth_getTransactionCount', 'eth_getLogs', 'eth_estimateGas',
-'eth_gasPrice', 'eth_chainId'
-```
-
-## Medium Priority Issues - FIXED ✅
-
-### 1. State Management - Stale Closures
-
-**Problem**: Multiple `setTabs(tabs => ...)` mutations used stale closures, dropping concurrent updates.
-
-**Solution**:
-- Replaced all stale closure patterns with `setTabs(prevTabs => prevTabs.map(...))`
-- Fixed in:
-  - Transfer transaction handling (line ~709)
-  - Balance fetching (line ~788)
-  - Handler dispatch (line ~866)
-  - Clear command (line ~966)
-
-### 2. Plugin Loading State
-
-**Problem**: Commands issued before plugins loaded resolved as "not found".
-
-**Solution**:
-- Added `pluginsLoading` and `loadedPlugins` state tracking
-- Show loading indicator in welcome message
-- Prevent command execution while plugins load
-- Update welcome message with loaded protocol names once ready
-
-### 3. Production Logging Cleanup
-
-**Problem**: Verbose logging in production leaked wallet/token context.
-
-**Solution**:
-- Wrapped all console.log/error calls with `process.env.NODE_ENV === 'development'` checks
-- Applied to:
-  - `src/app/api/1inch/eth_rpc/route.ts`
-  - `src/app/api/1inch/charts/candle/route.ts`
-  - `src/app/api/lifi/routes/route.ts`
-  - `src/app/api/1inch/gas/route.ts`
-
-### 4. Centralized Chain Configuration
-
-**Problem**: Token helpers hard-coded chain maps; unsupported chains threw generic errors.
-
-**Solution**:
-- Created `src/lib/chains.ts` - Single source of truth for chain data
-- Includes 7 major chains: Ethereum, Optimism, BSC, Polygon, Base, Arbitrum, Avalanche
-- Protocol-specific chain support mappings
-- Helper functions for chain validation and error messages
-
-**Usage**:
-```typescript
-import { getChainConfig, isChainSupported, getUnsupportedChainError } from '@/lib/chains'
-
-if (!isChainSupported(chainId)) {
-  return { error: getUnsupportedChainError(chainId) }
-}
-```
-
-### 5. Swap Command Status Clarity
-
-**Problem**: Swap flow was a stub but not clearly flagged.
-
-**Solution**:
-- Enhanced swap output to clearly indicate "COMING SOON" status
-- Added detailed explanation that quote fetching works but execution is pending
-- Prevents user confusion about feature availability
-
-## Architecture Notes
-
-### Server-Side Plugin Execution (Not Yet Implemented)
-
-The audit identified that client-side plugin loading exposes API keys. The recommended solution is:
-
-1. Create `src/app/api/plugins/execute/route.ts` - Server-side plugin executor
-2. Refactor `src/components/cli.tsx` to call server APIs instead of loading plugins client-side
-3. Move plugin initialization to server-only code
-4. Implement signed request system for client→server trust
-
-**Status**: Deferred to future PR due to significant architectural changes required.
-
-## Environment Variables
-
-Add these to your `.env.local` (development) and deployment environment (production):
-
-```bash
-# Required for 1inch features
-ONEINCH_API_KEY=your_1inch_api_key
-
-# Required for client authentication (production)
-CLIENT_API_KEY=your_secure_api_key
-
-# Optional - controls logging
-NODE_ENV=production
-```
-
-## Testing Checklist
-
-- [ ] Verify API routes return 401 without valid API key in production
-- [ ] Test rate limiting by making >10 RPC calls in 1 minute
-- [ ] Confirm disallowed RPC methods (e.g., `eth_sendRawTransaction`) return 403
-- [ ] Check no sensitive data in production logs
-- [ ] Verify plugins load before allowing command execution
-- [ ] Test swap command shows clear "COMING SOON" message
-- [ ] Confirm unsupported chains show helpful error messages
-
-## Migration Guide
-
-If upgrading from a previous version:
-
-1. **Add environment variables** (see above)
-2. **Update API clients** to include `x-api-key` header:
-   ```typescript
-   fetch('/api/1inch/eth_rpc', {
-     headers: {
-       'x-api-key': process.env.NEXT_PUBLIC_CLIENT_API_KEY
-     }
-   })
-   ```
-3. **No breaking changes** for existing functionality
-4. **New behavior**: Commands will be queued until plugins load
-
-## Future Improvements
-
-1. **Server-side plugins**: Move plugin execution to server APIs
-2. **Persistent rate limiting**: Use Redis/Upstash for distributed rate limiting
-3. **Advanced auth**: Integrate NextAuth.js or similar for user accounts
-4. **Chain auto-discovery**: Fetch supported chains dynamically from protocol APIs
-5. **Complete swap flow**: Implement transaction signing and submission
-
-## References
-
-- Production Audit Report: `/production-audit-report.md`
-- Rate Limiting: `src/lib/rate-limit.ts`
-- Authentication: `src/lib/auth.ts`
-- Chain Config: `src/lib/chains.ts`
+  Next steps: 1) lock down the public APIs (analytics + 1inch proxy)
+  behind proper auth/rate limits and fix the spoofable IP handling;
+  2) correct the bigint math/logging/caching issues and swap back to
+  the stable Next build pipeline, then rerun an end-to-end test pass
+  once the fixes land.
