@@ -205,25 +205,9 @@ export function AppLayout() {
               </div>
             </div>
 
-            {/* Automation Icon with Tooltip */}
-            <div className="relative group">
-              <a href="#" className="text-[#737373] opacity-50 pointer-events-none block p-2 rounded-lg transition-colors">
-                <Zap className="w-6 h-6" />
-              </a>
-              <div className="absolute left-full ml-2 px-3 py-1.5 bg-[#1a1a1a] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 border border-[#262626]">
-                Automation (Coming Soon)
-              </div>
-            </div>
 
-            {/* Analytics Icon with Tooltip */}
-            <div className="relative group">
-              <a href="#" className="text-[#737373] opacity-50 pointer-events-none block p-2 rounded-lg transition-colors">
-                <BarChart3 className="w-6 h-6" />
-              </a>
-              <div className="absolute left-full ml-2 px-3 py-1.5 bg-[#1a1a1a] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 border border-[#262626]">
-                Analytics (Coming Soon)
-              </div>
-            </div>
+
+            
           </nav>
 
           {/* Bottom Icons */}
