@@ -7,6 +7,8 @@ All protocol integrations fit the same monoid runtime, but they diverge in how q
 
 ## LiFi (Bridge Aggregator)
 
+**Commands:** `bridge <amount> <token0> <token1> <network0> <network1>` (token1 optional for some pairs like USDC or ETH).
+
 **Why it is different:** API key must stay server-side; advanced route planning.
 
 **Architecture:** CLI plugin + separate proxy app (`../lifi-api-nextjs`).
@@ -25,6 +27,8 @@ All protocol integrations fit the same monoid runtime, but they diverge in how q
 
 ## Wormhole (Bridge)
 
+**Commands:** `bridge <amount> <token0> <token1> <network0> <network1>` (token1 optional for some pairs like USDC or ETH).
+
 **Why it is different:** SDK-backed route discovery with multiple route types.
 
 **Architecture:** API routes build serialized transfer context; CLI signs.
@@ -41,6 +45,8 @@ All protocol integrations fit the same monoid runtime, but they diverge in how q
 ---
 
 ## Stargate (Bridge)
+
+**Commands:** `bridge <token0> <network0> <network1>` (stablecoin-only, same-token transfers with current API calls).
 
 **Why it is different:** stablecoin-only flow with API-driven steps and slippage calc.
 
@@ -75,6 +81,8 @@ All protocol integrations fit the same monoid runtime, but they diverge in how q
 ---
 
 ## Aave v3 (Planned)
+
+**Commands:** `supply <token> <amount>`, `withdraw <token> <amount>`, `positions`.
 
 **Why it is different:** lending lifecycle requires richer state and risk checks.
 

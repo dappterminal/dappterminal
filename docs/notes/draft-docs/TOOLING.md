@@ -109,7 +109,8 @@ This is where the tooling diverges by protocol, even though it fits the same mon
 - **Flow:** quote returns best route + serialized context → bridge returns tx list.
 - **Docs:** `src/plugins/wormhole/ARCHITECTURE.md`
 
-### 5.3 Stargate (Bridge)- **Commands**: bridge <amount> <token0> <network0> <network1> *(Stargate only allows stablecoin transfers with our current API calls)*
+### 5.3 Stargate (Bridge)
+- **Commands**: bridge <token0> <network0> <network1> *(Stargate only allows stablecoin transfers for the same token with our current API calls)*
 - **Architecture:** server-side quote from Stargate API.
 - **Why different:** stablecoin-only flow with slippage calc and two-step txs.
 - **Flow:** quote returns approve + bridge steps; CLI executes in order.
@@ -122,6 +123,7 @@ This is where the tooling diverges by protocol, even though it fits the same mon
 - **Docs:** `FAUCET_SUMMARY.md`, `src/plugins/faucet/ARCHITECTURE.md`
 
 ### 5.5 Aave v3 (Planned)
+- **Commands:** supply <token> <amount> , withdraw <token> <amount> , positions 
 - **Architecture:** contract helpers + GraphQL/REST data sources.
 - **Why different:** lending lifecycle with richer state + risk checks.
 - **Docs:** `src/plugins/aave-v3/ARCHITECTURE.md`
