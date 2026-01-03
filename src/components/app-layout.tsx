@@ -182,7 +182,7 @@ export function AppLayout() {
     }
   }, [isDragging, handleMouseMove, handleMouseUp])
   return (
-    <div className="flex h-screen flex-col bg-[#0A0A0A]">
+    <div className="flex h-screen flex-col terminal-canvas">
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar - hidden on mobile */}
         <aside className="hidden md:flex w-20 flex-col items-center bg-[#141414] py-6 border-r border-[#262626]">
@@ -383,7 +383,7 @@ export function AppLayout() {
             {/* Charts - auto height when stacked, remaining width on large screens */}
             {hasVisibleCharts && (
               <div
-                className="flex-initial 2xl:flex-1 min-w-0 w-full h-auto 2xl:h-full bg-[#0A0A0A] overflow-y-auto overflow-x-hidden p-2 md:p-4 pb-3 space-y-3 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]"
+                className="flex-initial 2xl:flex-1 min-w-0 w-full h-auto 2xl:h-full bg-transparent overflow-y-auto overflow-x-hidden p-2 md:p-4 pb-3 space-y-3 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]"
                 style={{ width: !isMobile && hasVisibleCharts ? `${100 - cliWidth}%` : '100%' }}
               >
               {/* Render all charts dynamically */}

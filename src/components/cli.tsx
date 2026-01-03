@@ -1270,7 +1270,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   }
 
   return (
-    <div className={`w-full h-full bg-[#0A0A0A] p-2 md:p-4 flex flex-col relative overflow-hidden`}>
+    <div className="w-full h-full bg-transparent p-2 md:p-4 flex flex-col relative overflow-hidden">
             <div className="h-full bg-[#141414] rounded-xl border border-[#262626] flex flex-col overflow-hidden">
               {/* Window Management Bar with Tabs */}
               <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center gap-2 rounded-t-xl flex-shrink-0">

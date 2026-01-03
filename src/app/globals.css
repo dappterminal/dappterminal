@@ -118,6 +118,9 @@
   }
   body {
     @apply bg-background text-foreground font-sans;
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+    background-size: 22px 22px;
+    background-position: 0 0;
     overflow: hidden;
   }
 
@@ -133,6 +136,13 @@
   .terminal-text {
     font-feature-settings: "liga" 0;
     font-variant-ligatures: none;
+  }
+
+  .terminal-canvas {
+    background-color: #0A0A0A;
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+    background-size: 22px 22px;
+    background-position: 0 0;
   }
 
   /* Loading screen animations */
