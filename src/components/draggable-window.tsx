@@ -27,10 +27,11 @@ const STORAGE_KEY = "dappterminal_windows"
 const clamp = (value: number, min: number) => Math.max(min, value)
 
 const isInteractiveElement = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) return false
-  if (target.closest("[data-no-drag]")) return true
-  if (target.closest("button, a, input, textarea, select")) return true
-  if (target.isContentEditable) return true
+  const element = target instanceof Element ? target : null
+  if (!element) return false
+  if (element.closest("[data-no-drag]")) return true
+  if (element.closest("button, a, input, textarea, select")) return true
+  if (element instanceof HTMLElement && element.isContentEditable) return true
   return false
 }
 

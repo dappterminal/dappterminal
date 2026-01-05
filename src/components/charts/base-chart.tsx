@@ -11,7 +11,7 @@ import { darkTheme } from '@/lib/charts'
 
 export interface BaseChartProps {
   option: EChartsOption
-  height?: number
+  height?: number | string
   className?: string
   onChartReady?: (chart: echarts.ECharts) => void
   resizeKey?: number
@@ -115,7 +115,7 @@ export function BaseChart({ option, height = 400, className = '', onChartReady, 
       className={className}
       style={{
         width: '100%',
-        height: `${height}px`,
+        height: typeof height === 'number' ? `${height}px` : height,
         minWidth: 0,
         boxSizing: 'border-box',
         backgroundColor: '#141414',

@@ -12,7 +12,7 @@ import { generateMockNetworkGraph } from '@/lib/charts'
 
 export interface NetworkGraphProps {
   data?: NetworkGraphData
-  height?: number
+  height?: number | string
   className?: string
   title?: string
   resizeKey?: number
@@ -138,11 +138,11 @@ export function NetworkGraph({
   }, [graphData, title])
 
   return (
-    <div className={className}>
-      <BaseChart option={option} height={height} resizeKey={resizeKey} />
+    <div className={`flex min-h-0 flex-col ${className}`}>
+      <BaseChart option={option} height={height} className="flex-1 min-h-0" resizeKey={resizeKey} />
 
       {/* Legend info */}
-      <div className="mt-2 flex gap-4 px-2 text-xs text-[#737373]">
+      <div className="mt-2 flex flex-shrink-0 gap-4 px-2 text-xs text-[#737373]">
         <div className="flex items-center gap-1">
           <div className="w-2 h-2 rounded-full bg-[#3B82F6]" />
           <span>Protocol</span>

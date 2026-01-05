@@ -17,7 +17,7 @@ import { RefreshCw, ChevronDown } from 'lucide-react'
 export interface PortfolioChartProps {
   chainIds?: number[]
   walletAddress?: string
-  height?: number
+  height?: number | string
   className?: string
   resizeKey?: number
 }
@@ -425,7 +425,7 @@ export function PortfolioChart({
   const chainNames = chainIds.map(id => CHAIN_NAMES[id] || `Chain ${id}`).join(', ')
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative h-full ${className}`}>
       {/* Header with portfolio info and controls - absolute positioned */}
       <div className="absolute top-2 left-2 right-2 z-10">
         <div className="flex items-center justify-between pl-1 pr-1">
@@ -472,7 +472,7 @@ export function PortfolioChart({
         </div>
       )}
 
-      <BaseChart option={option} height={chartHeight} resizeKey={resizeKey} />
+      <BaseChart option={option} height={chartHeight} className="h-full" resizeKey={resizeKey} />
     </div>
   )
 }
