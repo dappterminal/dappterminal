@@ -5,6 +5,8 @@ import { Terminal as TerminalIcon, Settings, Zap, BarChart3, BookOpen, X, Chevro
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount } from 'wagmi'
 import { CLI } from './cli'
+import { CanvasSurface } from './canvas-surface'
+import { DraggableWindow } from './draggable-window'
 import { PriceChart, PriceChartDropdown } from './charts/price-chart'
 import { PerformanceChart } from './charts/performance-chart'
 import { NetworkGraph } from './charts/network-graph'
@@ -27,39 +29,11 @@ interface Chart {
 
 export function AppLayout() {
   const { address } = useAccount()
-  const [cliWidth, setCliWidth] = useState(55) // percentage - CLI at 55%, charts at 45%
-  const [isDragging, setIsDragging] = useState(false)
   const [resizeKey, setResizeKey] = useState(0)
   const [charts, setCharts] = useState<Chart[]>([])
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [currentView, setCurrentView] = useState<'terminal' | 'settings'>('terminal')
-
-  const handleMouseDown = useCallback(() => {
-    setIsDragging(true)
-  }, [])
-
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false)
-  }, [])
-
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isDragging) return
-
-      const container = document.querySelector('.content-container')
-      if (!container) return
-
-      const rect = container.getBoundingClientRect()
-      const x = e.clientX - rect.left
-      const percentage = (x / rect.width) * 100
-
-      // Clamp between 30% and 70% (ensures charts panel stays at least 30%)
-      const newWidth = Math.max(30, Math.min(70, percentage))
-      setCliWidth(newWidth)
-    },
-    [isDragging]
-  )
 
   const closeChart = useCallback((chartId: string) => {
     setCharts(prev => prev.filter(chart => chart.id !== chartId))
@@ -158,29 +132,10 @@ export function AppLayout() {
 
   // Trigger resize when cliWidth changes
   useEffect(() => {
-    setResizeKey(prev => prev + 1)
-  }, [cliWidth])
-
-  useEffect(() => {
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove)
-      document.addEventListener('mouseup', handleMouseUp)
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
-    } else {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-  }, [isDragging, handleMouseMove, handleMouseUp])
+    const handleResize = () => setResizeKey(prev => prev + 1)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
   return (
     <div className="flex h-screen flex-col terminal-canvas">
       <div className="flex flex-1 overflow-hidden">
@@ -348,163 +303,154 @@ export function AppLayout() {
               <SettingsPage onBack={() => setCurrentView('terminal')} />
             </div>
           ) : (
-            <div className="flex-1 flex flex-col 2xl:flex-row overflow-hidden content-container">
-              {/* CLI - fixed height when stacked with charts, full height when alone, resizable width on large screens */}
-              <div
-                style={{ width: !isMobile && hasVisibleCharts ? `${cliWidth}%` : undefined }}
-                className={`w-full ${
-                  hasVisibleCharts
-                    ? 'h-[50vh] 2xl:h-full 2xl:flex-1 2xl:flex-initial 2xl:w-auto 2xl:flex-shrink-0'
-                    : 'flex-1'
-                }`}
-              >
-                <CLI isFullWidth={!hasVisibleCharts} onAddChart={handleAddChart} />
-              </div>
-
-            {/* Resize Handle - only show on large screens if charts are visible */}
-            {hasVisibleCharts && (
-              <div
-                className="hidden 2xl:block w-1 bg-[#0A0A0A] hover:bg-[#404040] cursor-col-resize transition-colors flex-shrink-0"
-                onMouseDown={handleMouseDown}
-              />
-            )}
-
-
-
-    
-            {/* Charts - remaining width */}
-            {/* <div
-              className="flex-1 min-w-0"
-              style={{ width: `${100 - cliWidth}%` }}
-            >
-              <Analytics panelWidth={100 - cliWidth} />
-            </div> */}
-
-            {/* Charts - auto height when stacked, remaining width on large screens */}
-            {hasVisibleCharts && (
-              <div
-                className="flex-initial 2xl:flex-1 min-w-0 w-full h-auto 2xl:h-full bg-transparent overflow-y-auto overflow-x-hidden p-2 md:p-4 pb-3 space-y-3 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]"
-                style={{ width: !isMobile && hasVisibleCharts ? `${100 - cliWidth}%` : '100%' }}
-              >
-              {/* Render all charts dynamically */}
-              {charts.map((chart) => {
-                if (chart.type === 'price') {
-                  return (
-                    <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
-                      <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between relative">
-                        <span className="text-sm text-white">{chart.displayLabel || chart.symbol}</span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => setOpenDropdown(openDropdown === chart.id ? null : chart.id)}
-                            className="text-[#737373] hover:text-white transition-colors"
-                          >
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => closeChart(chart.id)}
-                            className="text-[#737373] hover:text-red-400 transition-colors"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                          <PriceChartDropdown
-                            timeRange={chart.timeRange || '24h'}
-                            dataSource={chart.dataSource || 'Mock'}
-                            onTimeRangeChange={(range) => updateChartSettings(chart.id, range, chart.dataSource || 'Mock')}
-                            onDataSourceChange={(source) => updateChartSettings(chart.id, chart.timeRange || '24h', source)}
-                            showDropdown={openDropdown === chart.id}
-                            onToggleDropdown={() => setOpenDropdown(null)}
-                          />
-                        </div>
+            <div className="flex-1 overflow-hidden">
+              <CanvasSurface
+                overlay={
+                  hasVisibleCharts ? (
+                    <div
+                      data-canvas-overlay
+                      className={`absolute bottom-4 right-4 top-4 z-20 rounded-2xl border border-[#262626] bg-[#0F0F0F]/95 p-3 shadow-xl ${
+                        isMobile ? "left-4" : "w-[380px] lg:w-[440px]"
+                      }`}
+                    >
+                      <div className="mb-2 flex items-center justify-between px-1">
+                        <span className="text-xs uppercase tracking-[0.2em] text-[#A3A3A3]">Analytics Dock</span>
                       </div>
-                      <PriceChart
-                        symbol={chart.symbol}
-                        displaySymbol={chart.displayLabel}
-                        timeRange={chart.timeRange}
-                        dataSource={chart.dataSource}
-                        chartType={chart.chartMode}
-                        height={280}
-                        className="p-1"
-                        resizeKey={resizeKey}
-                      />
-                    </div>
-                  )
-                } else if (chart.type === 'performance') {
-                  return (
-                    <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
-                      <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                        <span className="text-sm text-white">Performance</span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => closeChart(chart.id)}
-                            className="text-[#737373] hover:text-red-400 transition-colors"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                      <div className="h-full overflow-y-auto overflow-x-hidden space-y-3 pb-4 pr-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-[#0A0A0A] [&::-webkit-scrollbar-thumb]:bg-[#404040] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-[#525252]">
+                        {charts.map((chart) => {
+                          if (chart.type === 'price') {
+                            return (
+                              <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
+                                <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between relative">
+                                  <span className="text-sm text-white">{chart.displayLabel || chart.symbol}</span>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => setOpenDropdown(openDropdown === chart.id ? null : chart.id)}
+                                      className="text-[#737373] hover:text-white transition-colors"
+                                    >
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => closeChart(chart.id)}
+                                      className="text-[#737373] hover:text-red-400 transition-colors"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                    <PriceChartDropdown
+                                      timeRange={chart.timeRange || '24h'}
+                                      dataSource={chart.dataSource || 'Mock'}
+                                      onTimeRangeChange={(range) => updateChartSettings(chart.id, range, chart.dataSource || 'Mock')}
+                                      onDataSourceChange={(source) => updateChartSettings(chart.id, chart.timeRange || '24h', source)}
+                                      showDropdown={openDropdown === chart.id}
+                                      onToggleDropdown={() => setOpenDropdown(null)}
+                                    />
+                                  </div>
+                                </div>
+                                <PriceChart
+                                  symbol={chart.symbol}
+                                  displaySymbol={chart.displayLabel}
+                                  timeRange={chart.timeRange}
+                                  dataSource={chart.dataSource}
+                                  chartType={chart.chartMode}
+                                  height={280}
+                                  className="p-1"
+                                  resizeKey={resizeKey}
+                                />
+                              </div>
+                            )
+                          } else if (chart.type === 'performance') {
+                            return (
+                              <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
+                                <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
+                                  <span className="text-sm text-white">Performance</span>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => closeChart(chart.id)}
+                                      className="text-[#737373] hover:text-red-400 transition-colors"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                                <PerformanceChart
+                                  title=""
+                                  height={250}
+                                  className="p-2"
+                                  resizeKey={resizeKey}
+                                />
+                              </div>
+                            )
+                          } else if (chart.type === 'network') {
+                            return (
+                              <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
+                                <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
+                                  <span className="text-sm text-white">Network</span>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => closeChart(chart.id)}
+                                      className="text-[#737373] hover:text-red-400 transition-colors"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                                <NetworkGraph
+                                  title=""
+                                  height={350}
+                                  className="p-2"
+                                  resizeKey={resizeKey}
+                                />
+                              </div>
+                            )
+                          } else if (chart.type === 'portfolio') {
+                            return (
+                              <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
+                                <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
+                                  <span className="text-sm text-white">Portfolio</span>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      className="text-[#737373] hover:text-white transition-colors"
+                                    >
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => closeChart(chart.id)}
+                                      className="text-[#737373] hover:text-red-400 transition-colors"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                                <PortfolioChart
+                                  chainIds={chart.chainIds}
+                                  walletAddress={chart.walletAddress}
+                                  height={350}
+                                  className="p-2"
+                                  resizeKey={resizeKey}
+                                />
+                              </div>
+                            )
+                          }
+                          return null
+                        })}
                       </div>
-                      <PerformanceChart
-                        title=""
-                        height={250}
-                        className="p-2"
-                        resizeKey={resizeKey}
-                      />
                     </div>
-                  )
-                } else if (chart.type === 'network') {
-                  return (
-                    <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
-                      <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                        <span className="text-sm text-white">Network</span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => closeChart(chart.id)}
-                            className="text-[#737373] hover:text-red-400 transition-colors"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                      <NetworkGraph
-                        title=""
-                        height={350}
-                        className="p-2"
-                        resizeKey={resizeKey}
-                      />
-                    </div>
-                  )
-                } else if (chart.type === 'portfolio') {
-                  return (
-                    <div key={chart.id} className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0">
-                      <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                        <span className="text-sm text-white">Portfolio</span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            className="text-[#737373] hover:text-white transition-colors"
-                          >
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => closeChart(chart.id)}
-                            className="text-[#737373] hover:text-red-400 transition-colors"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                      <PortfolioChart
-                        chainIds={chart.chainIds}
-                        walletAddress={chart.walletAddress}
-                        height={350}
-                        className="p-2"
-                        resizeKey={resizeKey}
-                      />
-                    </div>
-                  )
+                  ) : null
                 }
-                return null
-              })}
-              </div>
-            )}
+              >
+                {({ scale }) => (
+                  <DraggableWindow
+                    id="cli"
+                    scale={scale}
+                    defaultPosition={{ x: 120, y: 120 }}
+                    defaultSize={{ width: 520, height: 320 }}
+                    minSize={{ width: 520, height: 320 }}
+                    showChrome={false}
+                  >
+                    <CLI isFullWidth={!hasVisibleCharts} onAddChart={handleAddChart} />
+                  </DraggableWindow>
+                )}
+              </CanvasSurface>
             </div>
           )}
         </main>
