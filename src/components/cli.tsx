@@ -1274,7 +1274,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
             <div className="h-full bg-[#141414] rounded-xl border border-[#262626] flex flex-col overflow-hidden">
               {/* Window Management Bar with Tabs */}
               <div
-                className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center gap-2 rounded-t-xl flex-shrink-0"
+                className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2.5 flex items-center gap-2 rounded-t-xl flex-shrink-0"
                 data-window-tabs
               >
                 {tabs.map(tab => {
@@ -1286,7 +1286,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                   return (
                     <div
                       key={tab.id}
-                      className={`flex items-center gap-2 px-2 py-1 md:px-3 md:py-1.5 rounded-md cursor-pointer transition-colors ${
+                      className={`flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-md cursor-pointer transition-colors ${
                         activeTabId === tab.id
                           ? "bg-[#262626]"
                           : "hover:bg-[#242424]"
@@ -1314,7 +1314,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                       }}
                     >
                       <span
-                        className="text-xs md:text-sm"
+                        className="text-sm md:text-base font-semibold"
                       >
                         {tab.name}
                       </span>
@@ -1328,7 +1328,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                           data-no-drag
                           className="hover:text-red-400 transition-colors"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-4 h-4" />
                         </button>
                       )}
                     </div>
@@ -1337,9 +1337,9 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                 <button
                   onClick={addNewTab}
                   data-no-drag
-                  className="flex items-center justify-center w-7 h-7 rounded-md hover:bg-[#262626] text-[#737373] hover:text-white transition-colors"
+                  className="flex items-center justify-center w-8 h-8 rounded-md hover:bg-[#262626] text-[#737373] hover:text-white transition-colors"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-5 h-5" />
                 </button>
                 <div className="ml-auto flex items-center gap-2">
                   <button

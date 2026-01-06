@@ -318,22 +318,22 @@ export function AppLayout() {
                           showChrome={false}
                         >
                           <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0 h-full flex flex-col">
-                            <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between relative">
-                              <span className="text-sm text-white">{chart.displayLabel || chart.symbol}</span>
+                            <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2.5 flex items-center justify-between relative">
+                              <span className="text-base font-semibold text-white">{chart.displayLabel || chart.symbol}</span>
                               <div className="flex items-center gap-2">
                                 <button
                                   onClick={() => setOpenDropdown(openDropdown === chart.id ? null : chart.id)}
                                   className="text-[#737373] hover:text-white transition-colors"
                                   data-no-drag
                                 >
-                                  <ChevronDown className="w-3.5 h-3.5" />
+                                  <ChevronDown className="w-4 h-4" />
                                 </button>
                                 <button
                                   onClick={() => closeChart(chart.id)}
                                   className="text-[#737373] hover:text-red-400 transition-colors"
                                   data-no-drag
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  <X className="w-4 h-4" />
                                 </button>
                                 <PriceChartDropdown
                                   timeRange={chart.timeRange || '24h'}
@@ -372,15 +372,15 @@ export function AppLayout() {
                           showChrome={false}
                         >
                           <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0 h-full flex flex-col">
-                            <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                              <span className="text-sm text-white">Performance</span>
+                            <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2.5 flex items-center justify-between">
+                              <span className="text-base font-semibold text-white">Performance</span>
                               <div className="flex items-center gap-2">
                                 <button
                                   onClick={() => closeChart(chart.id)}
                                   className="text-[#737373] hover:text-red-400 transition-colors"
                                   data-no-drag
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  <X className="w-4 h-4" />
                                 </button>
                               </div>
                             </div>
@@ -406,15 +406,15 @@ export function AppLayout() {
                           showChrome={false}
                         >
                           <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0 h-full flex flex-col">
-                            <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                              <span className="text-sm text-white">Network</span>
+                            <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2.5 flex items-center justify-between">
+                              <span className="text-base font-semibold text-white">Network</span>
                               <div className="flex items-center gap-2">
                                 <button
                                   onClick={() => closeChart(chart.id)}
                                   className="text-[#737373] hover:text-red-400 transition-colors"
                                   data-no-drag
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  <X className="w-4 h-4" />
                                 </button>
                               </div>
                             </div>
@@ -441,21 +441,21 @@ export function AppLayout() {
                           showChrome={false}
                         >
                           <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0 h-full flex flex-col">
-                            <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                              <span className="text-sm text-white">Portfolio</span>
+                            <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2.5 flex items-center justify-between">
+                              <span className="text-base font-semibold text-white">Portfolio</span>
                               <div className="flex items-center gap-2">
                                 <button
                                   className="text-[#737373] hover:text-white transition-colors"
                                   data-no-drag
                                 >
-                                  <ChevronDown className="w-3.5 h-3.5" />
+                                  <ChevronDown className="w-4 h-4" />
                                 </button>
                                 <button
                                   onClick={() => closeChart(chart.id)}
                                   className="text-[#737373] hover:text-red-400 transition-colors"
                                   data-no-drag
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  <X className="w-4 h-4" />
                                 </button>
                               </div>
                             </div>

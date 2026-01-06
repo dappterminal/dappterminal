@@ -126,13 +126,13 @@ export function Analytics({ panelWidth }: AnalyticsProps) {
           {/* Performance Metrics Window */}
           {visibleCharts.performance && (
             <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
-              <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                <span className="text-sm text-white">Performance</span>
+              <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2.5 flex items-center justify-between">
+                <span className="text-base font-semibold text-white">Performance</span>
                 <button
                   onClick={() => closeChart('performance')}
                   className="text-[#737373] hover:text-red-400 transition-colors"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
               <PerformanceChart
@@ -147,13 +147,13 @@ export function Analytics({ panelWidth }: AnalyticsProps) {
           {/* Network Graph Window */}
           {visibleCharts.network && (
             <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
-              <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center justify-between">
-                <span className="text-sm text-white">Network</span>
+              <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2.5 flex items-center justify-between">
+                <span className="text-base font-semibold text-white">Network</span>
                 <button
                   onClick={() => closeChart('network')}
                   className="text-[#737373] hover:text-red-400 transition-colors"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
               <NetworkGraph

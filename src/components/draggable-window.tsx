@@ -177,14 +177,14 @@ export function DraggableWindow({
 
   const resizeHandles = useMemo(
     () => [
-      { dir: "n", className: "left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 cursor-n-resize" },
-      { dir: "s", className: "left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 cursor-s-resize" },
-      { dir: "e", className: "right-0 top-1/2 -translate-y-1/2 translate-x-1/2 cursor-e-resize" },
-      { dir: "w", className: "left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-w-resize" },
-      { dir: "ne", className: "right-0 top-0 -translate-y-1/2 translate-x-1/2 cursor-ne-resize" },
-      { dir: "nw", className: "left-0 top-0 -translate-y-1/2 -translate-x-1/2 cursor-nw-resize" },
-      { dir: "se", className: "right-0 bottom-0 translate-y-1/2 translate-x-1/2 cursor-se-resize" },
-      { dir: "sw", className: "left-0 bottom-0 translate-y-1/2 -translate-x-1/2 cursor-sw-resize" },
+      { dir: "n", className: "left-0 top-[-6px] h-4 w-full cursor-n-resize" },
+      { dir: "s", className: "left-0 bottom-[-6px] h-4 w-full cursor-s-resize" },
+      { dir: "e", className: "right-[-6px] top-0 h-full w-4 cursor-e-resize" },
+      { dir: "w", className: "left-[-6px] top-0 h-full w-4 cursor-w-resize" },
+      { dir: "ne", className: "right-[-6px] top-[-6px] h-6 w-6 cursor-ne-resize" },
+      { dir: "nw", className: "left-[-6px] top-[-6px] h-6 w-6 cursor-nw-resize" },
+      { dir: "se", className: "right-[-6px] bottom-[-6px] h-6 w-6 cursor-se-resize" },
+      { dir: "sw", className: "left-[-6px] bottom-[-6px] h-6 w-6 cursor-sw-resize" },
     ],
     []
   )
@@ -222,7 +222,7 @@ export function DraggableWindow({
       {resizeHandles.map((handle) => (
         <div
           key={handle.dir}
-          className={`absolute h-4 w-4 ${handle.className}`}
+          className={`absolute ${handle.className}`}
           onPointerDown={(event) => handleResizePointerDown(event, handle.dir)}
           onPointerMove={handleResizePointerMove}
           onPointerUp={handleResizePointerUp}
