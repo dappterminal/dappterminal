@@ -302,6 +302,7 @@ export function AppLayout() {
                 { id: 'view', label: 'View' },
                 { id: 'run', label: 'Run' },
                 { id: 'settings', label: 'Settings' },
+                { id: 'help', label: 'Help' },
               ].map(menu => (
                 <div key={menu.id} className="relative">
                   <button
@@ -587,8 +588,8 @@ export function AppLayout() {
                     return null
                   })}
                   {swapWindows.map((windowId, index) => {
-                    const baseX = 220 + index * 60
-                    const baseY = 180 + index * 60
+                    const baseX = 1120 + index * 80
+                    const baseY = 200 + index * 80
 
                     return (
                       <DraggableWindow
@@ -596,8 +597,8 @@ export function AppLayout() {
                         id={windowId}
                         scale={scale}
                         defaultPosition={{ x: baseX, y: baseY }}
-                        defaultSize={{ width: 440, height: 300 }}
-                        minSize={{ width: 360, height: 260 }}
+                        defaultSize={{ width: 720, height: 560 }}
+                        minSize={{ width: 640, height: 520 }}
                         showChrome={false}
                       >
                         <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0 h-full flex flex-col">
@@ -613,17 +614,73 @@ export function AppLayout() {
                               </button>
                             </div>
                           </div>
-                          <div className="flex-1 min-h-0 p-4 text-sm text-[#b5b5b5] space-y-4 overflow-auto">
-                            <p>
-                              Use the CLI to pull swap quotes and track execution.
-                            </p>
-                            <div className="bg-[#0f0f0f] border border-[#262626] rounded-lg p-3">
-                              <div className="text-xs uppercase tracking-[0.2em] text-[#6b6b6b]">Example</div>
-                              <div className="mt-2 font-mono text-[#e5e5e5]">swap 1 eth to usdc</div>
+                          <div className="flex-1 min-h-0 p-6 text-sm text-[#b5b5b5] overflow-auto">
+                            <div className="space-y-4">
+                              <div className="bg-[#0f0f0f] border border-[#262626] rounded-xl p-4">
+                                <div className="flex items-center justify-between mb-2 text-xs uppercase tracking-[0.18em] text-[#6b6b6b]">
+                                  <span>From</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <input
+                                    type="text"
+                                    placeholder="0.0"
+                                    className="flex-1 bg-transparent border-none text-2xl text-white font-semibold outline-none placeholder:text-[#5f5f5f]"
+                                  />
+                                  <button className="flex items-center gap-2 px-3 py-2 bg-[#141414] border border-[#2a2a2a] rounded-lg text-white text-sm hover:bg-[#1b1b1b] transition-colors">
+                                    ETH
+                                    <ChevronDown className="w-4 h-4 text-[#8a8a8a]" />
+                                  </button>
+                                </div>
+                                <div className="mt-3 flex items-center justify-between text-xs text-[#7a7a7a]">
+                                  <span>Ethereum</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-center">
+                                <div className="w-9 h-9 rounded-full border border-[#262626] bg-[#141414] flex items-center justify-center text-[#8a8a8a]">
+                                  ↓
+                                </div>
+                              </div>
+
+                              <div className="bg-[#0f0f0f] border border-[#262626] rounded-xl p-4">
+                                <div className="flex items-center justify-between mb-2 text-xs uppercase tracking-[0.18em] text-[#6b6b6b]">
+                                  <span>To</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <input
+                                    type="text"
+                                    placeholder="0.0"
+                                    className="flex-1 bg-transparent border-none text-2xl text-white font-semibold outline-none placeholder:text-[#5f5f5f]"
+                                  />
+                                  <button className="flex items-center gap-2 px-3 py-2 bg-[#141414] border border-[#2a2a2a] rounded-lg text-white text-sm hover:bg-[#1b1b1b] transition-colors">
+                                    USDC
+                                    <ChevronDown className="w-4 h-4 text-[#8a8a8a]" />
+                                  </button>
+                                </div>
+                                <div className="mt-3 flex items-center justify-between text-xs text-[#7a7a7a]">
+                                  <span>Arbitrum</span>
+                                </div>
+                              </div>
                             </div>
-                            <p className="text-[#7a7a7a]">
-                              Swap execution is in progress; quotes are available now.
-                            </p>
+
+                            <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-[#9a9a9a]">
+                              <div className="flex items-center justify-between bg-[#101010] border border-[#262626] rounded-lg px-3 py-2">
+                                <span>Route</span>
+                                <span className="text-[#d4d4d4]">1inch</span>
+                              </div>
+                              <div className="flex items-center justify-between bg-[#101010] border border-[#262626] rounded-lg px-3 py-2">
+                                <span>Slippage</span>
+                                <span className="text-[#d4d4d4]">0.5%</span>
+                              </div>
+                            </div>
+
+                            <button className="mt-5 w-full bg-[#1f1f1f] border border-[#2a2a2a] text-white font-semibold py-2.5 rounded-lg hover:bg-[#262626] transition-colors">
+                              Review Swap
+                            </button>
+
+                            <div className="mt-3 text-xs text-[#7a7a7a] text-center">
+                              Quotes via CLI; execution UI coming soon.
+                            </div>
                           </div>
                         </div>
                       </DraggableWindow>
