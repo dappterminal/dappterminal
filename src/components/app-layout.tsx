@@ -415,8 +415,8 @@ export function AppLayout() {
                     <CLI isFullWidth={!hasVisibleCharts} onAddChart={handleAddChart} />
                   </DraggableWindow>
                   {charts.map((chart, index) => {
-                    const baseX = 160 + index * 60
-                    const baseY = 140 + index * 60
+                    const baseX = 1040 + index * 70
+                    const baseY = 120 + index * 70
                     const windowId = `chart-${chart.id}`
 
                     if (chart.type === 'price') {
@@ -426,8 +426,8 @@ export function AppLayout() {
                           id={windowId}
                           scale={scale}
                           defaultPosition={{ x: baseX, y: baseY }}
-                          defaultSize={{ width: 520, height: 360 }}
-                          minSize={{ width: 420, height: 320 }}
+                          defaultSize={{ width: 720, height: 380 }}
+                          minSize={{ width: 520, height: 320 }}
                           showChrome={false}
                         >
                           <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0 h-full flex flex-col">
@@ -480,8 +480,8 @@ export function AppLayout() {
                           id={windowId}
                           scale={scale}
                           defaultPosition={{ x: baseX, y: baseY }}
-                          defaultSize={{ width: 520, height: 340 }}
-                          minSize={{ width: 420, height: 320 }}
+                          defaultSize={{ width: 680, height: 360 }}
+                          minSize={{ width: 500, height: 320 }}
                           showChrome={false}
                         >
                           <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0 h-full flex flex-col">
@@ -514,8 +514,8 @@ export function AppLayout() {
                           id={windowId}
                           scale={scale}
                           defaultPosition={{ x: baseX, y: baseY }}
-                          defaultSize={{ width: 560, height: 420 }}
-                          minSize={{ width: 460, height: 360 }}
+                          defaultSize={{ width: 720, height: 420 }}
+                          minSize={{ width: 520, height: 360 }}
                           showChrome={false}
                         >
                           <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0 h-full flex flex-col">
@@ -549,8 +549,8 @@ export function AppLayout() {
                           id={windowId}
                           scale={scale}
                           defaultPosition={{ x: baseX, y: baseY }}
-                          defaultSize={{ width: 560, height: 420 }}
-                          minSize={{ width: 460, height: 360 }}
+                          defaultSize={{ width: 720, height: 420 }}
+                          minSize={{ width: 520, height: 360 }}
                           showChrome={false}
                         >
                           <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-visible min-w-0 h-full flex flex-col">
