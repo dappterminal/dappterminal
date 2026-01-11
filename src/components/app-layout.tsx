@@ -15,7 +15,7 @@ import type { TimeRange, DataSource } from '@/types/charts'
 
 interface Chart {
   id: string
-  type: 'price' | 'performance' | 'network' | 'portfolio'
+  type: 'price' | 'performance' | 'network' | 'portfolio' | 'swap'
   symbol?: string // For price charts (can be contract address)
   displayLabel?: string // Display name for the chart (e.g., "WBTC/USDC")
   timeRange?: TimeRange
@@ -30,6 +30,8 @@ export function AppLayout() {
   const [charts, setCharts] = useState<Chart[]>([])
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [currentView, setCurrentView] = useState<'terminal' | 'settings'>('terminal')
+  const [swapWindows, setSwapWindows] = useState<string[]>([])
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
 
   const closeChart = useCallback((chartId: string) => {
     setCharts(prev => prev.filter(chart => chart.id !== chartId))
@@ -103,6 +105,19 @@ export function AppLayout() {
     setCharts(prev => [...prev, newChart])
   }, [])
 
+  const handleAddSwapWindow = useCallback(() => {
+    setSwapWindows(prev => [...prev, `swap-${Date.now()}`])
+  }, [])
+
+  const closeSwapWindow = useCallback((windowId: string) => {
+    setSwapWindows(prev => prev.filter(id => id !== windowId))
+  }, [])
+
+  const closeAllWindows = useCallback(() => {
+    setCharts([])
+    setSwapWindows([])
+  }, [])
+
   const updateChartSettings = useCallback((chartId: string, timeRange: TimeRange, dataSource: DataSource) => {
     setCharts(prev => prev.map(chart =>
       chart.id === chartId
@@ -112,7 +127,7 @@ export function AppLayout() {
   }, [])
 
   // Check if any charts are visible
-  const hasVisibleCharts = charts.length > 0
+  const hasVisibleCharts = charts.length > 0 || swapWindows.length > 0
 
   // Trigger chart resize on viewport changes
   useEffect(() => {
@@ -280,6 +295,104 @@ export function AppLayout() {
               </ConnectButton.Custom>
             </div>
           </header>
+          {currentView === 'terminal' && (
+            <div className="flex items-center gap-4 px-4 md:px-8 h-10 border-b border-[#262626] bg-[#101010] flex-shrink-0 text-sm text-[#d4d4d4]">
+              {[
+                { id: 'edit', label: 'Edit' },
+                { id: 'view', label: 'View' },
+                { id: 'run', label: 'Run' },
+                { id: 'settings', label: 'Settings' },
+              ].map(menu => (
+                <div key={menu.id} className="relative">
+                  <button
+                    onClick={() => setOpenMenu(openMenu === menu.id ? null : menu.id)}
+                    className={`px-2 py-1 rounded-md transition-colors ${
+                      openMenu === menu.id ? 'bg-[#1a1a1a] text-white' : 'hover:bg-[#1a1a1a] hover:text-white'
+                    }`}
+                  >
+                    {menu.label}
+                  </button>
+                  {openMenu === menu.id && (
+                    <div className="absolute left-0 mt-2 w-52 bg-[#141414] border border-[#262626] rounded-lg shadow-lg z-50">
+                      {menu.id === 'edit' && (
+                        <button
+                          onClick={() => {
+                            closeAllWindows()
+                            setOpenMenu(null)
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors"
+                        >
+                          Close All Windows
+                        </button>
+                      )}
+                      {menu.id === 'view' && (
+                        <>
+                          <button
+                            onClick={() => {
+                              handleAddChart('eth')
+                              setOpenMenu(null)
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors"
+                          >
+                            Price Chart
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleAddChart('performance')
+                              setOpenMenu(null)
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors"
+                          >
+                            Performance
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleAddChart('network')
+                              setOpenMenu(null)
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors"
+                          >
+                            Network
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleAddChart('portfolio')
+                              setOpenMenu(null)
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors"
+                          >
+                            Portfolio
+                          </button>
+                        </>
+                      )}
+                      {menu.id === 'run' && (
+                        <button
+                          onClick={() => {
+                            handleAddSwapWindow()
+                            setOpenMenu(null)
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors"
+                        >
+                          Swap Window
+                        </button>
+                      )}
+                      {menu.id === 'settings' && (
+                        <button
+                          onClick={() => {
+                            setCurrentView('settings')
+                            setOpenMenu(null)
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors"
+                        >
+                          Open Settings
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Content Area - Show Settings page or Terminal + Charts */}
           {currentView === 'settings' ? (
@@ -472,6 +585,49 @@ export function AppLayout() {
                     }
 
                     return null
+                  })}
+                  {swapWindows.map((windowId, index) => {
+                    const baseX = 220 + index * 60
+                    const baseY = 180 + index * 60
+
+                    return (
+                      <DraggableWindow
+                        key={windowId}
+                        id={windowId}
+                        scale={scale}
+                        defaultPosition={{ x: baseX, y: baseY }}
+                        defaultSize={{ width: 440, height: 300 }}
+                        minSize={{ width: 360, height: 260 }}
+                        showChrome={false}
+                      >
+                        <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0 h-full flex flex-col">
+                          <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2.5 flex items-center justify-between">
+                            <span className="text-base font-semibold text-white">Swap</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => closeSwapWindow(windowId)}
+                                className="text-[#737373] hover:text-red-400 transition-colors"
+                                data-no-drag
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex-1 min-h-0 p-4 text-sm text-[#b5b5b5] space-y-4 overflow-auto">
+                            <p>
+                              Use the CLI to pull swap quotes and track execution.
+                            </p>
+                            <div className="bg-[#0f0f0f] border border-[#262626] rounded-lg p-3">
+                              <div className="text-xs uppercase tracking-[0.2em] text-[#6b6b6b]">Example</div>
+                              <div className="mt-2 font-mono text-[#e5e5e5]">swap 1 eth to usdc</div>
+                            </div>
+                            <p className="text-[#7a7a7a]">
+                              Swap execution is in progress; quotes are available now.
+                            </p>
+                          </div>
+                        </div>
+                      </DraggableWindow>
+                    )
                   })}
                   </>
                 )}
