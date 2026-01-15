@@ -388,6 +388,28 @@ export function AppLayout() {
                           Open Settings
                         </button>
                       )}
+                      {menu.id === 'help' && (
+                        <>
+                          <a
+                            href="https://docs.dappterminal.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => setOpenMenu(null)}
+                            className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors block"
+                          >
+                            View the Docs
+                          </a>
+                          <a
+                            href="https://t.me/nickmura2"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => setOpenMenu(null)}
+                            className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors block"
+                          >
+                            Contact maintainer
+                          </a>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
