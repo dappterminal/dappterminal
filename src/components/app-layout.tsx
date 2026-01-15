@@ -301,7 +301,7 @@ export function AppLayout() {
               {[
                 { id: 'edit', label: 'Edit' },
                 { id: 'view', label: 'View' },
-                { id: 'run', label: 'Run' },
+                { id: 'add', label: 'Add' },
                 { id: 'settings', label: 'Settings' },
                 { id: 'help', label: 'Help' },
               ].map(menu => (
@@ -367,16 +367,26 @@ export function AppLayout() {
                           </button>
                         </>
                       )}
-                      {menu.id === 'run' && (
-                        <button
-                          onClick={() => {
-                            handleAddSwapWindow()
-                            setOpenMenu(null)
-                          }}
-                          className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors"
-                        >
-                          Swap Window
-                        </button>
+                      {menu.id === 'add' && (
+                        <>
+                          <button
+                            onClick={() => {
+                              handleAddSwapWindow()
+                              setOpenMenu(null)
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors"
+                          >
+                            Swap Window
+                          </button>
+                          <button
+                            onClick={() => {
+                              setOpenMenu(null)
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors"
+                          >
+                            Add a node provider
+                          </button>
+                        </>
                       )}
                       {menu.id === 'settings' && (
                         <button
