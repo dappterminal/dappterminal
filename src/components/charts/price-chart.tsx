@@ -38,7 +38,7 @@ export interface PriceChartProps {
   dataSource?: DataSource
   symbol?: string
   displaySymbol?: string // Display label (e.g., "WBTC/USDC" instead of contract address)
-  height?: number
+  height?: number | string
   className?: string
   resizeKey?: number
 }

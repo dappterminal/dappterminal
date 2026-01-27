@@ -513,7 +513,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         {
           command: "welcome",
           output: [
-            "Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.1.1). Use at your own risk.",
+            "Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.2.0). Use at your own risk.",
             "",
             "⏳ Loading protocols...",
             "",
@@ -599,7 +599,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
               ...tab.history[0],
               output: [],
               styledOutput: [
-                [{ text: "Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.1.1). Use at your own risk.", color: '#d1d5db' }],
+                [{ text: "Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.2.0). Use at your own risk.", color: '#d1d5db' }],
                 [{ text: "", color: '#d1d5db' }],
                 [{ text: "Type 'help' to see available commands.", color: '#d1d5db' }]
               ]
@@ -656,7 +656,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       history: [
         {
           command: "welcome",
-          output: ["Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.1.1). Use at your own risk. Type 'help' to see available commands."],
+          output: ["Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.2.0). Use at your own risk. Type 'help' to see available commands."],
           timestamp: new Date()
         }
       ],
@@ -1270,10 +1270,13 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   }
 
   return (
-    <div className={`w-full h-full bg-[#0A0A0A] p-2 md:p-4 flex flex-col relative overflow-hidden`}>
+    <div className="w-full h-full bg-transparent p-2 md:p-4 flex flex-col relative overflow-hidden">
             <div className="h-full bg-[#141414] rounded-xl border border-[#262626] flex flex-col overflow-hidden">
               {/* Window Management Bar with Tabs */}
-              <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2 flex items-center gap-2 rounded-t-xl flex-shrink-0">
+              <div
+                className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2.5 flex items-center gap-2 rounded-t-xl flex-shrink-0"
+                data-window-tabs
+              >
                 {tabs.map(tab => {
                   // Get protocol color if tab is in a protocol fiber
                   const protocolColor = tab.name !== 'defi' && PROTOCOL_COLORS[tab.name]
@@ -1283,7 +1286,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                   return (
                     <div
                       key={tab.id}
-                      className={`flex items-center gap-2 px-2 py-1 md:px-3 md:py-1.5 rounded-md cursor-pointer transition-colors ${
+                      className={`flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-md cursor-pointer transition-colors ${
                         activeTabId === tab.id
                           ? "bg-[#262626]"
                           : "hover:bg-[#242424]"
@@ -1297,6 +1300,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                               ? `${protocolColor}88` // Add opacity for inactive tabs
                               : '#737373'
                       }}
+                      data-no-drag
                       onClick={() => {
                         console.log(`[Tab Switch] Clicked tab ${tab.id} (${tab.name})`)
                         console.log(`[Tab Switch] Current activeTabId: ${activeTabId}`)
@@ -1310,7 +1314,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                       }}
                     >
                       <span
-                        className="text-xs md:text-sm"
+                        className="text-sm md:text-base font-semibold"
                       >
                         {tab.name}
                       </span>
@@ -1321,9 +1325,10 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                             e.stopPropagation()
                             closeTab(tab.id)
                           }}
+                          data-no-drag
                           className="hover:text-red-400 transition-colors"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-4 h-4" />
                         </button>
                       )}
                     </div>
@@ -1331,13 +1336,15 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                 })}
                 <button
                   onClick={addNewTab}
-                  className="flex items-center justify-center w-7 h-7 rounded-md hover:bg-[#262626] text-[#737373] hover:text-white transition-colors"
+                  data-no-drag
+                  className="flex items-center justify-center w-8 h-8 rounded-md hover:bg-[#262626] text-[#737373] hover:text-white transition-colors"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-5 h-5" />
                 </button>
                 <div className="ml-auto flex items-center gap-2">
                   <button
                     onClick={() => setShowSettings(!showSettings)}
+                    data-no-drag
                     className="p-1.5 text-[#737373] hover:text-white transition-colors"
                   >
                     <ChevronDown className="w-4 h-4" />
