@@ -363,7 +363,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   const [showSettings, setShowSettings] = useState(false)
   const [showSettingsPage, setShowSettingsPage] = useState(false)
   const [showDocsPage, setShowDocsPage] = useState(false)
-  const [fontSize, setFontSize] = useState(15)
+  const [fontSize, setFontSize] = useState(18)
   const [fuzzyMatches, setFuzzyMatches] = useState<string[]>([])
   const [selectedMatchIndex, setSelectedMatchIndex] = useState(0)
   const [isExecuting, setIsExecuting] = useState(false)
