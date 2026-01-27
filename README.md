@@ -1,9 +1,10 @@
 # dappterminal.com
 
-**Version:** 0.1.1
-**Last Updated:** 2025-10-23
+**Version:** 0.2.1 (changelog coming soon)
 
-A composable, algebraically-sound terminal interface for interacting with DeFi protocols across multiple blockchains. Built on a **fibered monoid** architecture that provides protocol isolation, type-safe command composition, and extensible plugin system.
+**Last Updated:** 2026-01-26 (forgot to update these soon)
+
+A composable, modular terminal interface for interacting with DeFi protocols across multiple blockchains. Built on a **fibered monoid** architecture that provides protocol isolation, type-safe command composition, and extensible plugin system.
 
 ## Overview
 
