@@ -193,11 +193,11 @@ export function CanvasSurface({ children, overlay }: CanvasSurfaceProps) {
   const gridStyle = {
     backgroundColor: "#0A0A0A",
     backgroundImage: `
-      linear-gradient(to right, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
-      linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-      radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 1px)
+      linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px)
     `,
     backgroundSize: `${majorGrid}px ${majorGrid}px, ${majorGrid}px ${majorGrid}px, ${minorGrid}px ${minorGrid}px, ${minorGrid}px ${minorGrid}px, ${minorGrid}px ${minorGrid}px`,
     backgroundPosition: `${pan.x}px ${pan.y}px`,
