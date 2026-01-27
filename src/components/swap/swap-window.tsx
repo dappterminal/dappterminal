@@ -28,6 +28,19 @@ const POPULAR_TOKENS: Token[] = [
   { symbol: 'DAI', name: 'Dai Stablecoin', decimals: 18 },
 ]
 
+interface Protocol {
+  id: string
+  name: string
+  color: string
+}
+
+const PROTOCOLS: Protocol[] = [
+  { id: 'uniswap', name: 'Uniswap', color: 'from-pink-500 to-pink-600' },
+  { id: '1inch', name: '1inch', color: 'from-blue-400 to-blue-600' },
+  { id: 'stargate', name: 'Stargate', color: 'from-purple-500 to-indigo-600' },
+  { id: 'lifi', name: 'Li.Fi', color: 'from-cyan-400 to-purple-500' },
+]
+
 export function SwapWindow({ onClose }: SwapWindowProps) {
   const { chainId: walletChainId, isConnected } = useAccount()
 
@@ -36,14 +49,21 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
   const [toToken, setToToken] = useState<Token | null>(POPULAR_TOKENS[1])
   const [fromAmount, setFromAmount] = useState('')
   const [toAmount, setToAmount] = useState('')
-  const [chainId, setChainId] = useState(walletChainId || 1)
+  const [fromChainId, setFromChainId] = useState(walletChainId || 1)
+  const [toChainId, setToChainId] = useState(42161) // Default to Arbitrum for bridges
 
   // Settings state
   const [slippage, setSlippage] = useState(0.5)
   const [routePreference, setRoutePreference] = useState<'best' | 'fast'>('best')
+  const [protocol, setProtocol] = useState<Protocol>(PROTOCOLS[0])
+  const [showProtocolDropdown, setShowProtocolDropdown] = useState(false)
+
+  // Check if protocol is a bridge
+  const isBridge = protocol.id === 'stargate' || protocol.id === 'lifi'
 
   // Modal visibility
-  const [showNetworkModal, setShowNetworkModal] = useState(false)
+  const [showFromNetworkModal, setShowFromNetworkModal] = useState(false)
+  const [showToNetworkModal, setShowToNetworkModal] = useState(false)
   const [showFromTokenModal, setShowFromTokenModal] = useState(false)
   const [showToTokenModal, setShowToTokenModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
@@ -54,7 +74,7 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
   // Sync with wallet chain
   useEffect(() => {
     if (walletChainId && getMainnetChainIds().includes(walletChainId)) {
-      setChainId(walletChainId)
+      setFromChainId(walletChainId)
     }
   }, [walletChainId])
 
@@ -80,9 +100,14 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
   }
 
   // Handle network selection
-  const handleSelectNetwork = (newChainId: number) => {
-    setChainId(newChainId)
-    setShowNetworkModal(false)
+  const handleSelectFromNetwork = (newChainId: number) => {
+    setFromChainId(newChainId)
+    setShowFromNetworkModal(false)
+  }
+
+  const handleSelectToNetwork = (newChainId: number) => {
+    setToChainId(newChainId)
+    setShowToNetworkModal(false)
   }
 
   // Check if swap is valid
@@ -94,17 +119,6 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
       <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-3 flex items-center justify-between">
         <span className="text-base font-semibold text-white">Swap</span>
         <div className="flex items-center gap-2">
-          {/* Network Button */}
-          <button
-            onClick={() => setShowNetworkModal(true)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-[#262626] hover:bg-[#333333] rounded-lg transition-colors"
-            data-no-drag
-          >
-            <div className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-400 to-purple-500" />
-            <span className="text-sm text-white">{getChainName(chainId)}</span>
-            <ChevronDown className="w-3 h-3 text-[#737373]" />
-          </button>
-
           {/* Settings Button */}
           <button
             onClick={() => setShowSettingsModal(true)}
@@ -127,13 +141,79 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
 
       {/* Content */}
       <div className="flex-1 p-4 space-y-3 overflow-auto">
+        {/* Protocol & Network Selectors */}
+        <div className="flex items-center gap-2">
+          {/* Protocol Button */}
+          <div className="relative flex-1">
+            <button
+              onClick={() => setShowProtocolDropdown(!showProtocolDropdown)}
+              className="w-full flex items-center justify-between px-3 py-2.5 bg-[#0f0f0f] border border-[#262626] hover:border-[#333] rounded-xl transition-colors"
+              data-no-drag
+            >
+              <div className="flex items-center gap-2">
+                <div className={`w-5 h-5 rounded-md bg-gradient-to-br ${protocol.color}`} />
+                <span className="text-sm text-white">{protocol.name}</span>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-[#737373] transition-transform ${showProtocolDropdown ? 'rotate-180' : ''}`} />
+            </button>
+            {showProtocolDropdown && (
+              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-[#1a1a1a] border border-[#333] rounded-xl shadow-xl overflow-hidden">
+                {PROTOCOLS.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      setProtocol(p)
+                      setShowProtocolDropdown(false)
+                    }}
+                    className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[#262626] transition-colors ${protocol.id === p.id ? 'bg-[#262626]' : ''}`}
+                    data-no-drag
+                  >
+                    <div className={`w-5 h-5 rounded-md bg-gradient-to-br ${p.color}`} />
+                    <span className="text-sm text-white">{p.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Network Button - only show when not bridge */}
+          {!isBridge && (
+            <div className="relative flex-1">
+              <button
+                onClick={() => setShowFromNetworkModal(true)}
+                className="w-full flex items-center justify-between px-3 py-2.5 bg-[#0f0f0f] border border-[#262626] hover:border-[#333] rounded-xl transition-colors"
+                data-no-drag
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-purple-500" />
+                  <span className="text-sm text-white">{getChainName(fromChainId)}</span>
+                </div>
+                <ChevronDown className="w-4 h-4 text-[#737373]" />
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* From Token Section */}
         <div className="bg-[#0f0f0f] border border-[#262626] rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs text-[#737373] uppercase tracking-wider">You Pay</span>
-            {isConnected && (
-              <span className="text-xs text-[#737373]">Balance: 0.00</span>
-            )}
+            <div className="flex items-center gap-2">
+              {isBridge && (
+                <button
+                  onClick={() => setShowFromNetworkModal(true)}
+                  className="flex items-center gap-1.5 px-2 py-1 bg-[#1a1a1a] border border-[#333] rounded-lg hover:bg-[#222] transition-colors"
+                  data-no-drag
+                >
+                  <div className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-400 to-purple-500" />
+                  <span className="text-xs text-white">{getChainName(fromChainId)}</span>
+                  <ChevronDown className="w-3 h-3 text-[#737373]" />
+                </button>
+              )}
+              {isConnected && (
+                <span className="text-xs text-[#737373]">Balance: 0.00</span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <input
@@ -182,6 +262,17 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
         <div className="bg-[#0f0f0f] border border-[#262626] rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs text-[#737373] uppercase tracking-wider">You Receive</span>
+            {isBridge && (
+              <button
+                onClick={() => setShowToNetworkModal(true)}
+                className="flex items-center gap-1.5 px-2 py-1 bg-[#1a1a1a] border border-[#333] rounded-lg hover:bg-[#222] transition-colors"
+                data-no-drag
+              >
+                <div className="w-4 h-4 rounded-full bg-gradient-to-br from-green-400 to-emerald-500" />
+                <span className="text-xs text-white">{getChainName(toChainId)}</span>
+                <ChevronDown className="w-3 h-3 text-[#737373]" />
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <input
@@ -227,7 +318,7 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Route</span>
-              <span className="text-[#d4d4d4]">1inch</span>
+              <span className="text-[#d4d4d4]">{protocol.name}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Slippage</span>
@@ -252,18 +343,25 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
           {!isConnected ? 'Connect Wallet' : isValidSwap ? 'Review Swap' : 'Enter Amount'}
         </button>
 
-        {/* Status */}
+        {/* Disclaimer */}
         <div className="text-xs text-[#5a5a5a] text-center">
-          Quotes via CLI; execution UI coming soon.
+          Preview only — functionality coming soon.
         </div>
       </div>
 
       {/* Modals */}
       <NetworkModal
-        isOpen={showNetworkModal}
-        onClose={() => setShowNetworkModal(false)}
-        currentChainId={chainId}
-        onSelectChain={handleSelectNetwork}
+        isOpen={showFromNetworkModal}
+        onClose={() => setShowFromNetworkModal(false)}
+        currentChainId={fromChainId}
+        onSelectChain={handleSelectFromNetwork}
+      />
+
+      <NetworkModal
+        isOpen={showToNetworkModal}
+        onClose={() => setShowToNetworkModal(false)}
+        currentChainId={toChainId}
+        onSelectChain={handleSelectToNetwork}
       />
 
       <TokenModal

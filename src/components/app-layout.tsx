@@ -32,7 +32,18 @@ export function AppLayout() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [currentView, setCurrentView] = useState<'terminal' | 'settings'>('terminal')
   const [swapWindows, setSwapWindows] = useState<string[]>([])
+  const [nodeProviderWindows, setNodeProviderWindows] = useState<string[]>([])
   const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const [nodeProviderDropdownOpen, setNodeProviderDropdownOpen] = useState<string | null>(null)
+  const [selectedProviders, setSelectedProviders] = useState<Record<string, { name: string; color: string }>>({})
+
+  const PROVIDER_OPTIONS = [
+    { name: 'D_D Cloud', color: 'from-blue-500 to-blue-600', placeholder: 'https://eth-mainnet.g.alchemy.com/v2/...' },
+    { name: 'Infura', color: 'from-orange-500 to-red-500', placeholder: 'https://mainnet.infura.io/v3/...' },
+    { name: 'QuickNode', color: 'from-yellow-500 to-orange-500', placeholder: 'https://xxx.quiknode.pro/...' },
+    { name: 'Ankr', color: 'from-cyan-500 to-blue-500', placeholder: 'https://rpc.ankr.com/eth/...' },
+    { name: 'Custom', color: 'from-gray-500 to-gray-600', placeholder: 'https://...' },
+  ]
 
   const closeChart = useCallback((chartId: string) => {
     setCharts(prev => prev.filter(chart => chart.id !== chartId))
@@ -114,9 +125,18 @@ export function AppLayout() {
     setSwapWindows(prev => prev.filter(id => id !== windowId))
   }, [])
 
+  const handleAddNodeProviderWindow = useCallback(() => {
+    setNodeProviderWindows(prev => [...prev, `node-provider-${Date.now()}`])
+  }, [])
+
+  const closeNodeProviderWindow = useCallback((windowId: string) => {
+    setNodeProviderWindows(prev => prev.filter(id => id !== windowId))
+  }, [])
+
   const closeAllWindows = useCallback(() => {
     setCharts([])
     setSwapWindows([])
+    setNodeProviderWindows([])
   }, [])
 
   const updateChartSettings = useCallback((chartId: string, timeRange: TimeRange, dataSource: DataSource) => {
@@ -380,6 +400,7 @@ export function AppLayout() {
                           </button>
                           <button
                             onClick={() => {
+                              handleAddNodeProviderWindow()
                               setOpenMenu(null)
                             }}
                             className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#1f1f1f] hover:text-white transition-colors"
@@ -635,6 +656,125 @@ export function AppLayout() {
                         showChrome={false}
                       >
                         <SwapWindow onClose={() => closeSwapWindow(windowId)} />
+                      </DraggableWindow>
+                    )
+                  })}
+                  {nodeProviderWindows.map((windowId, index) => {
+                    const baseX = 1080 + index * 80
+                    const baseY = 140 + index * 80
+
+                    return (
+                      <DraggableWindow
+                        key={windowId}
+                        id={windowId}
+                        scale={scale}
+                        defaultPosition={{ x: baseX, y: baseY }}
+                        defaultSize={{ width: 400, height: 520 }}
+                        minSize={{ width: 360, height: 460 }}
+                        showChrome={false}
+                      >
+                        <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0 h-full flex flex-col">
+                          <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-3 flex items-center justify-between">
+                            <span className="text-base font-semibold text-white">Node Provider</span>
+                            <button
+                              onClick={() => closeNodeProviderWindow(windowId)}
+                              className="p-2 text-[#737373] hover:text-red-400 transition-colors"
+                              data-no-drag
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div className="flex-1 min-h-0 p-4 text-sm overflow-auto">
+                            <div className="space-y-3">
+                              {/* Provider Dropdown */}
+                              <div className="bg-[#0f0f0f] border border-[#262626] rounded-xl p-4">
+                                <span className="text-xs text-[#737373] uppercase tracking-wider">Provider</span>
+                                <div className="relative mt-2">
+                                  <button
+                                    onClick={() => setNodeProviderDropdownOpen(nodeProviderDropdownOpen === windowId ? null : windowId)}
+                                    className="w-full flex items-center justify-between px-3 py-2.5 bg-[#141414] border border-[#262626] rounded-lg hover:bg-[#1a1a1a] hover:border-[#333] transition-colors"
+                                    data-no-drag
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <div className={`w-5 h-5 rounded-md bg-gradient-to-br ${selectedProviders[windowId]?.color || 'from-blue-500 to-blue-600'}`} />
+                                      <span className="text-sm text-white">{selectedProviders[windowId]?.name || 'D_D Cloud'}</span>
+                                    </div>
+                                    <ChevronDown className={`w-4 h-4 text-[#737373] transition-transform ${nodeProviderDropdownOpen === windowId ? 'rotate-180' : ''}`} />
+                                  </button>
+                                  {nodeProviderDropdownOpen === windowId && (
+                                    <div className="absolute z-50 w-full mt-1 bg-[#1a1a1a] border border-[#333] rounded-lg shadow-xl overflow-hidden">
+                                      {PROVIDER_OPTIONS.map((provider) => (
+                                        <button
+                                          key={provider.name}
+                                          onClick={() => {
+                                            setSelectedProviders(prev => ({ ...prev, [windowId]: { name: provider.name, color: provider.color } }))
+                                            setNodeProviderDropdownOpen(null)
+                                          }}
+                                          className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[#262626] transition-colors"
+                                          data-no-drag
+                                        >
+                                          <div className={`w-5 h-5 rounded-md bg-gradient-to-br ${provider.color}`} />
+                                          <span className="text-sm text-white">{provider.name}</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Endpoint Input */}
+                              <div className="bg-[#0f0f0f] border border-[#262626] rounded-xl p-4">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-xs text-[#737373] uppercase tracking-wider">RPC Endpoint</span>
+                                  <button className="text-xs text-[#a3a3a3] hover:text-white transition-colors" data-no-drag>
+                                    Test
+                                  </button>
+                                </div>
+                                <input
+                                  type="text"
+                                  placeholder={PROVIDER_OPTIONS.find(p => p.name === (selectedProviders[windowId]?.name || 'D_D Cloud'))?.placeholder || 'https://...'}
+                                  className="w-full bg-transparent border border-[#262626] rounded-lg px-3 py-2 text-sm text-white placeholder:text-[#5f5f5f] outline-none focus:border-[#404040] transition-colors"
+                                />
+                              </div>
+
+                              {/* Network Selection */}
+                              <div className="bg-[#0f0f0f] border border-[#262626] rounded-xl p-4">
+                                <span className="text-xs text-[#737373] uppercase tracking-wider">Network</span>
+                                <div className="flex items-center justify-between mt-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-500" />
+                                    <span className="text-white font-medium">Ethereum</span>
+                                  </div>
+                                  <button className="flex items-center gap-1 px-2 py-1 text-xs text-[#a3a3a3] hover:text-white transition-colors" data-no-drag>
+                                    Change
+                                    <ChevronDown className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                <div className="mt-2 text-xs text-[#5a5a5a]">
+                                  Chain ID: 1
+                                </div>
+                              </div>
+
+                              {/* Status */}
+                              <div className="flex items-center justify-between bg-[#0f0f0f] border border-[#262626] rounded-xl px-4 py-3">
+                                <span className="text-xs text-[#737373]">Status</span>
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full bg-[#10b981]" />
+                                  <span className="text-xs text-[#10b981]">Connected · 42ms</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Save Button */}
+                            <button className="mt-4 w-full py-3 rounded-xl font-semibold bg-white text-black hover:bg-gray-200 transition-colors">
+                              Save Provider
+                            </button>
+
+                            <div className="mt-3 text-xs text-[#5a5a5a] text-center">
+                              Preview only — functionality coming soon.
+                            </div>
+                          </div>
+                        </div>
                       </DraggableWindow>
                     )
                   })}
