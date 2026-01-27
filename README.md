@@ -2,7 +2,7 @@
 
 **Version:** 0.2.1 (changelog coming soon)
 
-**Last Updated:** 2026-01-26 (forgot to update these soon)
+**Last Updated:** 2026-01-26
 
 A composable, modular terminal interface for interacting with DeFi protocols across multiple blockchains. Built on a **fibered monoid** architecture that provides protocol isolation, type-safe command composition, and extensible plugin system.
 
