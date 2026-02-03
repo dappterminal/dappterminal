@@ -46,6 +46,7 @@ The terminal is built on three core concepts:
    - `ρ_f` (fuzzy resolver): Levenshtein-based matching
 
 See [FIBERED-MONOID-SPEC.md](./FIBERED-MONOID-SPEC.md) for the complete algebraic specification.
+
 ## Current protocols/APIs supported
 
 - 1inch

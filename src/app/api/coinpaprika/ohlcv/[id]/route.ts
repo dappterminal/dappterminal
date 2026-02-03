@@ -1,4 +1,5 @@
 /**
+ * WARNING: This requires a list or ID on coinpaprika's API. This is not ready for implementation YET.
  * API Route: CoinPaprika OHLCV (Historical Chart Data)
  *
  * GET /api/coinpaprika/ohlcv/[id]
@@ -11,6 +12,7 @@
  * - limit: Number of data points (default: 366, max: 366)
  * - quote: Quote currency (default: 'usd')
  * - interval: Data interval (1h, 24h, 7d, 14d, 30d, 90d, 365d) - default: 24h
+ * 
  */
 
 import { NextRequest, NextResponse } from 'next/server'
