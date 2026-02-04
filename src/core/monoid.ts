@@ -367,6 +367,7 @@ export function createExecutionContext(): ExecutionContext {
       isConnecting: false,
       isDisconnecting: false,
     },
+    rpcRegistry: undefined,
     globalState: {},
     protocolState: new Map(),
     history: [],
@@ -403,6 +404,7 @@ export function updateExecutionContext(
     activeProtocol: context.activeProtocol, // Explicitly copy (may have been mutated)
     protocolPreferences: context.protocolPreferences,
     wallet: { ...context.wallet }, // Deep copy to preserve wallet state
+    rpcRegistry: context.rpcRegistry,
     globalState: context.globalState,
     protocolState: context.protocolState,
     history: [...context.history, execution],
