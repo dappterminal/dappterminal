@@ -4,6 +4,7 @@
 
 export * from './types'
 export * from './monoid'
+export * from './rpc-registry'
 export * from './command-registry'
 export * from './commands'
 export * from './handlers'
