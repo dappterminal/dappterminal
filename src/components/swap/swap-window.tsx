@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { X, Settings, ChevronDown, ArrowDownUp, Loader2, CheckCircle, ExternalLink } from 'lucide-react'
-import { useAccount, useSendTransaction } from 'wagmi'
+import { useAccount, useSendTransaction, useSwitchChain } from 'wagmi'
 import { parseUnits } from 'viem'
 import { NetworkModal } from './network-modal'
 import { TokenModal } from './token-modal'
@@ -93,6 +93,7 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
 
   // Transaction hooks
   const { sendTransactionAsync } = useSendTransaction()
+  const { switchChainAsync } = useSwitchChain()
 
   // Swap quote using the selected protocol
   const quoteParams = useMemo(() => {
@@ -344,47 +345,82 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
 
       const isNativeToken = srcAddress.toLowerCase() === NATIVE_TOKEN_ADDRESS.toLowerCase()
 
-      // Step 1: Check allowance (skip for native tokens) - only for 1inch
-      // Note: Uniswap V4 uses Permit2, but for simplicity we'll handle it in the swap call
-      if (!isNativeToken && !useUniswap) {
+      // Step 1: Check and handle approvals (skip for native tokens)
+      if (!isNativeToken) {
         setSwapState('checking')
 
-        const allowanceRes = await fetch(
-          `/api/1inch/swap/allowance?chainId=${fromChainId}&tokenAddress=${srcAddress}&walletAddress=${address}`
-        )
-
-        if (!allowanceRes.ok) {
-          throw new Error('Failed to check allowance')
-        }
-
-        const allowanceData = await allowanceRes.json()
-        const allowance = BigInt(allowanceData.allowance || '0')
-        const requiredAmount = BigInt(amount)
-
-        // Step 2: Approve if needed
-        if (allowance < requiredAmount) {
-          setNeedsApproval(true)
-          setSwapState('approving')
-
-          const approveRes = await fetch(
-            `/api/1inch/swap/approve/transaction?chainId=${fromChainId}&tokenAddress=${srcAddress}&amount=${amount}`
+        if (useUniswap) {
+          // Uniswap V4 uses Permit2 - check and handle both approval steps
+          const approvalRes = await fetch(
+            `/api/uniswap/approval?chainId=${fromChainId}&token=${srcAddress}&wallet=${address}&amount=${amount}`
           )
 
-          if (!approveRes.ok) {
-            throw new Error('Failed to get approval transaction')
+          if (!approvalRes.ok) {
+            const errorData = await approvalRes.json()
+            throw new Error(errorData.error || 'Failed to check Uniswap approvals')
           }
 
-          const approveTx = await approveRes.json()
+          const approvalData = await approvalRes.json()
 
-          const approveHash = await sendTransactionAsync({
-            to: approveTx.to as `0x${string}`,
-            data: approveTx.data as `0x${string}`,
-            value: BigInt(0),
-          })
+          if (approvalData.needsApproval && approvalData.approvalTxs) {
+            setNeedsApproval(true)
 
-          // Wait a moment for approval to be indexed
-          setTxHash(approveHash)
-          await new Promise(resolve => setTimeout(resolve, 2000))
+            // Execute each approval transaction
+            for (let i = 0; i < approvalData.approvalTxs.length; i++) {
+              const approvalTx = approvalData.approvalTxs[i]
+              setSwapState('approving')
+
+              const approveHash = await sendTransactionAsync({
+                to: approvalTx.to as `0x${string}`,
+                data: approvalTx.data as `0x${string}`,
+                value: BigInt(0),
+              })
+
+              sentTxHash = approveHash
+              setTxHash(approveHash)
+
+              // Wait for confirmation before next approval
+              await new Promise(resolve => setTimeout(resolve, 5000))
+            }
+          }
+        } else {
+          // 1inch - check approval to 1inch router
+          const allowanceRes = await fetch(
+            `/api/1inch/swap/allowance?chainId=${fromChainId}&tokenAddress=${srcAddress}&walletAddress=${address}`
+          )
+
+          if (!allowanceRes.ok) {
+            throw new Error('Failed to check allowance')
+          }
+
+          const allowanceData = await allowanceRes.json()
+          const allowance = BigInt(allowanceData.allowance || '0')
+          const requiredAmount = BigInt(amount)
+
+          if (allowance < requiredAmount) {
+            setNeedsApproval(true)
+            setSwapState('approving')
+
+            const approveRes = await fetch(
+              `/api/1inch/swap/approve/transaction?chainId=${fromChainId}&tokenAddress=${srcAddress}&amount=${amount}`
+            )
+
+            if (!approveRes.ok) {
+              throw new Error('Failed to get approval transaction')
+            }
+
+            const approveTx = await approveRes.json()
+
+            const approveHash = await sendTransactionAsync({
+              to: approveTx.to as `0x${string}`,
+              data: approveTx.data as `0x${string}`,
+              value: BigInt(0),
+            })
+
+            sentTxHash = approveHash
+            setTxHash(approveHash)
+            await new Promise(resolve => setTimeout(resolve, 2000))
+          }
         }
       }
 
@@ -473,14 +509,24 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
   }
 
   // Handle network selection
-  const handleSelectFromNetwork = (newChainId: number) => {
+  const handleSelectFromNetwork = async (newChainId: number) => {
     setFromChainId(newChainId)
     setShowFromNetworkModal(false)
+
+    // Switch wallet network to match selected source chain
+    if (newChainId !== walletChainId) {
+      try {
+        await switchChainAsync({ chainId: newChainId })
+      } catch (error) {
+        console.error('Failed to switch network:', error)
+      }
+    }
   }
 
   const handleSelectToNetwork = (newChainId: number) => {
     setToChainId(newChainId)
     setShowToNetworkModal(false)
+    // Note: Don't switch wallet for destination chain (bridge handles cross-chain)
   }
 
   // Check if swap is valid
