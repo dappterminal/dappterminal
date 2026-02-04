@@ -77,8 +77,6 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
 
   // Check if protocol is a bridge
   const isBridge = protocol.id === 'stargate' || protocol.id === 'lifi'
-  // Li.Fi is supported, Stargate not yet
-  const isUnsupportedBridge = protocol.id === 'stargate'
 
   // Modal visibility
   const [showFromNetworkModal, setShowFromNetworkModal] = useState(false)
@@ -101,16 +99,16 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
     if (!fromToken || !toToken || !fromAmount || parseFloat(fromAmount) <= 0) {
       return null
     }
-    // Supported protocols: 1inch, uniswap, lifi
-    if (protocol.id !== '1inch' && protocol.id !== 'uniswap' && protocol.id !== 'lifi') {
+    // Supported protocols: 1inch, uniswap, lifi, stargate
+    if (protocol.id !== '1inch' && protocol.id !== 'uniswap' && protocol.id !== 'lifi' && protocol.id !== 'stargate') {
       return null
     }
-    // Li.Fi requires wallet address
-    if (protocol.id === 'lifi' && !address) {
+    // Bridges require wallet address
+    if ((protocol.id === 'lifi' || protocol.id === 'stargate') && !address) {
       return null
     }
     return {
-      protocol: protocol.id as '1inch' | 'uniswap' | 'lifi',
+      protocol: protocol.id as '1inch' | 'uniswap' | 'lifi' | 'stargate',
       fromToken: fromToken.symbol,
       toToken: toToken.symbol,
       amount: fromAmount,
@@ -166,9 +164,71 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
     // Determine which protocol to use
     const useUniswap = protocol.id === 'uniswap'
     const useLifi = protocol.id === 'lifi'
+    const useStargate = protocol.id === 'stargate'
 
     try {
       setSwapError(null)
+
+      // Stargate bridge execution
+      if (useStargate) {
+        if (!quote.routeData) {
+          throw new Error('No route data available for Stargate bridge')
+        }
+
+        const routeData = quote.routeData as {
+          stargateSteps?: Array<{
+            transaction?: {
+              to?: string
+              data?: string
+              value?: string
+            }
+          }>
+          fullQuote?: {
+            steps?: Array<{
+              transaction?: {
+                to?: string
+                data?: string
+                value?: string
+              }
+            }>
+          }
+        }
+
+        // Stargate steps come from the quote
+        const steps = routeData.stargateSteps || routeData.fullQuote?.steps || []
+
+        if (steps.length === 0) {
+          throw new Error('No transaction steps available for Stargate bridge')
+        }
+
+        // Execute each step
+        for (let i = 0; i < steps.length; i++) {
+          setSwapState('swapping')
+
+          const step = steps[i]
+          const tx = step.transaction
+
+          if (!tx || !tx.to || !tx.data) {
+            throw new Error(`Invalid transaction data for Stargate step ${i + 1}`)
+          }
+
+          const hash = await sendTransactionAsync({
+            to: tx.to as `0x${string}`,
+            data: tx.data as `0x${string}`,
+            value: BigInt(tx.value || '0'),
+          })
+
+          setTxHash(hash)
+
+          // Wait between steps if there are more
+          if (i < steps.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 3000))
+          }
+        }
+
+        setSwapState('success')
+        return
+      }
 
       // Li.Fi bridge execution
       if (useLifi) {
@@ -324,22 +384,26 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
   const handleSelectFromToken = (token: Token) => {
     setFromToken(token)
     setShowFromTokenModal(false)
-    // Auto-switch destination token
-    if (token.symbol === 'USDC' || token.symbol === 'USDT' || token.symbol === 'DAI') {
-      setToToken(POPULAR_TOKENS.find(t => t.symbol === 'ETH') || POPULAR_TOKENS[0])
-    } else if (token.symbol === 'ETH' || token.symbol === 'WETH') {
-      setToToken(POPULAR_TOKENS.find(t => t.symbol === 'USDC') || POPULAR_TOKENS[1])
+    // Auto-switch destination token (only for swap protocols, not bridges)
+    if (!isBridge) {
+      if (token.symbol === 'USDC' || token.symbol === 'USDT' || token.symbol === 'DAI') {
+        setToToken(POPULAR_TOKENS.find(t => t.symbol === 'ETH') || POPULAR_TOKENS[0])
+      } else if (token.symbol === 'ETH' || token.symbol === 'WETH') {
+        setToToken(POPULAR_TOKENS.find(t => t.symbol === 'USDC') || POPULAR_TOKENS[1])
+      }
     }
   }
 
   const handleSelectToToken = (token: Token) => {
     setToToken(token)
     setShowToTokenModal(false)
-    // Auto-switch source token
-    if (token.symbol === 'USDC' || token.symbol === 'USDT' || token.symbol === 'DAI') {
-      setFromToken(POPULAR_TOKENS.find(t => t.symbol === 'ETH') || POPULAR_TOKENS[0])
-    } else if (token.symbol === 'ETH' || token.symbol === 'WETH') {
-      setFromToken(POPULAR_TOKENS.find(t => t.symbol === 'USDC') || POPULAR_TOKENS[1])
+    // Auto-switch source token (only for swap protocols, not bridges)
+    if (!isBridge) {
+      if (token.symbol === 'USDC' || token.symbol === 'USDT' || token.symbol === 'DAI') {
+        setFromToken(POPULAR_TOKENS.find(t => t.symbol === 'ETH') || POPULAR_TOKENS[0])
+      } else if (token.symbol === 'ETH' || token.symbol === 'WETH') {
+        setFromToken(POPULAR_TOKENS.find(t => t.symbol === 'USDC') || POPULAR_TOKENS[1])
+      }
     }
   }
 
@@ -584,7 +648,10 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Route</span>
               <span className="text-[#d4d4d4]">
-                {protocol.id === 'lifi' ? (
+                {protocol.id === 'stargate' ? (
+                  // Stargate: show bridge route info
+                  quote?.route || `${fromToken.symbol} → ${toToken.symbol} (Stargate)`
+                ) : protocol.id === 'lifi' ? (
                   // Li.Fi: show bridge route info
                   quote?.route || `${fromToken.symbol} → ${toToken.symbol} (Li.Fi)`
                 ) : protocol.id === 'uniswap' ? (
@@ -612,7 +679,7 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
               <span className="text-[#d4d4d4]">{slippage}%</span>
             </div>
             {/* Show estimated time for bridges */}
-            {protocol.id === 'lifi' && quote?.estimatedTime && (
+            {isBridge && quote?.estimatedTime && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-[#737373]">Est. Time</span>
                 <span className="text-[#d4d4d4]">
@@ -621,13 +688,13 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
               </div>
             )}
             <div className="flex items-center justify-between text-sm">
-              <span className="text-[#737373]">{protocol.id === 'lifi' ? 'Est. Cost' : 'Est. Gas'}</span>
+              <span className="text-[#737373]">{isBridge ? 'Est. Cost' : 'Est. Gas'}</span>
               <span className="text-[#d4d4d4]">
                 {isLoadingQuote ? (
                   <Loader2 className="w-4 h-4 animate-spin inline" />
-                ) : protocol.id === 'lifi' && quote?.gasCostUSD ? (
+                ) : isBridge && quote?.gasCostUSD ? (
                   `$${parseFloat(quote.gasCostUSD).toFixed(2)}`
-                ) : quote?.gas ? (
+                ) : quote?.gas && parseFloat(quote.gas) > 0 ? (
                   `${parseFloat(quote.gas).toFixed(2)} Gwei`
                 ) : (
                   '--'
@@ -642,7 +709,7 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
           <div className="space-y-3">
             <div className="flex items-center justify-center gap-2 text-green-400">
               <CheckCircle className="w-5 h-5" />
-              <span className="font-semibold">Swap Successful!</span>
+              <span className="font-semibold">{isBridge ? 'Bridge Submitted!' : 'Swap Successful!'}</span>
             </div>
             <a
               href={getTxUrl(fromChainId, txHash)}
@@ -687,19 +754,16 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
               !isConnected ||
               isLoadingQuote ||
               !!quoteError ||
-              isUnsupportedBridge ||
               swapState !== 'idle'
             }
             className={`w-full py-3 rounded-xl font-semibold transition-colors ${
-              isValidSwap && isConnected && !isLoadingQuote && !quoteError && !isUnsupportedBridge && swapState === 'idle'
+              isValidSwap && isConnected && !isLoadingQuote && !quoteError && swapState === 'idle'
                 ? 'bg-white text-black hover:bg-gray-200'
                 : 'bg-[#262626] text-[#737373] cursor-not-allowed'
             }`}
           >
             {!isConnected
               ? 'Connect Wallet'
-              : isUnsupportedBridge
-              ? 'Stargate Coming Soon'
               : isLoadingQuote
               ? 'Getting Quote...'
               : quoteError
@@ -720,10 +784,10 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
 
         {/* Disclaimer */}
         <div className="text-xs text-[#5a5a5a] text-center">
-          {isUnsupportedBridge
-            ? 'Stargate bridge coming soon.'
-            : swapState === 'success'
+          {swapState === 'success'
             ? isBridge ? 'Bridge transaction submitted. Cross-chain transfers may take a few minutes.' : 'Transaction confirmed on chain.'
+            : protocol.id === 'stargate'
+            ? 'Powered by Stargate bridge.'
             : protocol.id === 'lifi'
             ? 'Powered by Li.Fi bridge aggregator.'
             : protocol.id === 'uniswap'

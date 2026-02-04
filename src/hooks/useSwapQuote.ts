@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { parseUnits, formatUnits } from 'viem'
 import { resolveTokenAddress, getTokenDecimals } from '@/plugins/1inch/tokens'
 import { LIFI_TOKENS } from '@/lib/lifi'
+import { STARGATE_TOKENS } from '@/plugins/stargate/tokens'
 
 export interface SwapQuoteParams {
   /** Protocol to use for the swap (e.g., '1inch', 'uniswap', 'lifi') */
@@ -131,23 +132,30 @@ export function useSwapQuote(params: SwapQuoteParams | null): UseSwapQuoteResult
       return
     }
 
-    // Don't fetch quote if src and dst are the same token (unless cross-chain bridge)
+    // Don't fetch quote if src and dst are the same token (unless it's a bridge protocol)
     const { toChainId, walletAddress } = params
+    const isBridgeProtocol = protocol === 'lifi' || protocol === 'stargate'
     const isCrossChain = toChainId && toChainId !== chainId
-    if (fromToken.toLowerCase() === toToken.toLowerCase() && !isCrossChain) {
+    if (fromToken.toLowerCase() === toToken.toLowerCase() && !isBridgeProtocol) {
+      setQuote(null)
+      setError(null)
+      return
+    }
+    // For bridges on same chain with same token, skip
+    if (fromToken.toLowerCase() === toToken.toLowerCase() && isBridgeProtocol && !isCrossChain) {
       setQuote(null)
       setError(null)
       return
     }
 
     // Validate protocol
-    if (protocol !== '1inch' && protocol !== 'uniswap' && protocol !== 'lifi') {
+    if (protocol !== '1inch' && protocol !== 'uniswap' && protocol !== 'lifi' && protocol !== 'stargate') {
       setError(`Protocol '${protocol}' not yet supported for quotes`)
       return
     }
 
-    // Li.Fi requires wallet address for quotes
-    if (protocol === 'lifi' && !walletAddress) {
+    // Bridges require wallet address for quotes
+    if ((protocol === 'lifi' || protocol === 'stargate') && !walletAddress) {
       setQuote(null)
       setError(null)
       return
@@ -159,6 +167,98 @@ export function useSwapQuote(params: SwapQuoteParams | null): UseSwapQuoteResult
     setError(null)
 
     try {
+      // Handle Stargate bridge quotes
+      if (protocol === 'stargate') {
+        // Get token info from Stargate registry
+        const fromChainTokens = STARGATE_TOKENS[chainId]
+        const toChainTokens = STARGATE_TOKENS[toChainId || chainId]
+
+        if (!fromChainTokens) {
+          throw new Error(`Chain ${chainId} not supported by Stargate`)
+        }
+        if (!toChainTokens) {
+          throw new Error(`Chain ${toChainId || chainId} not supported by Stargate`)
+        }
+
+        const srcTokenInfo = fromChainTokens[fromToken.toUpperCase()]
+        const dstTokenInfo = toChainTokens[toToken.toUpperCase()]
+
+        if (!srcTokenInfo) {
+          const available = Object.keys(fromChainTokens).join(', ')
+          throw new Error(`Token ${fromToken} not supported on Stargate. Available: ${available}`)
+        }
+        if (!dstTokenInfo) {
+          const available = Object.keys(toChainTokens).join(', ')
+          throw new Error(`Token ${toToken} not supported on Stargate. Available: ${available}`)
+        }
+
+        const amountInUnits = parseUnits(amount, srcTokenInfo.decimals).toString()
+
+        // Call Stargate quote API
+        const response = await fetch('/api/stargate/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fromChainId: chainId,
+            toChainId: toChainId || chainId,
+            fromTokenAddress: srcTokenInfo.address,
+            toTokenAddress: dstTokenInfo.address,
+            fromAmount: amountInUnits,
+            fromAddress: walletAddress,
+            toAddress: walletAddress,
+            slippage,
+          }),
+        })
+
+        if (currentRequestId !== requestIdRef.current) return
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Failed to get Stargate quote' }))
+          throw new Error(errorData.error || errorData.message || `Stargate quote failed: ${response.status}`)
+        }
+
+        const data = await response.json()
+
+        if (!data.success || !data.data) {
+          throw new Error(data.error || 'No Stargate quote available for this route')
+        }
+
+        const quoteData = data.data
+        const toAmountFormatted = formatUnits(BigInt(quoteData.toAmount || '0'), dstTokenInfo.decimals)
+        const inputAmount = parseFloat(amount)
+        const outputAmount = parseFloat(toAmountFormatted)
+        const rate = inputAmount > 0 ? (outputAmount / inputAmount).toFixed(6) : '0'
+
+        // Count steps for display
+        const stepCount = quoteData.stargateSteps?.length || 1
+
+        setQuote({
+          toAmount: toAmountFormatted,
+          toAmountRaw: quoteData.toAmount || '0',
+          rate,
+          gas: '0', // Stargate doesn't provide gas estimate in same format
+          srcToken: {
+            symbol: srcTokenInfo.symbol,
+            name: srcTokenInfo.symbol,
+            decimals: srcTokenInfo.decimals,
+            address: srcTokenInfo.address,
+          },
+          dstToken: {
+            symbol: dstTokenInfo.symbol,
+            name: dstTokenInfo.symbol,
+            decimals: dstTokenInfo.decimals,
+            address: dstTokenInfo.address,
+          },
+          route: `${stepCount} step${stepCount > 1 ? 's' : ''} via Stargate`,
+          protocol: 'stargate',
+          bridgeTool: 'Stargate',
+          steps: stepCount,
+          routeData: quoteData,
+        })
+        setError(null)
+        return
+      }
+
       // Handle Li.Fi bridge quotes
       if (protocol === 'lifi') {
         // Get token info from Li.Fi registry
@@ -350,12 +450,17 @@ export function useSwapQuote(params: SwapQuoteParams | null): UseSwapQuoteResult
       clearTimeout(debounceRef.current)
     }
 
-    // Don't debounce if params are null/invalid or tokens are the same
+    // Check if bridge protocol (allows same token src/dst for cross-chain)
+    const isBridgeProtocol = params?.protocol === 'lifi' || params?.protocol === 'stargate'
+    const isCrossChain = params?.toChainId && params.toChainId !== params?.chainId
+    const sameTokenAllowed = isBridgeProtocol && isCrossChain
+
+    // Don't debounce if params are null/invalid or tokens are the same (unless bridge)
     if (
       !params ||
       !params.amount ||
       parseFloat(params.amount) <= 0 ||
-      params.fromToken.toLowerCase() === params.toToken.toLowerCase()
+      (params.fromToken.toLowerCase() === params.toToken.toLowerCase() && !sameTokenAllowed)
     ) {
       setQuote(null)
       setError(null)
@@ -380,6 +485,7 @@ export function useSwapQuote(params: SwapQuoteParams | null): UseSwapQuoteResult
     params?.toToken,
     params?.amount,
     params?.chainId,
+    params?.toChainId,
     params?.slippage,
     fetchQuote,
   ])
