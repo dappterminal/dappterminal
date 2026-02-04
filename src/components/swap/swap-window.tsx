@@ -1,12 +1,14 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { X, Settings, ChevronDown, ArrowDownUp, Loader2 } from 'lucide-react'
 import { useAccount } from 'wagmi'
 import { NetworkModal } from './network-modal'
 import { TokenModal } from './token-modal'
 import { SettingsModal } from './settings-modal'
 import { getChainName, getMainnetChainIds } from '@/lib/chains'
+import { useSwapQuote } from '@/hooks/useSwapQuote'
+import { useTokenBalance } from '@/hooks/useTokenBalance'
 
 export interface Token {
   symbol: string
@@ -42,7 +44,7 @@ const PROTOCOLS: Protocol[] = [
 ]
 
 export function SwapWindow({ onClose }: SwapWindowProps) {
-  const { chainId: walletChainId, isConnected } = useAccount()
+  const { chainId: walletChainId, isConnected, address } = useAccount()
 
   // Swap state
   const [fromToken, setFromToken] = useState<Token | null>(POPULAR_TOKENS[0])
@@ -68,8 +70,44 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
   const [showToTokenModal, setShowToTokenModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
 
-  // Loading state for quote
-  const [isLoadingQuote, setIsLoadingQuote] = useState(false)
+  // Swap quote using the 1inch fiber
+  const quoteParams = useMemo(() => {
+    if (!fromToken || !toToken || !fromAmount || parseFloat(fromAmount) <= 0) {
+      return null
+    }
+    // Only use 1inch for now (not bridges)
+    if (protocol.id !== '1inch' && protocol.id !== 'uniswap') {
+      return null
+    }
+    return {
+      protocol: '1inch', // Use 1inch fiber for quotes
+      fromToken: fromToken.symbol,
+      toToken: toToken.symbol,
+      amount: fromAmount,
+      chainId: fromChainId,
+      slippage,
+    }
+  }, [fromToken, toToken, fromAmount, fromChainId, slippage, protocol.id])
+
+  const { quote, isLoading: isLoadingQuote, error: quoteError } = useSwapQuote(quoteParams)
+
+  // Fetch balance for the "from" token
+  const { formatted: fromTokenBalance, isLoading: isLoadingBalance } = useTokenBalance(
+    fromToken?.symbol,
+    address,
+    fromChainId
+  )
+
+  // Update toAmount when quote changes
+  useEffect(() => {
+    if (quote?.toAmount) {
+      // Format to reasonable precision
+      const formatted = parseFloat(quote.toAmount).toFixed(6)
+      setToAmount(formatted)
+    } else if (!quoteParams) {
+      setToAmount('')
+    }
+  }, [quote?.toAmount, quoteParams])
 
   // Sync with wallet chain
   useEffect(() => {
@@ -211,7 +249,20 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
                 </button>
               )}
               {isConnected && (
-                <span className="text-xs text-[#737373]">Balance: 0.00</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[#737373]">
+                    Balance: {isLoadingBalance ? '...' : fromTokenBalance}
+                  </span>
+                  {parseFloat(fromTokenBalance) > 0 && (
+                    <button
+                      onClick={() => setFromAmount(fromTokenBalance)}
+                      className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                      data-no-drag
+                    >
+                      Max
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -306,11 +357,19 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
         {/* Quote Info */}
         {fromToken && toToken && fromAmount && (
           <div className="bg-[#0f0f0f] border border-[#262626] rounded-xl p-3 space-y-2">
+            {/* Error display */}
+            {quoteError && (
+              <div className="text-xs text-red-400 mb-2">
+                {quoteError}
+              </div>
+            )}
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Rate</span>
               <span className="text-[#d4d4d4]">
                 {isLoadingQuote ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
+                ) : quote?.rate ? (
+                  `1 ${fromToken.symbol} = ${quote.rate} ${toToken.symbol}`
                 ) : (
                   `1 ${fromToken.symbol} = -- ${toToken.symbol}`
                 )}
@@ -318,7 +377,13 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Route</span>
-              <span className="text-[#d4d4d4]">{protocol.name}</span>
+              <span className="text-[#d4d4d4]">
+                {quote?.protocols && quote.protocols.length > 0 ? (
+                  quote.protocols[0]?.[0]?.map(p => p.name).join(' → ') || protocol.name
+                ) : (
+                  protocol.name
+                )}
+              </span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Slippage</span>
@@ -326,26 +391,48 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Est. Gas</span>
-              <span className="text-[#d4d4d4]">--</span>
+              <span className="text-[#d4d4d4]">
+                {isLoadingQuote ? (
+                  <Loader2 className="w-4 h-4 animate-spin inline" />
+                ) : quote?.gas ? (
+                  `${parseFloat(quote.gas).toFixed(2)} Gwei`
+                ) : (
+                  '--'
+                )}
+              </span>
             </div>
           </div>
         )}
 
         {/* Action Button */}
         <button
-          disabled={!isValidSwap || !isConnected}
+          disabled={!isValidSwap || !isConnected || isLoadingQuote || !!quoteError || isBridge}
           className={`w-full py-3 rounded-xl font-semibold transition-colors ${
-            isValidSwap && isConnected
+            isValidSwap && isConnected && !isLoadingQuote && !quoteError && !isBridge
               ? 'bg-white text-black hover:bg-gray-200'
               : 'bg-[#262626] text-[#737373] cursor-not-allowed'
           }`}
         >
-          {!isConnected ? 'Connect Wallet' : isValidSwap ? 'Review Swap' : 'Enter Amount'}
+          {!isConnected
+            ? 'Connect Wallet'
+            : isBridge
+            ? 'Bridges Coming Soon'
+            : isLoadingQuote
+            ? 'Getting Quote...'
+            : quoteError
+            ? 'Quote Unavailable'
+            : isValidSwap && quote
+            ? 'Review Swap'
+            : 'Enter Amount'}
         </button>
 
         {/* Disclaimer */}
         <div className="text-xs text-[#5a5a5a] text-center">
-          Preview only — functionality coming soon.
+          {isBridge
+            ? 'Bridge execution coming soon.'
+            : quote
+            ? 'Quotes powered by 1inch. Execution coming soon.'
+            : 'Live quotes from 1inch aggregator.'}
         </div>
       </div>
 
