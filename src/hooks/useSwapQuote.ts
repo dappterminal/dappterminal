@@ -14,6 +14,7 @@ import { parseUnits, formatUnits } from 'viem'
 import { resolveTokenAddress, getTokenDecimals } from '@/plugins/1inch/tokens'
 import { LIFI_TOKENS } from '@/lib/lifi'
 import { STARGATE_TOKENS } from '@/plugins/stargate/tokens'
+import { TOKEN_ADDRESSES as WORMHOLE_TOKENS, TOKEN_DECIMALS as WORMHOLE_DECIMALS } from '@/lib/wormhole'
 
 export interface SwapQuoteParams {
   /** Protocol to use for the swap (e.g., '1inch', 'uniswap', 'lifi') */
@@ -78,6 +79,12 @@ export interface SwapQuote {
   steps?: number
   /** Bridge-specific: full route data for execution */
   routeData?: unknown
+  /** Bridge-specific: relay fee info */
+  relayFee?: {
+    amount: string
+    symbol: string
+    formatted: string
+  }
 }
 
 export interface UseSwapQuoteResult {
@@ -134,7 +141,7 @@ export function useSwapQuote(params: SwapQuoteParams | null): UseSwapQuoteResult
 
     // Don't fetch quote if src and dst are the same token (unless it's a bridge protocol)
     const { toChainId, walletAddress } = params
-    const isBridgeProtocol = protocol === 'lifi' || protocol === 'stargate'
+    const isBridgeProtocol = protocol === 'lifi' || protocol === 'stargate' || protocol === 'wormhole'
     const isCrossChain = toChainId && toChainId !== chainId
     if (fromToken.toLowerCase() === toToken.toLowerCase() && !isBridgeProtocol) {
       setQuote(null)
@@ -149,13 +156,13 @@ export function useSwapQuote(params: SwapQuoteParams | null): UseSwapQuoteResult
     }
 
     // Validate protocol
-    if (protocol !== '1inch' && protocol !== 'uniswap' && protocol !== 'lifi' && protocol !== 'stargate') {
+    if (protocol !== '1inch' && protocol !== 'uniswap' && protocol !== 'lifi' && protocol !== 'stargate' && protocol !== 'wormhole') {
       setError(`Protocol '${protocol}' not yet supported for quotes`)
       return
     }
 
     // Bridges require wallet address for quotes
-    if ((protocol === 'lifi' || protocol === 'stargate') && !walletAddress) {
+    if ((protocol === 'lifi' || protocol === 'stargate' || protocol === 'wormhole') && !walletAddress) {
       setQuote(null)
       setError(null)
       return
@@ -254,6 +261,131 @@ export function useSwapQuote(params: SwapQuoteParams | null): UseSwapQuoteResult
           bridgeTool: 'Stargate',
           steps: stepCount,
           routeData: quoteData,
+        })
+        setError(null)
+        return
+      }
+
+      // Handle Wormhole bridge quotes
+      if (protocol === 'wormhole') {
+        // Get token info from Wormhole registry
+        const fromChainTokens = WORMHOLE_TOKENS[chainId]
+        const toChainTokens = WORMHOLE_TOKENS[toChainId || chainId]
+
+        if (!fromChainTokens) {
+          throw new Error(`Chain ${chainId} not supported by Wormhole`)
+        }
+        if (!toChainTokens) {
+          throw new Error(`Chain ${toChainId || chainId} not supported by Wormhole`)
+        }
+
+        const srcTokenAddress = fromChainTokens[fromToken.toLowerCase()]
+        const dstTokenAddress = toChainTokens[toToken.toLowerCase()]
+
+        if (!srcTokenAddress) {
+          const available = Object.keys(fromChainTokens).map(t => t.toUpperCase()).join(', ')
+          throw new Error(`Token ${fromToken} not supported on Wormhole. Available: ${available}`)
+        }
+        if (!dstTokenAddress) {
+          const available = Object.keys(toChainTokens).map(t => t.toUpperCase()).join(', ')
+          throw new Error(`Token ${toToken} not supported on Wormhole. Available: ${available}`)
+        }
+
+        const srcDecimals = WORMHOLE_DECIMALS[fromToken.toLowerCase()] || 18
+        const dstDecimals = WORMHOLE_DECIMALS[toToken.toLowerCase()] || 18
+
+        // Call Wormhole quote API - Wormhole SDK expects human-readable amount (e.g., "10" not "10000000")
+        const response = await fetch('/api/wormhole/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sourceChainId: chainId,
+            destChainId: toChainId || chainId,
+            fromToken: fromToken.toUpperCase(),
+            toToken: toToken.toUpperCase(),
+            amount: amount, // Human-readable amount for Wormhole SDK
+            sourceAddress: walletAddress,
+            destAddress: walletAddress,
+          }),
+        })
+
+        if (currentRequestId !== requestIdRef.current) return
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Failed to get Wormhole quote' }))
+          throw new Error(errorData.error || errorData.message || `Wormhole quote failed: ${response.status}`)
+        }
+
+        const data = await response.json()
+
+        if (!data.success || !data.data) {
+          throw new Error(data.error || 'No Wormhole quote available for this route')
+        }
+
+        const quoteData = data.data
+        const bestRoute = quoteData.bestRoute
+
+        // Extract output amount from quote
+        // formatQuoteForAPI returns: { destinationToken: { amount, decimals, symbol } }
+        let toAmountFormatted = amount // Default to input amount
+        const destToken = bestRoute?.quote?.destinationToken
+        if (destToken?.amount) {
+          // Amount is a direct string, decimals is a direct number
+          const destAmountRaw = BigInt(destToken.amount)
+          const destTokenDecimals = destToken.decimals || dstDecimals
+          toAmountFormatted = formatUnits(destAmountRaw, destTokenDecimals)
+        }
+
+        const inputAmount = parseFloat(amount)
+        const outputAmount = parseFloat(toAmountFormatted)
+        const rate = inputAmount > 0 ? (outputAmount / inputAmount).toFixed(6) : '0'
+
+        // Extract ETA from best route
+        const etaString = bestRoute?.eta || '~15 min'
+        const etaMinutes = etaString.includes('min')
+          ? parseInt(etaString.replace(/[^0-9]/g, '')) || 15
+          : etaString.includes('hr')
+          ? (parseInt(etaString.replace(/[^0-9]/g, '')) || 1) * 60
+          : 15
+
+        // Extract relay fee - bestRoute.relayFee has { amount, decimals, symbol }
+        let relayFeeInfo: { amount: string; symbol: string; formatted: string } | undefined
+        const relayFee = bestRoute?.relayFee
+        if (relayFee?.amount) {
+          const feeAmount = BigInt(relayFee.amount)
+          const feeDecimals = relayFee.decimals || 6
+          const feeFormatted = formatUnits(feeAmount, feeDecimals)
+          relayFeeInfo = {
+            amount: relayFee.amount,
+            symbol: relayFee.symbol || fromToken.toUpperCase(),
+            formatted: `${parseFloat(feeFormatted).toFixed(6)} ${relayFee.symbol || fromToken.toUpperCase()}`,
+          }
+        }
+
+        setQuote({
+          toAmount: toAmountFormatted,
+          toAmountRaw: toAmountFormatted, // Keep as formatted for Wormhole
+          rate,
+          gas: '0',
+          srcToken: {
+            symbol: fromToken.toUpperCase(),
+            name: fromToken.toUpperCase(),
+            decimals: srcDecimals,
+            address: srcTokenAddress,
+          },
+          dstToken: {
+            symbol: toToken.toUpperCase(),
+            name: toToken.toUpperCase(),
+            decimals: dstDecimals,
+            address: dstTokenAddress,
+          },
+          route: bestRoute?.name || 'Wormhole',
+          protocol: 'wormhole',
+          estimatedTime: etaMinutes * 60, // Convert to seconds
+          bridgeTool: bestRoute?.name || 'Wormhole',
+          steps: 1,
+          routeData: quoteData,
+          relayFee: relayFeeInfo,
         })
         setError(null)
         return
@@ -451,7 +583,7 @@ export function useSwapQuote(params: SwapQuoteParams | null): UseSwapQuoteResult
     }
 
     // Check if bridge protocol (allows same token src/dst for cross-chain)
-    const isBridgeProtocol = params?.protocol === 'lifi' || params?.protocol === 'stargate'
+    const isBridgeProtocol = params?.protocol === 'lifi' || params?.protocol === 'stargate' || params?.protocol === 'wormhole'
     const isCrossChain = params?.toChainId && params.toChainId !== params?.chainId
     const sameTokenAllowed = isBridgeProtocol && isCrossChain
 

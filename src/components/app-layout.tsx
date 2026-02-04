@@ -75,6 +75,7 @@ export function AppLayout() {
         const truncated = `${chartType.slice(0, 6)}...${chartType.slice(-4)}`
         displayLabel = `${truncated}/USDC`
       }
+
       
     } else {
       // For normal symbols, uppercase and append /USDC

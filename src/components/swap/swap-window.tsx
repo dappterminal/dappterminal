@@ -56,6 +56,7 @@ const PROTOCOLS: Protocol[] = [
   { id: '1inch', name: '1inch', color: 'from-blue-400 to-blue-600' },
   { id: 'stargate', name: 'Stargate', color: 'from-purple-500 to-indigo-600' },
   { id: 'lifi', name: 'Li.Fi', color: 'from-cyan-400 to-purple-500' },
+  { id: 'wormhole', name: 'Wormhole', color: 'from-teal-400 to-blue-500' },
 ]
 
 export function SwapWindow({ onClose }: SwapWindowProps) {
@@ -76,7 +77,7 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
   const [showProtocolDropdown, setShowProtocolDropdown] = useState(false)
 
   // Check if protocol is a bridge
-  const isBridge = protocol.id === 'stargate' || protocol.id === 'lifi'
+  const isBridge = protocol.id === 'stargate' || protocol.id === 'lifi' || protocol.id === 'wormhole'
 
   // Modal visibility
   const [showFromNetworkModal, setShowFromNetworkModal] = useState(false)
@@ -100,16 +101,16 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
     if (!fromToken || !toToken || !fromAmount || parseFloat(fromAmount) <= 0) {
       return null
     }
-    // Supported protocols: 1inch, uniswap, lifi, stargate
-    if (protocol.id !== '1inch' && protocol.id !== 'uniswap' && protocol.id !== 'lifi' && protocol.id !== 'stargate') {
+    // Supported protocols: 1inch, uniswap, lifi, stargate, wormhole
+    if (protocol.id !== '1inch' && protocol.id !== 'uniswap' && protocol.id !== 'lifi' && protocol.id !== 'stargate' && protocol.id !== 'wormhole') {
       return null
     }
     // Bridges require wallet address
-    if ((protocol.id === 'lifi' || protocol.id === 'stargate') && !address) {
+    if ((protocol.id === 'lifi' || protocol.id === 'stargate' || protocol.id === 'wormhole') && !address) {
       return null
     }
     return {
-      protocol: protocol.id as '1inch' | 'uniswap' | 'lifi' | 'stargate',
+      protocol: protocol.id as '1inch' | 'uniswap' | 'lifi' | 'stargate' | 'wormhole',
       fromToken: fromToken.symbol,
       toToken: toToken.symbol,
       amount: fromAmount,
@@ -166,6 +167,7 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
     const useUniswap = protocol.id === 'uniswap'
     const useLifi = protocol.id === 'lifi'
     const useStargate = protocol.id === 'stargate'
+    const useWormhole = protocol.id === 'wormhole'
 
     // Track if we've successfully sent a transaction (local var for immediate access)
     let sentTxHash: string | null = null
@@ -235,6 +237,125 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
         return
       }
 
+      // Wormhole bridge execution - client-side SDK like CLI
+      if (useWormhole) {
+        setSwapState('swapping')
+
+        // Dynamic imports for Wormhole SDK
+        const { routes, Wormhole } = await import('@wormhole-foundation/sdk')
+        const { initWormholeSDK } = await import('@/lib/wormhole-sdk')
+        const { getWormholeChainName, resolveTokenAddress: resolveWormholeToken } = await import('@/lib/wormhole')
+        const { sendTransaction: wagmiSendTx } = await import('wagmi/actions')
+        const { config } = await import('@/lib/wagmi-config')
+
+        // Initialize SDK
+        const wh = await initWormholeSDK()
+
+        // Get Wormhole chain names
+        const sourceChain = getWormholeChainName(fromChainId)
+        const destChain = getWormholeChainName(toChainId)
+
+        if (!sourceChain || !destChain) {
+          throw new Error('Unsupported chain for Wormhole')
+        }
+
+        // Get token address
+        const fromTokenAddress = resolveWormholeToken(fromChainId, fromToken.symbol)
+
+        // Create route resolver with priority
+        const resolver = wh.resolver([
+          routes.AutomaticCCTPRoute,
+          routes.CCTPRoute,
+          routes.AutomaticTokenBridgeRoute,
+          routes.TokenBridgeRoute,
+        ])
+
+        // Get chain contexts
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const srcChain = wh.getChain(sourceChain as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const dstChain = wh.getChain(destChain as any)
+
+        // Create token ID
+        const isNative = !fromTokenAddress || fromTokenAddress === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
+        const tokenId = Wormhole.tokenId(srcChain.chain, isNative ? 'native' : (fromTokenAddress || fromToken.symbol))
+
+        // Find supported destination tokens
+        const destTokens = await resolver.supportedDestinationTokens(tokenId, srcChain, dstChain)
+        if (!destTokens || destTokens.length === 0) {
+          throw new Error(`No supported routes for ${fromToken.symbol}`)
+        }
+
+        // Create transfer request
+        const transferRequest = await routes.RouteTransferRequest.create(wh, {
+          source: tokenId,
+          destination: destTokens[0],
+        })
+
+        // Set sender and receiver
+        const senderAddr = Wormhole.parseAddress(srcChain.chain, address)
+        const receiverAddr = Wormhole.parseAddress(dstChain.chain, address)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(transferRequest as any).sender = senderAddr
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(transferRequest as any).receiver = receiverAddr
+
+        // Find routes
+        const availableRoutes = await resolver.findRoutes(transferRequest)
+        if (!availableRoutes || availableRoutes.length === 0) {
+          throw new Error('No route found for this transfer')
+        }
+        const route = availableRoutes[0]
+
+        // Validate and get quote - Wormhole expects human-readable amount
+        const transferParams = { amount: fromAmount, options: { nativeGas: 0 } }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const validation = await (route as any).validate(transferRequest, transferParams)
+        if (!validation.valid) {
+          throw new Error(validation.error || 'Invalid transfer parameters')
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const wormholeQuote = await (route as any).quote(transferRequest, validation.params)
+
+        // Create signer adapter for Wormhole SDK
+        const signer = {
+          chain: () => srcChain.chain,
+          address: () => address,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          signAndSend: async (txs: any[]) => {
+            const results = []
+            for (const { transaction } of txs) {
+              const txHash = await wagmiSendTx(config, {
+                to: transaction.to as `0x${string}`,
+                data: transaction.data as `0x${string}`,
+                value: transaction.value ? BigInt(transaction.value) : BigInt(0),
+                gas: transaction.gasLimit ? BigInt(transaction.gasLimit) : undefined,
+              })
+              results.push({ txid: txHash })
+              sentTxHash = txHash
+              setTxHash(txHash)
+            }
+            return results
+          },
+        }
+
+        // Create receiver chain address
+        const receiverChainAddress = {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          chain: (wormholeQuote as any).destinationToken.token.chain,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          address: (transferRequest as any).receiver,
+        }
+
+        // Execute bridge via route.initiate
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (route as any).initiate(transferRequest, signer, wormholeQuote, receiverChainAddress)
+
+        setSwapState('success')
+        return
+      }
+
       // Li.Fi bridge execution
       if (useLifi) {
         if (!quote.routeData) {
@@ -278,8 +399,9 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
               setNeedsApproval(true)
               setSwapState('approving')
 
-              // Approve the Li.Fi contract
-              const approveData = `0x095ea7b3${approvalAddress.slice(2).padStart(64, '0')}${'f'.repeat(64)}` // approve max
+              // Approve the Li.Fi contract for exact amount needed
+              const amountHex = requiredAmount.toString(16).padStart(64, '0')
+              const approveData = `0x095ea7b3${approvalAddress.slice(2).padStart(64, '0')}${amountHex}`
 
               const approveHash = await sendTransactionAsync({
                 to: tokenAddress as `0x${string}`,
@@ -738,8 +860,15 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
         {/* Quote Info */}
         {fromToken && toToken && fromAmount && (
           <div className="bg-[#0f0f0f] border border-[#262626] rounded-xl p-3 space-y-2">
+            {/* Same chain warning for bridges */}
+            {isBridge && fromChainId === toChainId && (
+              <div className="text-xs text-yellow-500 mb-2 flex items-center gap-1.5">
+                <span>⚠</span>
+                <span>Select different source and destination chains for bridging</span>
+              </div>
+            )}
             {/* Error display */}
-            {quoteError && (
+            {quoteError && !( isBridge && fromChainId === toChainId) && (
               <div className="text-xs text-red-400 mb-2">
                 {quoteError}
               </div>
@@ -759,7 +888,10 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Route</span>
               <span className="text-[#d4d4d4]">
-                {protocol.id === 'stargate' ? (
+                {protocol.id === 'wormhole' ? (
+                  // Wormhole: show bridge route info
+                  quote?.route || `${fromToken.symbol} → ${toToken.symbol} (Wormhole)`
+                ) : protocol.id === 'stargate' ? (
                   // Stargate: show bridge route info
                   quote?.route || `${fromToken.symbol} → ${toToken.symbol} (Stargate)`
                 ) : protocol.id === 'lifi' ? (
@@ -796,6 +928,13 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
                 <span className="text-[#d4d4d4]">
                   {Math.ceil(quote.estimatedTime / 60)} min
                 </span>
+              </div>
+            )}
+            {/* Show relay fee for Wormhole */}
+            {quote?.relayFee && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-[#737373]">Relay Fee</span>
+                <span className="text-[#d4d4d4]">{quote.relayFee.formatted}</span>
               </div>
             )}
             <div className="flex items-center justify-between text-sm">
@@ -865,16 +1004,19 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
               !isConnected ||
               isLoadingQuote ||
               !!quoteError ||
-              swapState !== 'idle'
+              swapState !== 'idle' ||
+              (isBridge && fromChainId === toChainId)
             }
             className={`w-full py-3 rounded-xl font-semibold transition-colors ${
-              isValidSwap && isConnected && !isLoadingQuote && !quoteError && swapState === 'idle'
+              isValidSwap && isConnected && !isLoadingQuote && !quoteError && swapState === 'idle' && !(isBridge && fromChainId === toChainId)
                 ? 'bg-white text-black hover:bg-gray-200'
                 : 'bg-[#262626] text-[#737373] cursor-not-allowed'
             }`}
           >
             {!isConnected
               ? 'Connect Wallet'
+              : isBridge && fromChainId === toChainId
+              ? 'Select Different Chains'
               : isLoadingQuote
               ? 'Getting Quote...'
               : quoteError
@@ -897,6 +1039,8 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
         <div className="text-xs text-[#5a5a5a] text-center">
           {swapState === 'success'
             ? isBridge ? 'Bridge transaction submitted. Cross-chain transfers may take a few minutes.' : 'Transaction confirmed on chain.'
+            : protocol.id === 'wormhole'
+            ? 'Powered by Wormhole bridge.'
             : protocol.id === 'stargate'
             ? 'Powered by Stargate bridge.'
             : protocol.id === 'lifi'
