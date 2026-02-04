@@ -52,6 +52,9 @@ export interface ExecutionContext {
   /** Wallet connection state */
   wallet: WalletState
 
+  /** Optional RPC registry (mirrors globalState.rpcRegistry) */
+  rpcRegistry?: RpcRegistry
+
   /** Global state shared across all commands */
   globalState: Record<string, unknown>
 
@@ -61,6 +64,22 @@ export interface ExecutionContext {
   /** Command execution history */
   history: CommandExecution[]
 }
+
+/**
+ * RPC registry entry
+ */
+export interface RpcRegistryEntry {
+  chainId: number
+  source: 'wallet' | 'custom'
+  customRpcUrl?: string
+  customProviderName?: string
+  updatedAt?: string
+}
+
+/**
+ * RPC registry (per-chain)
+ */
+export type RpcRegistry = Record<number, RpcRegistryEntry>
 
 /**
  * Command execution record

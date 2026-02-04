@@ -65,7 +65,7 @@ Date: 2026-02-04
 
 ## Plugins Acting Like Core Features (Integration Issues)
 
-### CoinPaprika & Faucet
+### CoinPaprika & Faucet (fixed)
 **Current state**
 - Commands are registered as G_core and also loaded via plugin fiber, which breaks scope invariants.
 - Reference: `docs/notes/PLUGIN_SYSTEM_AUDIT.md`

@@ -5,7 +5,7 @@ import { Plus, X, ChevronDown } from "lucide-react"
 import { useAccount, useEnsName } from 'wagmi'
 import { mainnet } from 'wagmi/chains'
 import { formatUnits } from 'viem'
-import { registry, registerCoreCommands, createExecutionContext, updateExecutionContext } from "@/core"
+import { registry, registerCoreCommands, createExecutionContext, updateExecutionContext, setRpcRegistry } from "@/core"
 import type { ExecutionContext, CommandResult, TransactionRequest, TypedDataPayload } from "@/core"
 import { pluginLoader } from "@/plugins/plugin-loader"
 import { oneInchPlugin } from "@/plugins/1inch"
@@ -14,6 +14,7 @@ import { wormholePlugin } from "@/plugins/wormhole"
 import { lifiPlugin } from "@/plugins/lifi"
 import { aaveV3Plugin } from "@/plugins/aave-v3"
 import { uniswapV4Plugin } from "@/plugins/uniswap-v4"
+import { loadRpcRegistry } from '@/lib/rpc-registry'
 
 interface OutputSegment {
   text: string
@@ -456,7 +457,9 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     registerCoreCommands()
 
     // Create execution context
-    const context = createExecutionContext()
+    let context = createExecutionContext()
+    const initialRegistry = loadRpcRegistry()
+    context = setRpcRegistry(context, initialRegistry)
 
     // Track plugin loading
     const pluginsToLoad = [
@@ -537,6 +540,25 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // NOTE: Disabled global rpc-registry sync. If needed later, re-enable to
+  // broadcast Node Provider changes into each tab's executionContext.
+  // useEffect(() => {
+  //   const handleRegistryUpdate = (event: Event) => {
+  //     const customEvent = event as CustomEvent
+  //     const registry = customEvent.detail
+  //     if (!registry) return
+  //     setTabs(prevTabs => prevTabs.map(tab => ({
+  //       ...tab,
+  //       executionContext: setRpcRegistry(tab.executionContext, registry),
+  //     })))
+  //   }
+  //
+  //   window.addEventListener('rpc-registry-updated', handleRegistryUpdate as EventListener)
+  //   return () => {
+  //     window.removeEventListener('rpc-registry-updated', handleRegistryUpdate as EventListener)
+  //   }
+  // }, [])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -640,7 +662,8 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     console.log('[Add Tab] Current tabs before add:', tabs.map(t => ({ id: t.id, name: t.name })))
 
     // Create a new execution context for this tab
-    const newContext = createExecutionContext()
+    let newContext = createExecutionContext()
+    newContext = setRpcRegistry(newContext, loadRpcRegistry())
 
     // Load plugins for the new context
     pluginLoader.loadPlugin(oneInchPlugin, undefined, newContext)
@@ -675,7 +698,8 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     console.log('[Add Protocol Tab] Creating new tab for protocol:', protocolId, 'with id:', newId)
 
     // Create a new execution context for this tab
-    const newContext = createExecutionContext()
+    let newContext = createExecutionContext()
+    newContext = setRpcRegistry(newContext, loadRpcRegistry())
 
     // Load plugins for the new context
     pluginLoader.loadPlugin(oneInchPlugin, undefined, newContext)
