@@ -541,22 +541,24 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    const handleRegistryUpdate = (event: Event) => {
-      const customEvent = event as CustomEvent
-      const registry = customEvent.detail
-      if (!registry) return
-      setTabs(prevTabs => prevTabs.map(tab => ({
-        ...tab,
-        executionContext: setRpcRegistry(tab.executionContext, registry),
-      })))
-    }
-
-    window.addEventListener('rpc-registry-updated', handleRegistryUpdate as EventListener)
-    return () => {
-      window.removeEventListener('rpc-registry-updated', handleRegistryUpdate as EventListener)
-    }
-  }, [])
+  // NOTE: Disabled global rpc-registry sync. If needed later, re-enable to
+  // broadcast Node Provider changes into each tab's executionContext.
+  // useEffect(() => {
+  //   const handleRegistryUpdate = (event: Event) => {
+  //     const customEvent = event as CustomEvent
+  //     const registry = customEvent.detail
+  //     if (!registry) return
+  //     setTabs(prevTabs => prevTabs.map(tab => ({
+  //       ...tab,
+  //       executionContext: setRpcRegistry(tab.executionContext, registry),
+  //     })))
+  //   }
+  //
+  //   window.addEventListener('rpc-registry-updated', handleRegistryUpdate as EventListener)
+  //   return () => {
+  //     window.removeEventListener('rpc-registry-updated', handleRegistryUpdate as EventListener)
+  //   }
+  // }, [])
 
   useEffect(() => {
     if (inputRef.current) {
