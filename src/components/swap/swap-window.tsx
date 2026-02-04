@@ -99,19 +99,25 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
     if (!fromToken || !toToken || !fromAmount || parseFloat(fromAmount) <= 0) {
       return null
     }
-    // Only 1inch and uniswap supported (not bridges)
-    if (protocol.id !== '1inch' && protocol.id !== 'uniswap') {
+    // Supported protocols: 1inch, uniswap, lifi
+    if (protocol.id !== '1inch' && protocol.id !== 'uniswap' && protocol.id !== 'lifi') {
+      return null
+    }
+    // Li.Fi requires wallet address
+    if (protocol.id === 'lifi' && !address) {
       return null
     }
     return {
-      protocol: protocol.id as '1inch' | 'uniswap',
+      protocol: protocol.id as '1inch' | 'uniswap' | 'lifi',
       fromToken: fromToken.symbol,
       toToken: toToken.symbol,
       amount: fromAmount,
       chainId: fromChainId,
+      toChainId: isBridge ? toChainId : undefined,
+      walletAddress: address,
       slippage,
     }
-  }, [fromToken, toToken, fromAmount, fromChainId, slippage, protocol.id])
+  }, [fromToken, toToken, fromAmount, fromChainId, toChainId, slippage, protocol.id, isBridge, address])
 
   const { quote, isLoading: isLoadingQuote, error: quoteError } = useSwapQuote(quoteParams)
 
@@ -524,7 +530,10 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Route</span>
               <span className="text-[#d4d4d4]">
-                {protocol.id === 'uniswap' ? (
+                {protocol.id === 'lifi' ? (
+                  // Li.Fi: show bridge route info
+                  quote?.route || `${fromToken.symbol} → ${toToken.symbol} (Li.Fi)`
+                ) : protocol.id === 'uniswap' ? (
                   // Uniswap: show route info from quote
                   quote?.route?.includes('multi-hop')
                     ? `${fromToken.symbol} → ${quote.route.replace('multi-hop via ', '')} → ${toToken.symbol} (V4)`
@@ -548,11 +557,22 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
               <span className="text-[#737373]">Slippage</span>
               <span className="text-[#d4d4d4]">{slippage}%</span>
             </div>
+            {/* Show estimated time for bridges */}
+            {protocol.id === 'lifi' && quote?.estimatedTime && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-[#737373]">Est. Time</span>
+                <span className="text-[#d4d4d4]">
+                  {Math.ceil(quote.estimatedTime / 60)} min
+                </span>
+              </div>
+            )}
             <div className="flex items-center justify-between text-sm">
-              <span className="text-[#737373]">Est. Gas</span>
+              <span className="text-[#737373]">{protocol.id === 'lifi' ? 'Est. Cost' : 'Est. Gas'}</span>
               <span className="text-[#d4d4d4]">
                 {isLoadingQuote ? (
                   <Loader2 className="w-4 h-4 animate-spin inline" />
+                ) : protocol.id === 'lifi' && quote?.gasCostUSD ? (
+                  `$${parseFloat(quote.gasCostUSD).toFixed(2)}`
                 ) : quote?.gas ? (
                   `${parseFloat(quote.gas).toFixed(2)} Gwei`
                 ) : (
