@@ -1253,12 +1253,12 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
 
       if (!currentInput.trim() || !executionContext) return
 
-      // Use ρ_f (fuzzy resolver) for autocomplete
-      const fuzzyResults = registry.ρ_f(
+      // Use getAutocompleteSuggestions for prefix-prioritized matching
+      const suggestions = registry.getAutocompleteSuggestions(
         {
           input: currentInput,
           preferences: {
-            defaults: executionContext.protocolPreferences,
+            defaults: executionContext.protocolPreferences || {},
             priority: [],
           },
           executionContext,
@@ -1266,13 +1266,12 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         0.3 // Lower threshold for more suggestions
       )
 
-      if (fuzzyResults.length === 0) {
+      if (suggestions.length === 0) {
         // No matches
         setFuzzyMatches([])
       } else {
-        // Always show suggestions menu (even for single match)
-        // Deduplicate matches (in case aliases match the same command)
-        const matches = Array.from(new Set(fuzzyResults.map(r => r.command.id)))
+        // Show suggestions menu - extract command IDs
+        const matches = suggestions.map(s => s.id)
         setFuzzyMatches(matches)
         setSelectedMatchIndex(0)
       }
@@ -1445,7 +1444,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                 ))}
 
                 {/* Current Input - sticky on mobile */}
-                <div className="relative md:static sticky bottom-0 bg-[#141414] md:bg-transparent backdrop-blur-sm md:backdrop-blur-none -mx-3 md:mx-0 px-3 md:px-0 py-2 md:py-0">
+                <div className="relative sticky bottom-0 bg-[#141414] md:bg-transparent backdrop-blur-sm md:backdrop-blur-none -mx-3 md:mx-0 px-3 md:px-0 py-2 md:py-0">
                   <div className={`flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded ${isExecuting ? 'opacity-60' : ''}`}>
                     <span className="text-gray-100">
                       {prompt.split('@')[0]}
