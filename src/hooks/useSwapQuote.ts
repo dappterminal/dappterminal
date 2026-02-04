@@ -51,13 +51,15 @@ export interface SwapQuote {
     decimals: number
     address: string
   }
-  /** Routing path through DEXes */
+  /** Routing path through DEXes (1inch) */
   protocols?: Array<Array<Array<{
     name: string
     part: number
     fromTokenAddress: string
     toTokenAddress: string
   }>>>
+  /** Route description (e.g., "single-hop", "multi-hop via WETH") */
+  route?: string
   /** Protocol that provided the quote */
   protocol: string
 }
@@ -121,8 +123,8 @@ export function useSwapQuote(params: SwapQuoteParams | null): UseSwapQuoteResult
       return
     }
 
-    // Currently only 1inch is supported
-    if (protocol !== '1inch') {
+    // Validate protocol
+    if (protocol !== '1inch' && protocol !== 'uniswap') {
       setError(`Protocol '${protocol}' not yet supported for quotes`)
       return
     }
@@ -152,15 +154,29 @@ export function useSwapQuote(params: SwapQuoteParams | null): UseSwapQuoteResult
       const srcDecimals = getTokenDecimals(fromToken)
       const amountInUnits = parseUnits(amount, srcDecimals).toString()
 
-      // Call the 1inch quote API
-      const response = await fetch(
-        `/api/1inch/swap/classic/quote?` +
-        `chainId=${chainId}&` +
-        `src=${srcAddress}&` +
-        `dst=${dstAddress}&` +
-        `amount=${amountInUnits}&` +
-        `slippage=${slippage}`
-      )
+      let response: Response
+
+      if (protocol === 'uniswap') {
+        // Call the Uniswap quote API
+        response = await fetch(
+          `/api/uniswap/quote?` +
+          `chainId=${chainId}&` +
+          `src=${fromToken}&` +
+          `dst=${toToken}&` +
+          `amount=${amountInUnits}&` +
+          `slippage=${slippage}`
+        )
+      } else {
+        // Call the 1inch quote API
+        response = await fetch(
+          `/api/1inch/swap/classic/quote?` +
+          `chainId=${chainId}&` +
+          `src=${srcAddress}&` +
+          `dst=${dstAddress}&` +
+          `amount=${amountInUnits}&` +
+          `slippage=${slippage}`
+        )
+      }
 
       // Check if this request is still the latest
       if (currentRequestId !== requestIdRef.current) {
@@ -196,7 +212,8 @@ export function useSwapQuote(params: SwapQuoteParams | null): UseSwapQuoteResult
         srcToken: data.srcToken,
         dstToken: data.dstToken,
         protocols: data.protocols,
-        protocol: '1inch',
+        route: data.route, // e.g., "single-hop", "multi-hop via WETH"
+        protocol,
       })
       setError(null)
     } catch (err) {

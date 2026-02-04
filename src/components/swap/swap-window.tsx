@@ -94,17 +94,17 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
   // Transaction hooks
   const { sendTransactionAsync } = useSendTransaction()
 
-  // Swap quote using the 1inch fiber
+  // Swap quote using the selected protocol
   const quoteParams = useMemo(() => {
     if (!fromToken || !toToken || !fromAmount || parseFloat(fromAmount) <= 0) {
       return null
     }
-    // Only use 1inch for now (not bridges)
+    // Only 1inch and uniswap supported (not bridges)
     if (protocol.id !== '1inch' && protocol.id !== 'uniswap') {
       return null
     }
     return {
-      protocol: '1inch', // Use 1inch fiber for quotes
+      protocol: protocol.id as '1inch' | 'uniswap',
       fromToken: fromToken.symbol,
       toToken: toToken.symbol,
       amount: fromAmount,
@@ -155,17 +155,20 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
   const executeSwap = useCallback(async () => {
     if (!fromToken || !toToken || !address || !quote) return
 
+    // Determine which protocol to use
+    const useUniswap = protocol.id === 'uniswap'
+
     try {
       setSwapError(null)
       const srcAddress = resolveTokenAddress(fromToken.symbol, fromChainId)
-      const dstAddress = resolveTokenAddress(toToken.symbol, fromChainId)
       const srcDecimals = getTokenDecimals(fromToken.symbol)
       const amount = parseUnits(fromAmount, srcDecimals).toString()
 
       const isNativeToken = srcAddress.toLowerCase() === NATIVE_TOKEN_ADDRESS.toLowerCase()
 
-      // Step 1: Check allowance (skip for native tokens)
-      if (!isNativeToken) {
+      // Step 1: Check allowance (skip for native tokens) - only for 1inch
+      // Note: Uniswap V4 uses Permit2, but for simplicity we'll handle it in the swap call
+      if (!isNativeToken && !useUniswap) {
         setSwapState('checking')
 
         const allowanceRes = await fetch(
@@ -210,9 +213,20 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
       // Step 3: Execute swap
       setSwapState('swapping')
 
-      const swapRes = await fetch(
-        `/api/1inch/swap/classic/swap?chainId=${fromChainId}&src=${srcAddress}&dst=${dstAddress}&amount=${amount}&from=${address}&slippage=${slippage}`
-      )
+      let swapRes: Response
+
+      if (useUniswap) {
+        // Uniswap V4 swap
+        swapRes = await fetch(
+          `/api/uniswap/swap?chainId=${fromChainId}&src=${fromToken.symbol}&dst=${toToken.symbol}&amount=${amount}&from=${address}&slippage=${slippage}`
+        )
+      } else {
+        // 1inch swap
+        const dstAddress = resolveTokenAddress(toToken.symbol, fromChainId)
+        swapRes = await fetch(
+          `/api/1inch/swap/classic/swap?chainId=${fromChainId}&src=${srcAddress}&dst=${dstAddress}&amount=${amount}&from=${address}&slippage=${slippage}`
+        )
+      }
 
       if (!swapRes.ok) {
         const errorData = await swapRes.json()
@@ -234,7 +248,7 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
       setSwapError(message)
       setSwapState('error')
     }
-  }, [fromToken, toToken, address, quote, fromChainId, fromAmount, slippage, sendTransactionAsync])
+  }, [fromToken, toToken, address, quote, fromChainId, fromAmount, slippage, sendTransactionAsync, protocol.id])
 
   // Flip tokens
   const handleFlipTokens = () => {
@@ -510,10 +524,23 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Route</span>
               <span className="text-[#d4d4d4]">
-                {quote?.protocols && quote.protocols.length > 0 ? (
-                  quote.protocols[0]?.[0]?.map(p => p.name).join(' → ') || protocol.name
+                {protocol.id === 'uniswap' ? (
+                  // Uniswap: show route info from quote
+                  quote?.route?.includes('multi-hop')
+                    ? `${fromToken.symbol} → ${quote.route.replace('multi-hop via ', '')} → ${toToken.symbol} (V4)`
+                    : `${fromToken.symbol} → ${toToken.symbol} (V4 direct)`
+                ) : quote?.protocols && quote.protocols.length > 0 ? (
+                  // 1inch: show the routing path
+                  (() => {
+                    const route = quote.protocols[0]
+                    const hops = route?.length || 1
+                    const dexes = route?.[0]?.map(p => p.name).join(', ') || '1inch'
+                    return hops > 1
+                      ? `${hops}-hop via ${dexes}`
+                      : `${fromToken.symbol} → ${toToken.symbol} (${dexes})`
+                  })()
                 ) : (
-                  protocol.name
+                  `${fromToken.symbol} → ${toToken.symbol} (1inch)`
                 )}
               </span>
             </div>
