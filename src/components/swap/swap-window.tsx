@@ -77,6 +77,8 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
 
   // Check if protocol is a bridge
   const isBridge = protocol.id === 'stargate' || protocol.id === 'lifi'
+  // Li.Fi is supported, Stargate not yet
+  const isUnsupportedBridge = protocol.id === 'stargate'
 
   // Modal visibility
   const [showFromNetworkModal, setShowFromNetworkModal] = useState(false)
@@ -163,9 +165,61 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
 
     // Determine which protocol to use
     const useUniswap = protocol.id === 'uniswap'
+    const useLifi = protocol.id === 'lifi'
 
     try {
       setSwapError(null)
+
+      // Li.Fi bridge execution
+      if (useLifi) {
+        if (!quote.routeData) {
+          throw new Error('No route data available for bridge')
+        }
+
+        const route = quote.routeData as { steps: Array<{ action: { fromChainId: number } }> }
+
+        // Execute each step in the route
+        for (let stepIndex = 0; stepIndex < route.steps.length; stepIndex++) {
+          setSwapState('swapping')
+
+          // Get transaction data for this step
+          const stepRes = await fetch('/api/lifi/step-transaction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ route, stepIndex }),
+          })
+
+          if (!stepRes.ok) {
+            const errorData = await stepRes.json()
+            throw new Error(errorData.error || `Failed to get bridge transaction for step ${stepIndex + 1}`)
+          }
+
+          const stepData = await stepRes.json()
+          const txRequest = stepData.data?.transactionRequest
+
+          if (!txRequest) {
+            throw new Error('No transaction data returned from bridge')
+          }
+
+          // Execute the transaction
+          const hash = await sendTransactionAsync({
+            to: txRequest.to as `0x${string}`,
+            data: txRequest.data as `0x${string}`,
+            value: BigInt(txRequest.value || '0'),
+          })
+
+          setTxHash(hash)
+
+          // If there are more steps, wait before proceeding
+          if (stepIndex < route.steps.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 3000))
+          }
+        }
+
+        setSwapState('success')
+        return
+      }
+
       const srcAddress = resolveTokenAddress(fromToken.symbol, fromChainId)
       const srcDecimals = getTokenDecimals(fromToken.symbol)
       const amount = parseUnits(fromAmount, srcDecimals).toString()
@@ -633,19 +687,19 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
               !isConnected ||
               isLoadingQuote ||
               !!quoteError ||
-              isBridge ||
+              isUnsupportedBridge ||
               swapState !== 'idle'
             }
             className={`w-full py-3 rounded-xl font-semibold transition-colors ${
-              isValidSwap && isConnected && !isLoadingQuote && !quoteError && !isBridge && swapState === 'idle'
+              isValidSwap && isConnected && !isLoadingQuote && !quoteError && !isUnsupportedBridge && swapState === 'idle'
                 ? 'bg-white text-black hover:bg-gray-200'
                 : 'bg-[#262626] text-[#737373] cursor-not-allowed'
             }`}
           >
             {!isConnected
               ? 'Connect Wallet'
-              : isBridge
-              ? 'Bridges Coming Soon'
+              : isUnsupportedBridge
+              ? 'Stargate Coming Soon'
               : isLoadingQuote
               ? 'Getting Quote...'
               : quoteError
@@ -655,21 +709,25 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
               : swapState === 'approving'
               ? 'Approve in Wallet...'
               : swapState === 'swapping'
-              ? 'Confirm Swap in Wallet...'
+              ? isBridge ? 'Confirm Bridge in Wallet...' : 'Confirm Swap in Wallet...'
               : isValidSwap && quote
               ? needsApproval
                 ? 'Approve & Swap'
-                : 'Swap'
+                : isBridge ? 'Bridge' : 'Swap'
               : 'Enter Amount'}
           </button>
         )}
 
         {/* Disclaimer */}
         <div className="text-xs text-[#5a5a5a] text-center">
-          {isBridge
-            ? 'Bridge execution coming soon.'
+          {isUnsupportedBridge
+            ? 'Stargate bridge coming soon.'
             : swapState === 'success'
-            ? 'Transaction confirmed on chain.'
+            ? isBridge ? 'Bridge transaction submitted. Cross-chain transfers may take a few minutes.' : 'Transaction confirmed on chain.'
+            : protocol.id === 'lifi'
+            ? 'Powered by Li.Fi bridge aggregator.'
+            : protocol.id === 'uniswap'
+            ? 'Powered by Uniswap V4.'
             : quote
             ? 'Powered by 1inch aggregator.'
             : 'Live quotes from 1inch aggregator.'}
