@@ -621,6 +621,7 @@ export function PriceChart({
 
   const timeRanges: TimeRange[] = ['1m', '5m', '15m', '1h', '4h', '12h', '24h', '1w', '1M', '1Y', 'ALL']
   const dataSources: DataSource[] = ['1inch', 'CoinGecko', 'Coinbase', 'Kraken', 'Mock']
+  const availableSources: Set<DataSource> = new Set(['1inch', 'CoinGecko', 'Mock'])
 
   return (
     <div className={`relative ${className}`}>
@@ -682,6 +683,7 @@ export function PriceChartDropdown({
 }: PriceChartDropdownProps) {
   const timeRanges: TimeRange[] = ['1m', '5m', '15m', '1h', '4h', '12h', '24h', '1w', '1M', '1Y', 'ALL']
   const dataSources: DataSource[] = ['1inch', 'CoinGecko', 'Coinbase', 'Kraken', 'Mock']
+  const availableSources: Set<DataSource> = new Set(['1inch', 'CoinGecko', 'Mock'])
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -736,21 +738,28 @@ export function PriceChartDropdown({
       <div>
         <div className="text-[11px] text-[#737373] font-medium mb-1.5">Data Source</div>
         <div className="flex flex-col gap-1">
-          {dataSources.map((source) => (
-            <button
-              key={source}
-              onClick={() => {
-                onDataSourceChange(source)
-              }}
-              className={`px-2.5 py-1 text-[11px] font-medium rounded transition-colors text-left ${
-                dataSource === source
-                  ? 'bg-[#404040] text-[#E5E5E5]'
-                  : 'text-[#737373] hover:text-[#E5E5E5] hover:bg-[#262626]'
-              }`}
-            >
-              {source}
-            </button>
-          ))}
+          {dataSources.map((source) => {
+            const isAvailable = availableSources.has(source)
+            return (
+              <button
+                key={source}
+                onClick={() => {
+                  if (isAvailable) onDataSourceChange(source)
+                }}
+                disabled={!isAvailable}
+                className={`px-2.5 py-1 text-[11px] font-medium rounded transition-colors text-left ${
+                  !isAvailable
+                    ? 'text-[#404040] cursor-not-allowed'
+                    : dataSource === source
+                    ? 'bg-[#404040] text-[#E5E5E5]'
+                    : 'text-[#737373] hover:text-[#E5E5E5] hover:bg-[#262626]'
+                }`}
+                title={!isAvailable ? 'Coming soon' : undefined}
+              >
+                {source}{!isAvailable && ' (coming soon)'}
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>
