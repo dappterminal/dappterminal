@@ -121,23 +121,12 @@ export function PriceChart({
           // Parse symbol (e.g., "ETH/USDC" -> base=ETH)
           const [baseSymbol] = symbol.split('/').map(s => s.trim())
 
-          // Map common symbols to CoinGecko IDs
-          const symbolToCoinId: Record<string, string> = {
-            'BTC': 'bitcoin',
-            'ETH': 'ethereum',
-            'USDC': 'usd-coin',
-            'USDT': 'tether',
-            'DAI': 'dai',
-            'WBTC': 'wrapped-bitcoin',
-            'WETH': 'weth',
-            'MATIC': 'matic-network',
-            'LINK': 'chainlink',
-            'UNI': 'uniswap',
-            'AAVE': 'aave',
+          // Resolve symbol to CoinGecko coin ID via server endpoint
+          const resolveRes = await fetch(`/api/coingecko/resolve?symbol=${encodeURIComponent(baseSymbol)}`)
+          if (!resolveRes.ok) {
+            throw new Error(`Could not resolve "${baseSymbol}" to a CoinGecko coin`)
           }
-
-          // Try to resolve symbol to coin ID
-          const coinId = symbolToCoinId[baseSymbol.toUpperCase()] || baseSymbol.toLowerCase()
+          const { id: coinId } = await resolveRes.json() as { id: string }
 
           // Map time range to days for CoinGecko
           const timeRangeToDays: Record<TimeRange, number | 'max'> = {
@@ -621,10 +610,6 @@ export function PriceChart({
       }
     }
   }, [chartType, chartData, symbol, timeRange, isLoading])
-
-  const timeRanges: TimeRange[] = ['1m', '5m', '15m', '1h', '4h', '12h', '24h', '1w', '1M', '1Y', 'ALL']
-  const dataSources: DataSource[] = ['1inch', 'CoinGecko', 'Coinbase', 'Kraken', 'Mock']
-  const availableSources: Set<DataSource> = new Set(['1inch', 'CoinGecko', 'Mock'])
 
   return (
     <div className={`relative ${className}`}>

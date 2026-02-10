@@ -81,6 +81,26 @@ export class CoinGeckoClient {
   }
 
   /**
+   * Search for coins by query string (symbol, name, etc.)
+   * Returns the top matches from CoinGecko's search index.
+   * @param query - Search term (e.g., 'SOL', 'solana', 'pepe')
+   */
+  async search(query: string): Promise<{
+    coins: Array<{
+      id: string
+      name: string
+      api_symbol: string
+      symbol: string
+      market_cap_rank: number | null
+      thumb: string
+      large: string
+    }>
+  }> {
+    const endpoint = `/search?query=${encodeURIComponent(query)}`
+    return this.fetch(endpoint)
+  }
+
+  /**
    * Generic fetch method with error handling
    */
   private async fetch<T>(endpoint: string): Promise<T> {
