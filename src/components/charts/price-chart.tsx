@@ -306,23 +306,26 @@ export function PriceChart({
   const mockLineData = useMemo(() => generateMockPricePoints(100, 2000, 0.02), [])
 
   // Prepare chart data
-  const chartData = useMemo(() => {
+  const { chartData, isMockData } = useMemo(() => {
     // Priority: provided data > API data > mock data
     if (data) {
       // Use provided data
       if (chartType === 'candlestick' && 'open' in data[0]) {
-        return data as OHLCData[]
+        return { chartData: data as OHLCData[], isMockData: false }
       } else if (chartType === 'line' && 'price' in data[0]) {
-        return data as PricePoint[]
+        return { chartData: data as PricePoint[], isMockData: false }
       }
     }
 
     if (apiData && apiData.length > 0) {
-      return apiData
+      return { chartData: apiData, isMockData: false }
     }
 
     // Use mock data as fallback
-    return chartType === 'candlestick' ? mockOHLCData : mockLineData
+    return {
+      chartData: chartType === 'candlestick' ? mockOHLCData : mockLineData,
+      isMockData: true,
+    }
   }, [data, apiData, chartType, mockOHLCData, mockLineData])
 
   // Build ECharts option
@@ -658,6 +661,13 @@ export function PriceChart({
           Line
         </button>
       </div>
+
+      {/* Mock data indicator */}
+      {(isMockData || dataSource === 'Mock') && !isLoading && (
+        <div className="absolute bottom-2 left-2 z-10 px-1.5 py-0.5 rounded bg-[#F59E0B]/15 border border-[#F59E0B]/30">
+          <span className="text-[10px] font-medium text-[#F59E0B]">MOCK DATA</span>
+        </div>
+      )}
 
       <BaseChart option={option} height={height} resizeKey={resizeKey} />
     </div>

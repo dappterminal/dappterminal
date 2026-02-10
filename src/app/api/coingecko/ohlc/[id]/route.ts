@@ -13,12 +13,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { coinGeckoClient, CoinGeckoAPIError } from '@/lib/coingecko-client'
 import { chartCache } from '@/lib/cache'
+import { rateLimit, getClientIdentifier } from '@/lib/rate-limit'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Rate limit: 30 req/min per client
+    const clientId = getClientIdentifier(request)
+    const rl = await rateLimit(`chart:coingecko:${clientId}`, 'MODERATE')
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Try again shortly.' },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.reset - Date.now()) / 1000)) } }
+      )
+    }
+
     const { id: coinId } = await params
     const searchParams = request.nextUrl.searchParams
 
