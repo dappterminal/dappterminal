@@ -167,7 +167,7 @@ export function Analytics({ panelWidth }: AnalyticsProps) {
 
           {/* Footer info */}
           <div className="text-xs text-[#737373] text-center pb-2">
-            Mock data • Live updates coming soon
+            Network graph uses sample data
           </div>
         </div>
       </div>
