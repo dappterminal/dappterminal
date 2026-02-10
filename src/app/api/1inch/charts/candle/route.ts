@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { chartCache } from '@/lib/cache';
 
 const ONEINCH_API_KEY = process.env.ONEINCH_API_KEY;
 
@@ -26,6 +27,13 @@ export async function GET(request: NextRequest) {
         { error: '1inch API key not configured' },
         { status: 500 }
       );
+    }
+
+    // Check server-side cache
+    const cacheKey = `1inch:candle:${token0}:${token1}:${period}:${chainId}`;
+    const cached = chartCache.oneInchCandle.get(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
     }
 
     // Call 1inch API with the correct URL pattern (aggregated/candle with seconds)
@@ -61,13 +69,18 @@ export async function GET(request: NextRequest) {
       console.log('Candle chart data received:', data ? 'success' : 'empty');
     }
 
-    return NextResponse.json({
+    const responseBody = {
       token0,
       token1,
       period,
       chainId: parseInt(chainId),
       candles: data
-    });
+    };
+
+    // Store in cache
+    chartCache.oneInchCandle.set(cacheKey, responseBody);
+
+    return NextResponse.json(responseBody);
 
   } catch (error: unknown) {
     if (process.env.NODE_ENV === 'development') {

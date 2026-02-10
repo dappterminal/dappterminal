@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { coinGeckoClient, CoinGeckoAPIError } from '@/lib/coingecko-client'
+import { chartCache } from '@/lib/cache'
 
 export async function GET(
   request: NextRequest,
@@ -38,6 +39,13 @@ export async function GET(
       )
     }
 
+    // Check server-side cache
+    const cacheKey = `coingecko:ohlc:${coinId}:${vsCurrency}:${days}`
+    const cached = chartCache.coingecko.get(cacheKey)
+    if (cached) {
+      return NextResponse.json(cached)
+    }
+
     // Fetch OHLC data from CoinGecko API
     const ohlc = await coinGeckoClient.getOHLC(coinId, vsCurrency, days)
 
@@ -54,13 +62,18 @@ export async function GET(
       market_cap: 0,
     }))
 
-    return NextResponse.json({
+    const responseBody = {
       coinId,
       days,
       vs_currency: vsCurrency,
       count: dataWithVolume.length,
       data: dataWithVolume,
-    })
+    }
+
+    // Store in cache
+    chartCache.coingecko.set(cacheKey, responseBody)
+
+    return NextResponse.json(responseBody)
   } catch (error) {
     console.error('[CoinGecko OHLC API] Error:', error)
 
