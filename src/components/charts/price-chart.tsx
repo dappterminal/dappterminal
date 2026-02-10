@@ -4,7 +4,7 @@
  * Price chart component with candlestick and line chart modes
  */
 
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import type { EChartsOption } from 'echarts'
 import { BaseChart } from './base-chart'
 import type { OHLCData, PricePoint, ChartType, TimeRange, DataSource } from '@/types/charts'
@@ -60,6 +60,8 @@ export function PriceChart({
   const [showDropdown, setShowDropdown] = useState(false)
   const [apiData, setApiData] = useState<OHLCData[] | PricePoint[] | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [lastRefresh, setLastRefresh] = useState<number | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Cache for API data to avoid refetching
@@ -95,26 +97,25 @@ export function PriceChart({
     }
   }, [showDropdown])
 
-  // Fetch data from APIs
-  useEffect(() => {
+  // Extracted fetch function so it can be called by both the initial effect and the polling interval
+  const fetchChartData = useCallback(async (skipClientCache = false) => {
     if ((dataSource !== '1inch' && dataSource !== 'CoinGecko') || data) {
-      setApiData(null)
       return
     }
 
-    const fetchChartData = async () => {
-      // Create cache key based on chart parameters
-      const cacheKey = `${symbol}-${chartType}-${timeRange}-${dataSource}`
+    // Create cache key based on chart parameters
+    const cacheKey = `${symbol}-${chartType}-${timeRange}-${dataSource}`
 
-      // Check if data is already cached
+    // Check if data is already cached (skip on polling refreshes)
+    if (!skipClientCache) {
       const cachedData = cacheRef.current.get(cacheKey)
       if (cachedData) {
-        console.log('Using cached chart data for:', cacheKey)
         setApiData(cachedData)
         return
       }
+    }
 
-      setIsLoading(true)
+    setIsLoading(true)
       try {
         // Handle CoinGecko data source
         if (dataSource === 'CoinGecko') {
@@ -284,11 +285,37 @@ export function PriceChart({
         setApiData(null)
       } finally {
         setIsLoading(false)
+        setLastRefresh(Date.now())
       }
-    }
-
-    fetchChartData()
   }, [symbol, chartType, timeRange, dataSource, data])
+
+  // Initial fetch + refetch when parameters change
+  useEffect(() => {
+    if ((dataSource !== '1inch' && dataSource !== 'CoinGecko') || data) {
+      setApiData(null)
+      return
+    }
+    fetchChartData()
+  }, [fetchChartData])
+
+  // Auto-refresh polling — invalidates client cache so we get fresh server data
+  useEffect(() => {
+    if (!autoRefresh) return
+
+    // Refresh interval based on time range — shorter ranges get faster updates
+    const intervalMs = ['1m', '5m', '15m'].includes(timeRange) ? 15_000
+      : ['1h', '4h'].includes(timeRange) ? 30_000
+      : 60_000
+
+    const id = setInterval(() => {
+      // Clear the client cache entry so we actually hit the server
+      const cacheKey = `${symbol}-${chartType}-${timeRange}-${dataSource}`
+      cacheRef.current.delete(cacheKey)
+      fetchChartData(true)
+    }, intervalMs)
+
+    return () => clearInterval(id)
+  }, [autoRefresh, fetchChartData, symbol, chartType, timeRange, dataSource])
 
   // Generate mock data if not provided
   const mockOHLCData = useMemo(() => generateMockOHLCData(100, 2000, 0.02), [])
@@ -623,36 +650,63 @@ export function PriceChart({
         </div>
       )}
 
-      {/* Chart type toggle - Simple inline controls */}
-      <div className="absolute top-2 right-2 z-10 flex gap-0.5 rounded bg-[#262626] p-0.5">
+      {/* Chart controls - top right */}
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+        {/* Auto-refresh toggle */}
         <button
-          onClick={() => setChartType('candlestick')}
-          className={`px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors ${
-            chartType === 'candlestick'
-              ? 'bg-[#404040] text-[#E5E5E5]'
-              : 'text-[#737373] hover:text-[#E5E5E5]'
+          onClick={() => setAutoRefresh(prev => !prev)}
+          title={autoRefresh ? 'Disable auto-refresh' : 'Enable auto-refresh'}
+          className={`px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors flex items-center gap-1 ${
+            autoRefresh
+              ? 'bg-[#10B981]/20 text-[#10B981] border border-[#10B981]/30'
+              : 'bg-[#262626] text-[#737373] hover:text-[#E5E5E5]'
           }`}
         >
-          Candle
+          <span className={`inline-block w-1.5 h-1.5 rounded-full ${autoRefresh ? 'bg-[#10B981] animate-pulse' : 'bg-[#404040]'}`} />
+          Live
         </button>
-        <button
-          onClick={() => setChartType('line')}
-          className={`px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors ${
-            chartType === 'line'
-              ? 'bg-[#404040] text-[#E5E5E5]'
-              : 'text-[#737373] hover:text-[#E5E5E5]'
-          }`}
-        >
-          Line
-        </button>
+        {/* Chart type toggle */}
+        <div className="flex gap-0.5 rounded bg-[#262626] p-0.5">
+          <button
+            onClick={() => setChartType('candlestick')}
+            className={`px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors ${
+              chartType === 'candlestick'
+                ? 'bg-[#404040] text-[#E5E5E5]'
+                : 'text-[#737373] hover:text-[#E5E5E5]'
+            }`}
+          >
+            Candle
+          </button>
+          <button
+            onClick={() => setChartType('line')}
+            className={`px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors ${
+              chartType === 'line'
+                ? 'bg-[#404040] text-[#E5E5E5]'
+                : 'text-[#737373] hover:text-[#E5E5E5]'
+            }`}
+          >
+            Line
+          </button>
+        </div>
       </div>
 
-      {/* Mock data indicator */}
-      {(isMockData || dataSource === 'Mock') && !isLoading && (
-        <div className="absolute bottom-2 left-2 z-10 px-1.5 py-0.5 rounded bg-[#F59E0B]/15 border border-[#F59E0B]/30">
-          <span className="text-[10px] font-medium text-[#F59E0B]">MOCK DATA</span>
-        </div>
-      )}
+      {/* Bottom status bar */}
+      <div className="absolute bottom-2 left-2 right-2 z-10 flex items-center justify-between pointer-events-none">
+        {/* Mock data indicator (left) */}
+        {(isMockData || dataSource === 'Mock') && !isLoading ? (
+          <div className="px-1.5 py-0.5 rounded bg-[#F59E0B]/15 border border-[#F59E0B]/30">
+            <span className="text-[10px] font-medium text-[#F59E0B]">MOCK DATA</span>
+          </div>
+        ) : <div />}
+        {/* Last updated timestamp (right) */}
+        {lastRefresh && !isLoading && !isMockData && (
+          <div className="px-1.5 py-0.5 rounded bg-[#262626]/80">
+            <span className="text-[9px] text-[#737373]">
+              Updated {new Date(lastRefresh).toLocaleTimeString()}
+            </span>
+          </div>
+        )}
+      </div>
 
       <BaseChart option={option} height={height} resizeKey={resizeKey} />
     </div>
