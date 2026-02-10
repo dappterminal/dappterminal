@@ -6,7 +6,7 @@
 
 import type { CommandHandler } from '@/core'
 import { getTxUrl } from '@/lib/explorers'
-import { trackSwapTransaction } from '@/lib/tracking/swaps'
+import { trackSwap } from '@/lib/tracking/track-client'
 
 /**
  * Swap Handler Data
@@ -147,7 +147,7 @@ export const swapHandler: CommandHandler<SwapRequestData> = async (data, ctx) =>
     })
 
     // Track swap transaction in database
-    trackSwapTransaction({
+    trackSwap({
       txHash: hash,
       chainId: data.chainId,
       protocol: '1inch',
@@ -159,7 +159,7 @@ export const swapHandler: CommandHandler<SwapRequestData> = async (data, ctx) =>
       amountIn: data.amount,
       amountOut: swapTx.dstAmount || '0',
       gasUsed: swapTx.tx.gas,
-    }).catch(err => console.error('Failed to track 1inch swap:', err))
+    })
 
     // Update with success
     ctx.updateHistory([

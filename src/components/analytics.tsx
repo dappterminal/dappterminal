@@ -8,7 +8,6 @@
 import { useState, useEffect } from 'react'
 import { Settings, X } from 'lucide-react'
 import { PriceChart } from './charts/price-chart'
-import { PerformanceChart } from './charts/performance-chart'
 import { NetworkGraph } from './charts/network-graph'
 
 interface AnalyticsProps {
@@ -21,7 +20,7 @@ export function Analytics({ panelWidth }: AnalyticsProps) {
     btc: true,
     eth: true,
     sol: true,
-    performance: true,
+    performance: false, // Disabled — DB transaction tracking not wired up yet
     network: true,
   })
   const [resizeKey, setResizeKey] = useState(0)
@@ -123,26 +122,7 @@ export function Analytics({ panelWidth }: AnalyticsProps) {
             </div>
           )}
 
-          {/* Performance Metrics Window */}
-          {visibleCharts.performance && (
-            <div className="bg-[#141414] rounded-xl border border-[#262626] overflow-hidden min-w-0">
-              <div className="bg-[#1a1a1a] border-b border-[#262626] px-4 py-2.5 flex items-center justify-between">
-                <span className="text-base font-semibold text-white">Performance</span>
-                <button
-                  onClick={() => closeChart('performance')}
-                  className="text-[#737373] hover:text-red-400 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <PerformanceChart
-                title=""
-                height={250}
-                className="p-2"
-                resizeKey={resizeKey}
-              />
-            </div>
-          )}
+          {/* Performance Metrics Window — disabled until DB transaction tracking is wired up */}
 
           {/* Network Graph Window */}
           {visibleCharts.network && (

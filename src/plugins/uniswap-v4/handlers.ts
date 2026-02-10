@@ -17,7 +17,7 @@ import { getUserPositions, findPositionsForPool } from './lib/positionManager'
 import { createPoolKey } from './lib/poolUtils'
 import { prepareAddLiquidity } from './lib/prepareAddLiquidity'
 import { prepareRemoveLiquidityByPool } from './lib/prepareRemoveLiquidity'
-import { trackSwapTransaction } from '@/lib/tracking/swaps'
+import { trackSwap } from '@/lib/tracking/track-client'
 
 /**
  * Swap Command Handler
@@ -286,7 +286,7 @@ export const swapHandler: CommandHandler<UniswapV4SwapRequestData | UniswapV4Mul
 
     // Track swap transaction in database
     if (ctx.walletAddress) {
-      trackSwapTransaction({
+      trackSwap({
         txHash,
         chainId,
         protocol: 'uniswap-v4',
@@ -297,7 +297,7 @@ export const swapHandler: CommandHandler<UniswapV4SwapRequestData | UniswapV4Mul
         tokenOut: singleHopData.tokenOutSymbol,
         amountIn: amountIn.toString(),
         amountOut: singleHopData.params.minAmountOut.toString(),
-      }).catch(err => console.error('Failed to track swap:', err))
+      })
     }
 
     // Get block explorer URL
@@ -608,7 +608,7 @@ export const multiHopSwapHandler: CommandHandler<UniswapV4MultiHopSwapRequestDat
 
     // Track multi-hop swap transaction in database
     if (ctx.walletAddress) {
-      trackSwapTransaction({
+      trackSwap({
         txHash,
         chainId,
         protocol: 'uniswap-v4',
@@ -620,7 +620,7 @@ export const multiHopSwapHandler: CommandHandler<UniswapV4MultiHopSwapRequestDat
         amountIn: amountIn.toString(),
         amountOut: data.params.minAmountOut.toString(),
         route: data.route.map(t => ({ symbol: t.symbol, address: t.address })),
-      }).catch(err => console.error('Failed to track multi-hop swap:', err))
+      })
     }
 
     // Get block explorer URL

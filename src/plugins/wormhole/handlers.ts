@@ -5,7 +5,7 @@
  */
 
 import type { CommandHandler } from '@/core'
-import { trackSwapTransaction } from '@/lib/tracking/swaps'
+import { trackSwap } from '@/lib/tracking/track-client'
 
 /**
  * Bridge Handler Data
@@ -298,7 +298,7 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
 
     // Track bridge transaction in database
     if (txHashes.length > 0) {
-      trackSwapTransaction({
+      trackSwap({
         txHash: lastTxHash,
         chainId: data.chainId,
         protocol: 'wormhole',
@@ -316,7 +316,7 @@ export const bridgeHandler: CommandHandler<WormholeBridgeRequestData> = async (d
           eta,
           txHashes,
         },
-      }).catch(err => console.error('Failed to track Wormhole bridge:', err))
+      })
     }
 
     ctx.updateHistory([
