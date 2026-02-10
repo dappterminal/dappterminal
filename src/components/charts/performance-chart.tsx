@@ -24,10 +24,17 @@ export function PerformanceChart({
   resizeKey,
 }: PerformanceChartProps) {
   // Generate mock data if not provided
+  const isMockData = !data
   const metrics = useMemo(() => data || generateMockPerformanceMetrics(), [data])
 
   return (
-    <div className={className}>
+    <div className={`relative ${className}`}>
+      {/* Mock data indicator */}
+      {isMockData && (
+        <div className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded bg-[#F59E0B]/15 border border-[#F59E0B]/30">
+          <span className="text-[10px] font-medium text-[#F59E0B]">MOCK DATA</span>
+        </div>
+      )}
       {/* Metric cards grid */}
       <div className="grid grid-cols-3 gap-2 p-3">
         {metrics.map((metric, index) => (
