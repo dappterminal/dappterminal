@@ -99,7 +99,7 @@ export function PriceChart({
 
   // Extracted fetch function so it can be called by both the initial effect and the polling interval
   const fetchChartData = useCallback(async (skipClientCache = false) => {
-    if ((dataSource !== '1inch' && dataSource !== 'CoinGecko') || data) {
+    if ((dataSource !== '1inch' && dataSource !== 'CoinGecko' && dataSource !== 'DexScreener') || data) {
       return
     }
 
@@ -174,6 +174,62 @@ export function PriceChart({
             console.log('Transformed CoinGecko data sample:', transformedData.slice(0, 3))
             cacheRef.current.set(cacheKey, transformedData)
             setApiData(transformedData)
+          }
+
+          setIsLoading(false)
+          return
+        }
+
+        // Handle DexScreener data source
+        if (dataSource === 'DexScreener') {
+          const [baseSymbol] = symbol.split('/').map(s => s.trim())
+
+          const response = await fetch(`/api/dexscreener/pairs?q=${encodeURIComponent(baseSymbol)}`)
+          if (!response.ok) {
+            throw new Error('Failed to fetch DexScreener data')
+          }
+
+          const data = await response.json()
+
+          if (data.pairs && data.pairs.length > 0) {
+            // Pick the highest-liquidity pair
+            const pair = data.pairs.reduce((best: any, p: any) =>
+              (p.liquidity?.usd || 0) > (best.liquidity?.usd || 0) ? p : best
+            , data.pairs[0])
+
+            const price = parseFloat(pair.priceUsd) || 0
+            const now = Date.now()
+
+            // DexScreener provides price change percentages but no OHLCV history.
+            // Construct price points from available change data to show a basic trend.
+            const changes: { offset: number; pctKey: string }[] = [
+              { offset: 5 * 60_000, pctKey: 'm5' },
+              { offset: 60 * 60_000, pctKey: 'h1' },
+              { offset: 6 * 60 * 60_000, pctKey: 'h6' },
+              { offset: 24 * 60 * 60_000, pctKey: 'h24' },
+            ]
+
+            const points: PricePoint[] = []
+
+            // Build historical price estimates from percent changes
+            for (const { offset, pctKey } of changes) {
+              const pct = pair.priceChange?.[pctKey]
+              if (pct !== undefined && pct !== null) {
+                const historicalPrice = price / (1 + pct / 100)
+                points.push({ timestamp: now - offset, price: historicalPrice })
+              }
+            }
+
+            // Add current price
+            points.push({ timestamp: now, price })
+
+            // Sort by timestamp
+            points.sort((a, b) => a.timestamp - b.timestamp)
+
+            if (points.length > 0) {
+              cacheRef.current.set(cacheKey, points)
+              setApiData(points)
+            }
           }
 
           setIsLoading(false)
@@ -291,7 +347,7 @@ export function PriceChart({
 
   // Initial fetch + refetch when parameters change
   useEffect(() => {
-    if ((dataSource !== '1inch' && dataSource !== 'CoinGecko') || data) {
+    if ((dataSource !== '1inch' && dataSource !== 'CoinGecko' && dataSource !== 'DexScreener') || data) {
       setApiData(null)
       return
     }
@@ -731,8 +787,8 @@ export function PriceChartDropdown({
   onToggleDropdown,
 }: PriceChartDropdownProps) {
   const timeRanges: TimeRange[] = ['1m', '5m', '15m', '1h', '4h', '12h', '24h', '1w', '1M', '1Y', 'ALL']
-  const dataSources: DataSource[] = ['1inch', 'CoinGecko', 'Coinbase', 'Kraken', 'Mock']
-  const availableSources: Set<DataSource> = new Set(['1inch', 'CoinGecko', 'Mock'])
+  const dataSources: DataSource[] = ['1inch', 'CoinGecko', 'DexScreener', 'Coinbase', 'Kraken', 'Mock']
+  const availableSources: Set<DataSource> = new Set(['1inch', 'CoinGecko', 'DexScreener', 'Mock'])
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

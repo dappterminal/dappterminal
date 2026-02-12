@@ -473,6 +473,7 @@ export const transferCommand: Command = {
  *   chart eth --line - Add ETH price chart (line mode)
  *   chart btc --protocol coinpaprika - Add BTC chart from CoinPaprika
  *   chart pepe --protocol 1inch - Add PEPE chart from 1inch
+ *   chart pepe --protocol dexscreener - Add PEPE chart from DexScreener
  *   chart performance - Add performance metrics chart
  *   chart network - Add network graph chart
  *   chart portfolio [address] [chainIds] - Add portfolio pie chart
@@ -622,6 +623,54 @@ export const chartCommand: Command = {
         }
       }
 
+      // If token is not in valid charts and --protocol dexscreener is specified, fetch pair data
+      if (!validCharts.includes(chartType) && explicitProtocol === 'dexscreener') {
+        try {
+          const searchUrl = `/api/dexscreener/pairs?q=${encodeURIComponent(chartType)}`
+          const response = await fetch(searchUrl)
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+            return {
+              success: false,
+              error: new Error(errorData.error || `Failed to search for token '${chartType}'`),
+            }
+          }
+
+          const data = await response.json()
+
+          if (!data.pairs || data.pairs.length === 0) {
+            return {
+              success: false,
+              error: new Error(`No DEX pairs found for '${chartType}' on DexScreener`),
+            }
+          }
+
+          // Pick the highest-liquidity pair
+          const pair = data.pairs.reduce((best: any, p: any) =>
+            (p.liquidity?.usd || 0) > (best.liquidity?.usd || 0) ? p : best
+          , data.pairs[0])
+
+          return {
+            success: true,
+            value: {
+              addChart: true,
+              chartType: pair.baseToken?.address || chartType,
+              symbol: pair.baseToken?.symbol || chartType.toUpperCase(),
+              name: pair.baseToken?.name,
+              chartMode: isLineMode ? 'line' : 'candlestick',
+              protocol: 'dexscreener',
+              dexscreenerPair: pair,
+            },
+          }
+        } catch (error) {
+          return {
+            success: false,
+            error: new Error(`Failed to search DexScreener: ${error instanceof Error ? error.message : String(error)}`),
+          }
+        }
+      }
+
       // If token is not in valid charts and --protocol 1inch is specified, search for it
       if (!validCharts.includes(chartType) && explicitProtocol === '1inch') {
         try {
@@ -663,7 +712,7 @@ export const chartCommand: Command = {
       if (!validCharts.includes(chartType)) {
         return {
           success: false,
-          error: new Error(`Invalid chart type: ${chartType}\nValid types: ${validCharts.join(', ')}\nOr use --protocol <1inch|coinpaprika> to search for any token`),
+          error: new Error(`Invalid chart type: ${chartType}\nValid types: ${validCharts.join(', ')}\nOr use --protocol <1inch|coinpaprika|dexscreener> to search for any token`),
         }
       }
 
@@ -839,7 +888,7 @@ export const bridgeAliasCommand: Command = {
 export const priceAliasCommand: Command = {
   id: 'price',
   scope: 'G_alias',
-  description: 'Get token price (use --protocol <1inch|coinpaprika> to specify)',
+  description: 'Get token price (use --protocol <1inch|coinpaprika|dexscreener> to specify)',
   aliases: ['p'],
 
   async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
@@ -884,6 +933,7 @@ export const priceAliasCommand: Command = {
       addProtocol(context.protocolPreferences?.price)
       addProtocol('1inch')
       addProtocol('coinpaprika')
+      addProtocol('dexscreener')
 
       // Try each protocol in order
       for (const protocol of candidateProtocols) {
@@ -893,6 +943,16 @@ export const priceAliasCommand: Command = {
           const cpriceCmd = allCommands.find(cmd => cmd.id === 'cprice')
           if (cpriceCmd) {
             return await cpriceCmd.run(sanitizedArgs, context)
+          }
+          continue
+        }
+
+        // For dexscreener, use the dprice command directly
+        if (protocol === 'dexscreener') {
+          const allCommands = registry.getAllCommands()
+          const dpriceCmd = allCommands.find(cmd => cmd.id === 'dprice')
+          if (dpriceCmd) {
+            return await dpriceCmd.run(sanitizedArgs, context)
           }
           continue
         }
@@ -923,6 +983,187 @@ export const priceAliasCommand: Command = {
 }
 
 /**
+ * DexScreener price command - Get DEX token price
+ *
+ * Usage: dprice <symbol>
+ * Example: dprice ETH
+ */
+export const dpriceCommand: Command = {
+  id: 'dprice',
+  scope: 'G_core',
+  description: 'Get DEX token price from DexScreener',
+
+  async run(args: unknown, _context: ExecutionContext): Promise<CommandResult> {
+    try {
+      const argsStr = typeof args === 'string' ? args.trim() : ''
+      const symbol = argsStr.split(' ')[0]
+
+      if (!symbol) {
+        return {
+          success: false,
+          error: new Error(
+            'Usage: dprice <symbol>\nExample: dprice ETH\n         dprice PEPE'
+          ),
+        }
+      }
+
+      const response = await fetch(`/api/dexscreener/pairs?q=${encodeURIComponent(symbol)}`)
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      if (!data.pairs || data.pairs.length === 0) {
+        return {
+          success: false,
+          error: new Error(
+            `No DEX pairs found for '${symbol.toUpperCase()}'.\n\nTry searching: dpairs ${symbol}`
+          ),
+        }
+      }
+
+      // Pick the highest-liquidity pair
+      const pair = data.pairs.reduce((best: any, p: any) =>
+        (p.liquidity?.usd || 0) > (best.liquidity?.usd || 0) ? p : best
+      , data.pairs[0])
+
+      const price = parseFloat(pair.priceUsd) || 0
+      const change24h = pair.priceChange?.h24 || 0
+      const volume24h = pair.volume?.h24 || 0
+      const liquidity = pair.liquidity?.usd || 0
+
+      const formatNumber = (num: number): string => {
+        if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`
+        if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`
+        if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`
+        if (num >= 1e3) return `$${(num / 1e3).toFixed(2)}K`
+        return `$${num.toFixed(2)}`
+      }
+
+      const formatPrice = (p: number): string => {
+        if (p >= 1) return `$${p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        if (p >= 0.01) return `$${p.toFixed(4)}`
+        if (p >= 0.0001) return `$${p.toFixed(6)}`
+        return `$${p.toExponential(4)}`
+      }
+
+      const changeSign = change24h >= 0 ? '+' : ''
+
+      return {
+        success: true,
+        value: {
+          message: [
+            `${change24h >= 0 ? '📈' : '📉'} ${pair.baseToken?.name || symbol.toUpperCase()} (${pair.baseToken?.symbol || symbol.toUpperCase()})`,
+            ``,
+            `  Price: ${formatPrice(price)}`,
+            `  24h Change: ${changeSign}${change24h.toFixed(2)}%`,
+            `  Volume (24h): ${formatNumber(volume24h)}`,
+            `  Liquidity: ${formatNumber(liquidity)}`,
+            `  DEX: ${pair.dexId} | Chain: ${pair.chainId}`,
+            `  Pair: ${pair.baseToken?.symbol}/${pair.quoteToken?.symbol}`,
+            ``,
+            `  Source: DexScreener`,
+          ].join('\n'),
+          pair,
+        },
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      return {
+        success: false,
+        error: new Error(`Failed to fetch DEX price: ${errorMsg}`),
+      }
+    }
+  },
+}
+
+/**
+ * DexScreener pairs search command - Search DEX pairs
+ *
+ * Usage: dpairs <symbol>
+ * Example: dpairs PEPE
+ */
+export const dpairsCommand: Command = {
+  id: 'dpairs',
+  scope: 'G_core',
+  description: 'Search DEX pairs on DexScreener',
+
+  async run(args: unknown, _context: ExecutionContext): Promise<CommandResult> {
+    try {
+      const argsStr = typeof args === 'string' ? args.trim() : ''
+      const query = argsStr.split(' ')[0]
+
+      if (!query) {
+        return {
+          success: false,
+          error: new Error(
+            'Usage: dpairs <symbol>\nExample: dpairs PEPE\n         dpairs ETH'
+          ),
+        }
+      }
+
+      const response = await fetch(`/api/dexscreener/pairs?q=${encodeURIComponent(query)}`)
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      if (!data.pairs || data.pairs.length === 0) {
+        return {
+          success: false,
+          error: new Error(
+            `No DEX pairs found for '${query}'.\n\nTry a different search term.`
+          ),
+        }
+      }
+
+      const formatNumber = (num: number): string => {
+        if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`
+        if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`
+        if (num >= 1e3) return `$${(num / 1e3).toFixed(2)}K`
+        return `$${num.toFixed(2)}`
+      }
+
+      // Show top 10 pairs
+      const pairs = data.pairs.slice(0, 10)
+      const formattedPairs = pairs.map((pair: any, index: number) => {
+        const price = parseFloat(pair.priceUsd) || 0
+        const vol = pair.volume?.h24 || 0
+        const liq = pair.liquidity?.usd || 0
+        const priceStr = price >= 1 ? `$${price.toFixed(2)}` : price >= 0.0001 ? `$${price.toFixed(6)}` : `$${price.toExponential(2)}`
+        return `  ${index + 1}. ${pair.baseToken?.symbol}/${pair.quoteToken?.symbol} on ${pair.dexId} (${pair.chainId})\n     Price: ${priceStr} | Vol: ${formatNumber(vol)} | Liq: ${formatNumber(liq)}`
+      })
+
+      return {
+        success: true,
+        value: {
+          message: [
+            `🔍 DEX pairs for '${query}' (top ${pairs.length}):`,
+            ``,
+            ...formattedPairs,
+            ``,
+            `💡 Use 'dprice <symbol>' to get detailed price data`,
+          ].join('\n'),
+          pairs,
+        },
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      return {
+        success: false,
+        error: new Error(`Failed to search DEX pairs: ${errorMsg}`),
+      }
+    }
+  },
+}
+
+/**
  * All core commands
  */
 export const coreCommands = [
@@ -946,6 +1187,9 @@ export const coreCommands = [
   cpriceCommand,
   coinsearchCommand,
   cchartCommand,
+  // DexScreener commands
+  dpriceCommand,
+  dpairsCommand,
 ]
 
 /**

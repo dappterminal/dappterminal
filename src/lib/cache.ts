@@ -69,4 +69,5 @@ export const chartCache = {
   coingecko: new TTLCache(2 * 60_000),   // 2 minutes
   oneInchCandle: new TTLCache(60_000),    // 1 minute
   oneInchLine: new TTLCache(60_000),      // 1 minute
+  dexscreener: new TTLCache(60_000),     // 1 minute (300 req/min limit)
 }
