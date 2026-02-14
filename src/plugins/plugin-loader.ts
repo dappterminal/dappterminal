@@ -8,7 +8,7 @@
  */
 
 import type { ExecutionContext, ProtocolId } from '@/core/types'
-import { registry } from '@/core/command-registry'
+import { registry as globalRegistry, type CommandRegistry } from '@/core/command-registry'
 import type {
   Plugin,
   PluginConfig,
@@ -20,11 +20,17 @@ import type {
  * Plugin loader and manager
  */
 export class PluginLoader {
+  private registry: CommandRegistry
+
   /** Loaded plugins */
   private plugins: Map<ProtocolId, PluginRegistryEntry> = new Map()
 
   /** Plugin search paths */
   private searchPaths: string[] = []
+
+  constructor(registryInstance: CommandRegistry = globalRegistry) {
+    this.registry = registryInstance
+  }
 
   /**
    * Load a plugin
@@ -70,7 +76,7 @@ export class PluginLoader {
       }
 
       // Register fiber with command registry
-      registry.registerProtocolFiber(fiber)
+      this.registry.registerProtocolFiber(fiber)
 
       // Store in registry
       const entry: PluginRegistryEntry = {

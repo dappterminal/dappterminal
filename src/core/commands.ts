@@ -5,7 +5,7 @@
  */
 
 import type { Command, CommandResult, ExecutionContext } from './types'
-import { registry } from './command-registry'
+import { registry as globalRegistry, type CommandRegistry } from './command-registry'
 import { requestCommand, statusCommand, historyCommand as faucetHistoryCommand } from '@/plugins/faucet'
 import { cpriceCommand, coinsearchCommand, cchartCommand } from '@/plugins/coinpaprika'
 
@@ -32,6 +32,15 @@ function withExecutionMetadata(
   }
 }
 
+function getRegistry(context: ExecutionContext): CommandRegistry {
+  const scopedRegistry = context.globalState?.commandRegistry
+  if (scopedRegistry && typeof scopedRegistry === 'object') {
+    return scopedRegistry as CommandRegistry
+  }
+
+  return globalRegistry
+}
+
 /**
  * Help command - displays available commands
  * Fiber-aware: shows only fiber commands when in M_p, all commands when in M_G
@@ -46,6 +55,7 @@ export const helpCommand: Command = {
     try {
       // If in a protocol fiber (M_p), show only that fiber's commands + essential globals
       if (context.activeProtocol) {
+        const registry = getRegistry(context)
         const fiber = registry.σ(context.activeProtocol)
 
         if (!fiber) {
@@ -89,6 +99,7 @@ export const helpCommand: Command = {
       }
 
       // In global context (M_G), show all commands
+      const registry = getRegistry(context)
       const allCommands = registry.getAllCommands()
 
       const coreCommands = allCommands.filter(cmd => cmd.scope === 'G_core')
@@ -146,6 +157,7 @@ export const listProtocolsCommand: Command = {
 
   async run(_args: unknown, _context: ExecutionContext): Promise<CommandResult> {
     try {
+      const registry = getRegistry(_context)
       const protocols = registry.getProtocols()
       const protocolInfo = protocols.map(protocolId => {
         const fiber = registry.σ(protocolId)
@@ -181,6 +193,7 @@ export const useProtocolCommand: Command = {
 
   async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
     try {
+      const registry = getRegistry(context)
       const protocolId = typeof args === 'string' ? args : (args as any)?.protocol
 
       if (!protocolId) {
@@ -631,6 +644,7 @@ export const chartCommand: Command = {
 
       // If token is not in valid charts and --protocol coinpaprika is specified, route to cchart
       if (!validCharts.includes(chartType) && explicitProtocol === 'coinpaprika') {
+        const registry = getRegistry(context)
         const allCommands = registry.getAllCommands()
         const cchartCmd = allCommands.find((cmd: Command) => cmd.id === 'cchart')
 
@@ -801,6 +815,7 @@ export const swapAliasCommand: Command = {
       addProtocol(context.protocolPreferences?.swap)
       addProtocol('uniswap-v4')
       addProtocol('1inch')
+      const registry = getRegistry(context)
       for (const protocolId of registry.getProtocols()) {
         addProtocol(protocolId)
       }
@@ -876,6 +891,7 @@ export const bridgeAliasCommand: Command = {
       addProtocol('wormhole')
       addProtocol('lifi')
       addProtocol('stargate')
+      const registry = getRegistry(context)
       for (const protocolId of registry.getProtocols()) {
         addProtocol(protocolId)
       }
@@ -961,6 +977,7 @@ export const priceAliasCommand: Command = {
       addProtocol('dexscreener')
 
       // Try each protocol in order
+      const registry = getRegistry(context)
       for (const protocol of candidateProtocols) {
         // For coinpaprika, use the cprice command directly
         if (protocol === 'coinpaprika') {
@@ -1232,7 +1249,7 @@ export const aliasCommands = [
 /**
  * Register all core commands with the registry
  */
-export function registerCoreCommands(): void {
+export function registerCoreCommands(registry: CommandRegistry = globalRegistry): void {
   for (const command of coreCommands) {
     registry.registerCoreCommand(command as Command<unknown, unknown>)
   }

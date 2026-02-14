@@ -5,9 +5,10 @@ import { Plus, X, ChevronDown } from "lucide-react"
 import { useAccount, useEnsName } from 'wagmi'
 import { mainnet } from 'wagmi/chains'
 import { formatUnits } from 'viem'
-import { registry, registerCoreCommands, createExecutionContext, updateExecutionContext, setRpcRegistry } from "@/core"
+import { registerCoreCommands, createExecutionContext, updateExecutionContext, setRpcRegistry } from "@/core"
 import type { ExecutionContext, CommandResult, TransactionRequest, TypedDataPayload } from "@/core"
-import { pluginLoader } from "@/plugins/plugin-loader"
+import { CommandRegistry } from "@/core/command-registry"
+import { PluginLoader } from "@/plugins/plugin-loader"
 import { oneInchPlugin } from "@/plugins/1inch"
 import { stargatePlugin } from "@/plugins/stargate"
 import { wormholePlugin } from "@/plugins/wormhole"
@@ -36,12 +37,25 @@ interface TerminalTab {
   name: string
   history: HistoryItem[]
   executionContext: ExecutionContext
+  runtime: {
+    registry: CommandRegistry
+    pluginLoader: PluginLoader
+  }
   currentInput: string
   commandHistory: string[]
   historyIndex: number
 }
 
 const MAX_COMMAND_HISTORY = 1000 // Maximum commands to keep in history
+
+const pluginsToLoad = [
+  { name: '1inch', plugin: oneInchPlugin },
+  { name: 'Stargate', plugin: stargatePlugin },
+  { name: 'Wormhole', plugin: wormholePlugin },
+  { name: 'LiFi', plugin: lifiPlugin },
+  { name: 'Aave v3', plugin: aaveV3Plugin },
+  { name: 'Uniswap V4', plugin: uniswapV4Plugin },
+]
 
 // Protocol color mapping
 const PROTOCOL_COLORS: Record<string, string> = {
@@ -384,6 +398,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   // Get active tab and its execution context
   const activeTab = tabs.find(tab => tab.id === activeTabId)
   const executionContext = activeTab?.executionContext ?? null
+  const activeRuntime = activeTab?.runtime ?? null
 
   // Get tab-specific input values
   const currentInput = activeTab?.currentInput ?? ""
@@ -450,94 +465,100 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     }
   }, [activeProtocol, activeTabId])
 
-  useEffect(() => {
-    setMounted(true)
+  const createTabRuntime = async (context: ExecutionContext) => {
+    const registry = new CommandRegistry()
+    const tabPluginLoader = new PluginLoader(registry)
+    registerCoreCommands(registry)
 
-    // Register core commands
-    registerCoreCommands()
+    context.globalState = {
+      ...context.globalState,
+      commandRegistry: registry,
+    }
 
-    // Create execution context
-    let context = createExecutionContext()
-    const initialRegistry = loadRpcRegistry()
-    context = setRpcRegistry(context, initialRegistry)
-
-    // Track plugin loading
-    const pluginsToLoad = [
-      { name: '1inch', plugin: oneInchPlugin },
-      { name: 'Stargate', plugin: stargatePlugin },
-      { name: 'Wormhole', plugin: wormholePlugin },
-      { name: 'LiFi', plugin: lifiPlugin },
-      { name: 'Aave v3', plugin: aaveV3Plugin },
-      { name: 'Uniswap V4', plugin: uniswapV4Plugin },
-    ]
-
-    const loadedPluginNames: string[] = []
-
-    // Load all plugins
-    Promise.all(
-      pluginsToLoad.map(({ name, plugin }) =>
-        pluginLoader.loadPlugin(plugin, undefined, context).then(result => {
-          if (result.success) {
-            console.log(`${name} plugin loaded successfully`)
-            loadedPluginNames.push(name)
-            setLoadedPlugins(prev => [...prev, name])
-          } else {
-            console.error(`Failed to load ${name} plugin:`, result.error)
-          }
-          return result
-        })
-      )
-    ).then(() => {
-      setPluginsLoading(false)
-      console.log('All plugins loaded')
-    })
-
-    // Load command history from localStorage
-    const savedHistory = localStorage.getItem('defi-terminal-command-history')
-    let loadedHistory: string[] = []
-    if (savedHistory) {
-      try {
-        const parsed = JSON.parse(savedHistory)
-        if (Array.isArray(parsed)) {
-          // Apply sliding window in case saved history exceeds limit
-          loadedHistory = parsed.length > MAX_COMMAND_HISTORY
-            ? parsed.slice(-MAX_COMMAND_HISTORY)
-            : parsed
+    const loadedNames: string[] = []
+    await Promise.all(
+      pluginsToLoad.map(async ({ name, plugin }) => {
+        const result = await tabPluginLoader.loadPlugin(plugin, undefined, context)
+        if (result.success) {
+          loadedNames.push(name)
+        } else {
+          console.error(`Failed to load ${name} plugin:`, result.error)
         }
-      } catch {
-        // Invalid JSON, ignore
+      })
+    )
+
+    return {
+      runtime: {
+        registry,
+        pluginLoader: tabPluginLoader,
+      },
+      loadedNames,
+    }
+  }
+
+  useEffect(() => {
+    const initialize = async () => {
+      setMounted(true)
+
+      // Create execution context
+      let context = createExecutionContext()
+      const initialRegistry = loadRpcRegistry()
+      context = setRpcRegistry(context, initialRegistry)
+      setPluginsLoading(true)
+
+      const { runtime, loadedNames } = await createTabRuntime(context)
+      setLoadedPlugins(loadedNames)
+      setPluginsLoading(false)
+
+      // Load command history from localStorage
+      const savedHistory = localStorage.getItem('defi-terminal-command-history')
+      let loadedHistory: string[] = []
+      if (savedHistory) {
+        try {
+          const parsed = JSON.parse(savedHistory)
+          if (Array.isArray(parsed)) {
+            // Apply sliding window in case saved history exceeds limit
+            loadedHistory = parsed.length > MAX_COMMAND_HISTORY
+              ? parsed.slice(-MAX_COMMAND_HISTORY)
+              : parsed
+          }
+        } catch {
+          // Invalid JSON, ignore
+        }
+      }
+
+      const initialTab: TerminalTab = {
+        id: "1",
+        name: "defi",
+        history: [
+          {
+            command: "welcome",
+            output: [
+              "Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.2.0). Use at your own risk.",
+              "",
+              "⏳ Loading protocols...",
+              "",
+              "Type 'help' to see available commands."
+            ],
+            timestamp: new Date()
+          }
+        ],
+        executionContext: context,
+        runtime,
+        currentInput: "",
+        commandHistory: loadedHistory,
+        historyIndex: -1
+      }
+      setTabs([initialTab])
+      setActiveTabId("1")
+
+      // Load fontSize from localStorage
+      const savedFontSize = localStorage.getItem('defi-terminal-font-size')
+      if (savedFontSize) {
+        setFontSize(Number(savedFontSize))
       }
     }
-
-    const initialTab: TerminalTab = {
-      id: "1",
-      name: "defi",
-      history: [
-        {
-          command: "welcome",
-          output: [
-            "Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.2.0). Use at your own risk.",
-            "",
-            "⏳ Loading protocols...",
-            "",
-            "Type 'help' to see available commands."
-          ],
-          timestamp: new Date()
-        }
-      ],
-      executionContext: context,
-      currentInput: "",
-      commandHistory: loadedHistory,
-      historyIndex: -1
-    }
-    setTabs([initialTab])
-    setActiveTabId("1")
-
-    // Load fontSize from localStorage
-    const savedFontSize = localStorage.getItem('defi-terminal-font-size')
-    if (savedFontSize) {
-      setFontSize(Number(savedFontSize))
-    }
+    void initialize()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -656,7 +677,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     }
   }, [address, chainId, isConnected, isConnecting, activeTabId])
 
-  const addNewTab = () => {
+  const addNewTab = async () => {
     const newId = Date.now().toString()
     console.log('[Add Tab] Creating new tab with id:', newId)
     console.log('[Add Tab] Current tabs before add:', tabs.map(t => ({ id: t.id, name: t.name })))
@@ -664,14 +685,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     // Create a new execution context for this tab
     let newContext = createExecutionContext()
     newContext = setRpcRegistry(newContext, loadRpcRegistry())
-
-    // Load plugins for the new context
-    pluginLoader.loadPlugin(oneInchPlugin, undefined, newContext)
-    pluginLoader.loadPlugin(stargatePlugin, undefined, newContext)
-    pluginLoader.loadPlugin(wormholePlugin, undefined, newContext)
-    pluginLoader.loadPlugin(lifiPlugin, undefined, newContext)
-    pluginLoader.loadPlugin(aaveV3Plugin, undefined, newContext)
-    pluginLoader.loadPlugin(uniswapV4Plugin, undefined, newContext)
+    const { runtime } = await createTabRuntime(newContext)
 
     const newTab: TerminalTab = {
       id: newId,
@@ -684,30 +698,24 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         }
       ],
       executionContext: newContext,
+      runtime,
       currentInput: "",
       commandHistory: [],
       historyIndex: -1
     }
-    setTabs([...tabs, newTab])
+    setTabs(prevTabs => [...prevTabs, newTab])
     console.log('[Add Tab] New tab created, setting active to:', newId)
     setActiveTabId(newId)
   }
 
-  const createProtocolTab = (protocolId: string) => {
+  const createProtocolTab = async (protocolId: string) => {
     const newId = Date.now().toString()
     console.log('[Add Protocol Tab] Creating new tab for protocol:', protocolId, 'with id:', newId)
 
     // Create a new execution context for this tab
     let newContext = createExecutionContext()
     newContext = setRpcRegistry(newContext, loadRpcRegistry())
-
-    // Load plugins for the new context
-    pluginLoader.loadPlugin(oneInchPlugin, undefined, newContext)
-    pluginLoader.loadPlugin(stargatePlugin, undefined, newContext)
-    pluginLoader.loadPlugin(wormholePlugin, undefined, newContext)
-    pluginLoader.loadPlugin(lifiPlugin, undefined, newContext)
-    pluginLoader.loadPlugin(aaveV3Plugin, undefined, newContext)
-    pluginLoader.loadPlugin(uniswapV4Plugin, undefined, newContext)
+    const { runtime } = await createTabRuntime(newContext)
 
     // Set the active protocol in the context
     newContext.activeProtocol = protocolId
@@ -723,11 +731,12 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         }
       ],
       executionContext: newContext,
+      runtime,
       currentInput: "",
       commandHistory: [],
       historyIndex: -1
     }
-    setTabs([...tabs, newTab])
+    setTabs(prevTabs => [...prevTabs, newTab])
     console.log('[Add Protocol Tab] New protocol tab created, setting active to:', newId)
     setActiveTabId(newId)
     setShowSettings(false) // Close settings menu
@@ -758,7 +767,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   const executeCommand = async (input: string) => {
     const trimmedInput = input.trim()
 
-    if (!trimmedInput || !executionContext) return
+    if (!trimmedInput || !executionContext || !activeRuntime) return
 
     // Prevent executing multiple commands simultaneously
     if (isExecuting) {
@@ -800,7 +809,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     const explicitProtocol = protocolMatch ? protocolMatch[1] : undefined
 
     // Resolve command using ρ (exact resolver)
-    const resolved = registry.ρ({
+    const resolved = activeRuntime.registry.ρ({
       input: commandName,
       explicitProtocol,
       preferences: {
@@ -1039,7 +1048,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
             const handlerCommandId = executedCommandId || resolved.command.id
 
             // Get the plugin for this protocol
-            const pluginEntry = handlerProtocol ? pluginLoader.getPlugin(handlerProtocol) : undefined
+            const pluginEntry = handlerProtocol ? activeRuntime.pluginLoader.getPlugin(handlerProtocol) : undefined
             const handler = pluginEntry?.plugin.handlers?.[handlerCommandId]
 
             if (handler) {
@@ -1266,10 +1275,10 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     } else if (e.key === "Tab") {
       e.preventDefault()
 
-      if (!currentInput.trim() || !executionContext) return
+      if (!currentInput.trim() || !executionContext || !activeRuntime) return
 
       // Use getAutocompleteSuggestions for prefix-prioritized matching
-      const suggestions = registry.getAutocompleteSuggestions(
+      const suggestions = activeRuntime.registry.getAutocompleteSuggestions(
         {
           input: currentInput,
           preferences: {
