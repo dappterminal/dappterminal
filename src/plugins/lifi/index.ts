@@ -12,7 +12,6 @@ import {
   quoteCommand,
   routesCommand,
   bridgeCommand,
-  executeCommand,
   prepareStepCommand,
   chainsCommand,
   statusCommand,
@@ -56,7 +55,6 @@ export const lifiPlugin: Plugin = {
     addCommandToFiber(fiber, quoteCommand as any)
     addCommandToFiber(fiber, routesCommand as any)
     addCommandToFiber(fiber, bridgeCommand as any)
-    addCommandToFiber(fiber, executeCommand as any)
     addCommandToFiber(fiber, prepareStepCommand as any)
     addCommandToFiber(fiber, chainsCommand as any)
     addCommandToFiber(fiber, statusCommand as any)
