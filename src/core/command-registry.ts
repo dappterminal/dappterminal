@@ -135,6 +135,49 @@ export class CommandRegistry {
   ρ(context: ResolutionContext): ResolvedCommand | undefined {
     const input = context.input.trim()
 
+    // Explicit protocol namespace takes precedence over global alias resolution.
+    const namespacedMatch = input.match(/^([^:]+):(.+)$/)
+    if (namespacedMatch) {
+      const [, protocol, scopedInput] = namespacedMatch
+
+      // If we're in a fiber and trying to access a different fiber, block it.
+      if (
+        context.executionContext.activeProtocol &&
+        protocol !== context.executionContext.activeProtocol
+      ) {
+        return undefined
+      }
+
+      const fiber = this.σ(protocol)
+      if (!fiber) {
+        return undefined
+      }
+
+      // Try direct command ID first, then protocol-local alias resolution.
+      const directCommand = fiber.commands.get(scopedInput)
+      if (directCommand) {
+        return {
+          command: directCommand,
+          protocol,
+          resolutionMethod: 'protocol-scoped',
+        }
+      }
+
+      const protocolAlias = this.aliases.get(`${protocol}:${scopedInput}`)
+      if (protocolAlias) {
+        const aliasedCommand = fiber.commands.get(protocolAlias)
+        if (aliasedCommand) {
+          return {
+            command: aliasedCommand,
+            protocol,
+            resolutionMethod: 'protocol-scoped',
+          }
+        }
+      }
+
+      return undefined
+    }
+
     // Check if input is a protocol name - if so, treat it as 'use <protocol>'
     if (this.protocolFibers.has(input)) {
       const useCommand = this.coreCommands.get('use')
@@ -183,30 +226,6 @@ export class CommandRegistry {
     }
 
     // 3. Check protocol-scoped commands (G_p)
-
-    // FIBER ISOLATION: When inside a fiber, block cross-fiber access
-    // Check for namespace syntax (protocol:command)
-    const namespacedMatch = input.match(/^([^:]+):(.+)$/)
-    if (namespacedMatch) {
-      const [, protocol, commandId] = namespacedMatch
-
-      // If we're in a fiber and trying to access a different fiber, block it
-      if (context.executionContext.activeProtocol &&
-          protocol !== context.executionContext.activeProtocol) {
-        // Cross-fiber access blocked
-        return undefined
-      }
-
-      const fiber = this.σ(protocol)
-      const command = fiber?.commands.get(commandId)
-      if (command) {
-        return {
-          command,
-          protocol,
-          resolutionMethod: 'protocol-scoped',
-        }
-      }
-    }
 
     // First try explicit protocol from flag (only if not in a fiber)
     if (context.explicitProtocol && !context.executionContext.activeProtocol) {
