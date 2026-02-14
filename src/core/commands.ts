@@ -9,6 +9,29 @@ import { registry } from './command-registry'
 import { requestCommand, statusCommand, historyCommand as faucetHistoryCommand } from '@/plugins/faucet'
 import { cpriceCommand, coinsearchCommand, cchartCommand } from '@/plugins/coinpaprika'
 
+function withExecutionMetadata(
+  result: CommandResult,
+  executedProtocol: string,
+  executedCommandId: string
+): CommandResult {
+  if (!result.success) {
+    return result
+  }
+
+  if (typeof result.value !== 'object' || result.value === null || Array.isArray(result.value)) {
+    return result
+  }
+
+  return {
+    success: true,
+    value: {
+      ...(result.value as Record<string, unknown>),
+      executedProtocol,
+      executedCommandId,
+    },
+  }
+}
+
 /**
  * Help command - displays available commands
  * Fiber-aware: shows only fiber commands when in M_p, all commands when in M_G
@@ -790,7 +813,8 @@ export const swapAliasCommand: Command = {
 
         const swapCommand = fiber.commands.get('swap')
         if (swapCommand) {
-          return await swapCommand.run(sanitizedArgs, context)
+          const result = await swapCommand.run(sanitizedArgs, context)
+          return withExecutionMetadata(result, protocol, swapCommand.id)
         }
       }
 
@@ -864,7 +888,8 @@ export const bridgeAliasCommand: Command = {
 
         const bridgeCommand = fiber.commands.get('bridge')
         if (bridgeCommand) {
-          return await bridgeCommand.run(sanitizedArgs, context)
+          const result = await bridgeCommand.run(sanitizedArgs, context)
+          return withExecutionMetadata(result, protocol, bridgeCommand.id)
         }
       }
 
@@ -942,7 +967,8 @@ export const priceAliasCommand: Command = {
           const allCommands = registry.getAllCommands()
           const cpriceCmd = allCommands.find(cmd => cmd.id === 'cprice')
           if (cpriceCmd) {
-            return await cpriceCmd.run(sanitizedArgs, context)
+            const result = await cpriceCmd.run(sanitizedArgs, context)
+            return withExecutionMetadata(result, protocol, cpriceCmd.id)
           }
           continue
         }
@@ -952,7 +978,8 @@ export const priceAliasCommand: Command = {
           const allCommands = registry.getAllCommands()
           const dpriceCmd = allCommands.find(cmd => cmd.id === 'dprice')
           if (dpriceCmd) {
-            return await dpriceCmd.run(sanitizedArgs, context)
+            const result = await dpriceCmd.run(sanitizedArgs, context)
+            return withExecutionMetadata(result, protocol, dpriceCmd.id)
           }
           continue
         }
@@ -965,7 +992,8 @@ export const priceAliasCommand: Command = {
 
         const priceCommand = fiber.commands.get('price')
         if (priceCommand) {
-          return await priceCommand.run(sanitizedArgs, context)
+          const result = await priceCommand.run(sanitizedArgs, context)
+          return withExecutionMetadata(result, protocol, priceCommand.id)
         }
       }
 

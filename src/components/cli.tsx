@@ -820,6 +820,18 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         // If protocolNameAsCommand is set, use it as the argument instead
         const commandArgs = resolved.protocolNameAsCommand || args
         const result = await resolved.command.run(commandArgs, executionContext)
+        let executedProtocol: string | undefined
+        let executedCommandId: string | undefined
+
+        if (result.success && typeof result.value === 'object' && result.value !== null && !Array.isArray(result.value)) {
+          const metadata = result.value as { executedProtocol?: unknown; executedCommandId?: unknown }
+          if (typeof metadata.executedProtocol === 'string') {
+            executedProtocol = metadata.executedProtocol
+          }
+          if (typeof metadata.executedCommandId === 'string') {
+            executedCommandId = metadata.executedCommandId
+          }
+        }
 
         // Handle special client-side commands
         if (result.success && typeof result.value === 'object' && result.value !== null) {
@@ -1022,10 +1034,13 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
           // HANDLER DISPATCH SYSTEM
           // Check if command has a registered handler in its plugin
           // ========================================
-          else if (resolved.protocol) {
+          else if (resolved.protocol || executedProtocol) {
+            const handlerProtocol = executedProtocol || resolved.protocol
+            const handlerCommandId = executedCommandId || resolved.command.id
+
             // Get the plugin for this protocol
-            const pluginEntry = pluginLoader.getPlugin(resolved.protocol)
-            const handler = pluginEntry?.plugin.handlers?.[resolved.command.id]
+            const pluginEntry = handlerProtocol ? pluginLoader.getPlugin(handlerProtocol) : undefined
+            const handler = pluginEntry?.plugin.handlers?.[handlerCommandId]
 
             if (handler) {
               // Command has a handler - use it!
@@ -1137,7 +1152,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
           resolved.command,
           args,
           result,
-          resolved.protocol
+          executedProtocol || resolved.protocol
         )
         console.log('[executeCommand] Before update - context.activeProtocol:', executionContext.activeProtocol)
         console.log('[executeCommand] After update - updatedContext.activeProtocol:', updatedContext.activeProtocol)
