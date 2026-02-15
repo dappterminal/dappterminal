@@ -16,6 +16,7 @@ import { lifiPlugin } from "@/plugins/lifi"
 import { aaveV3Plugin } from "@/plugins/aave-v3"
 import { uniswapV4Plugin } from "@/plugins/uniswap-v4"
 import { loadRpcRegistry } from '@/lib/rpc-registry'
+import { debugLog } from '@/lib/debug'
 
 interface OutputSegment {
   text: string
@@ -431,35 +432,17 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   const activeProtocol = executionContext?.activeProtocol
   const prompt = formatPrompt(ensName, address, activeProtocol)
 
-  // Debug: log active protocol changes
-  useEffect(() => {
-    if (activeProtocol) {
-      console.log('Active protocol changed to:', activeProtocol)
-    }
-  }, [activeProtocol])
-
-  // Debug: log active tab changes
-  useEffect(() => {
-    console.log('[Tab State] activeTabId changed to:', activeTabId)
-    console.log('[Tab State] Available tabs:', tabs.map(t => ({ id: t.id, name: t.name })))
-    console.log('[Tab State] Active tab found:', !!activeTab)
-    console.log('[Tab State] Active tab details:', activeTab ? { id: activeTab.id, name: activeTab.name } : 'none')
-  }, [activeTabId, tabs, activeTab])
-
   // Update active tab name when protocol changes
   useEffect(() => {
-    console.log('[Tab Update Effect] Triggered - activeProtocol:', activeProtocol, 'activeTabId:', activeTabId)
+    debugLog('CLI:TabUpdate', 'active protocol update', { activeProtocol, activeTabId })
     if (activeTabId) {
       const newTabName = activeProtocol || 'defi'
-      console.log('[Tab Update Effect] Updating tab name to:', newTabName, 'for tab:', activeTabId)
       setTabs(prevTabs => {
-        console.log('[Tab Update Effect] Current tabs:', prevTabs)
         const updatedTabs = prevTabs.map(tab =>
           tab.id === activeTabId
             ? { ...tab, name: newTabName }
             : tab
         )
-        console.log('[Tab Update Effect] Updated tabs:', updatedTabs)
         return updatedTabs
       })
     }
@@ -679,8 +662,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
 
   const addNewTab = async () => {
     const newId = Date.now().toString()
-    console.log('[Add Tab] Creating new tab with id:', newId)
-    console.log('[Add Tab] Current tabs before add:', tabs.map(t => ({ id: t.id, name: t.name })))
+    debugLog('CLI:Tabs', 'creating tab', { id: newId, currentCount: tabs.length })
 
     // Create a new execution context for this tab
     let newContext = createExecutionContext()
@@ -704,13 +686,12 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       historyIndex: -1
     }
     setTabs(prevTabs => [...prevTabs, newTab])
-    console.log('[Add Tab] New tab created, setting active to:', newId)
     setActiveTabId(newId)
   }
 
   const createProtocolTab = async (protocolId: string) => {
     const newId = Date.now().toString()
-    console.log('[Add Protocol Tab] Creating new tab for protocol:', protocolId, 'with id:', newId)
+    debugLog('CLI:Tabs', 'creating protocol tab', { protocolId, id: newId })
 
     // Create a new execution context for this tab
     let newContext = createExecutionContext()
@@ -737,30 +718,22 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       historyIndex: -1
     }
     setTabs(prevTabs => [...prevTabs, newTab])
-    console.log('[Add Protocol Tab] New protocol tab created, setting active to:', newId)
     setActiveTabId(newId)
     setShowSettings(false) // Close settings menu
   }
 
   const closeTab = (tabId: string) => {
-    console.log('[Close Tab] Attempting to close tab:', tabId)
-    console.log('[Close Tab] Current tabs:', tabs.map(t => ({ id: t.id, name: t.name })))
-    console.log('[Close Tab] Current activeTabId:', activeTabId)
+    debugLog('CLI:Tabs', 'closing tab', { tabId, activeTabId, tabCount: tabs.length })
 
     if (tabs.length === 1) {
-      console.log('[Close Tab] Cannot close last tab')
       return // Don't close last tab
     }
 
     const newTabs = tabs.filter(tab => tab.id !== tabId)
-    console.log('[Close Tab] New tabs after filter:', newTabs.map(t => ({ id: t.id, name: t.name })))
     setTabs(newTabs)
 
     if (activeTabId === tabId) {
-      console.log('[Close Tab] Closed tab was active, switching to:', newTabs[0].id)
       setActiveTabId(newTabs[0].id)
-    } else {
-      console.log('[Close Tab] Closed tab was not active, keeping activeTabId:', activeTabId)
     }
   }
 
@@ -1163,9 +1136,10 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
           result,
           executedProtocol || resolved.protocol
         )
-        console.log('[executeCommand] Before update - context.activeProtocol:', executionContext.activeProtocol)
-        console.log('[executeCommand] After update - updatedContext.activeProtocol:', updatedContext.activeProtocol)
-        console.log('[executeCommand] Setting new execution context...')
+        debugLog('CLI:Command', 'updating execution context', {
+          previousProtocol: executionContext.activeProtocol,
+          nextProtocol: updatedContext.activeProtocol,
+        })
 
         // Update the active tab's execution context
         setTabs(prevTabs => prevTabs.map(tab =>
@@ -1349,14 +1323,8 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                       }}
                       data-no-drag
                       onClick={() => {
-                        console.log(`[Tab Switch] Clicked tab ${tab.id} (${tab.name})`)
-                        console.log(`[Tab Switch] Current activeTabId: ${activeTabId}`)
-                        console.log(`[Tab Switch] All tabs:`, tabs.map(t => ({ id: t.id, name: t.name })))
                         if (activeTabId !== tab.id) {
-                          console.log(`[Tab Switch] Switching from ${activeTabId} to ${tab.id}`)
                           setActiveTabId(tab.id)
-                        } else {
-                          console.log(`[Tab Switch] Already on tab ${tab.id}, no action needed`)
                         }
                       }}
                     >
@@ -1368,7 +1336,6 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                       {tabs.length > 1 && (
                         <button
                           onClick={(e) => {
-                            console.log('[Close Button] Clicked close button for tab:', tab.id)
                             e.stopPropagation()
                             closeTab(tab.id)
                           }}

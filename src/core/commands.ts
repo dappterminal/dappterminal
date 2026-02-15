@@ -7,6 +7,7 @@
 import type { Command, CommandResult, ExecutionContext } from './types'
 import { registry as globalRegistry, type CommandRegistry } from './command-registry'
 import { requestCommand, statusCommand, historyCommand as faucetHistoryCommand } from '@/plugins/faucet'
+import { debugLog } from '@/lib/debug'
 
 function withExecutionMetadata(
   result: CommandResult,
@@ -216,7 +217,7 @@ export const useProtocolCommand: Command = {
 
       // Update context
       context.activeProtocol = protocolId
-      console.log('[use command] Set activeProtocol to:', protocolId, 'context:', context)
+      debugLog('Core:use', 'set active protocol', { protocolId })
 
       return {
         success: true,
@@ -258,7 +259,7 @@ export const exitProtocolCommand: Command = {
 
       // Clear active protocol
       context.activeProtocol = undefined
-      console.log('[exit command] Cleared activeProtocol, was:', previousProtocol)
+      debugLog('Core:exit', 'cleared active protocol', { previousProtocol })
 
       return {
         success: true,

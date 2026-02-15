@@ -4,6 +4,7 @@
 
 import type { Command, CommandResult, ExecutionContext } from '@/core'
 import { resolveTokenAddress, getTokenDecimals } from './tokens'
+import { debugLog } from '@/lib/debug'
 
 /**
  * Price command - Get token price
@@ -42,7 +43,7 @@ export const priceCommand: Command = {
 
       if (!isValidAddress) {
         // Token not in hardcoded list, try searching via 1inch API
-        console.log(`Token '${token}' not in hardcoded list, searching via 1inch API...`)
+        debugLog('1inch:price', 'token not in list, searching API', { token, chainId })
 
         const searchUrl = `/api/1inch/tokens/search?query=${encodeURIComponent(token)}&chainId=${chainId}`
         const searchResponse = await fetch(searchUrl)
@@ -58,7 +59,7 @@ export const priceCommand: Command = {
         const searchData = await searchResponse.json()
         tokenAddress = searchData.address
         tokenSymbol = searchData.symbol
-        console.log(`Found token via search: ${tokenSymbol} at ${tokenAddress}`)
+        debugLog('1inch:price', 'token resolved via search', { tokenSymbol })
       }
 
       const response = await fetch(`/api/1inch/prices/price_by_token?chainId=${chainId}&token=${tokenAddress}`)

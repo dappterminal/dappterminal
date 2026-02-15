@@ -6,6 +6,7 @@
 
 import type { CommandHandler } from '@/core'
 import { trackSwap } from '@/lib/tracking/track-client'
+import { debugLog } from '@/lib/debug'
 
 /**
  * LiFi Route Object (from LiFi SDK)
@@ -55,9 +56,11 @@ interface LiFiBridgeRequestData {
  * - Exchange rate updates
  */
 export const bridgeHandler: CommandHandler<LiFiBridgeRequestData> = async (data, ctx) => {
-  console.log('[LiFi Bridge] Bridge data received:', data)
-  console.log('[LiFi Bridge] Steps array:', data.steps)
-  console.log('[LiFi Bridge] Route:', data.route)
+  debugLog('LiFi Bridge', 'bridge data received', {
+    fromChain: data.fromChain,
+    toChain: data.toChain,
+    steps: data.steps.length,
+  })
 
   // Get chain names for display
   const chainNames: Record<number, string> = {
@@ -128,7 +131,7 @@ export const bridgeHandler: CommandHandler<LiFiBridgeRequestData> = async (data,
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       updateRouteHook(updatedRoute: any) {
-        console.log('[LiFi Bridge] Route update:', updatedRoute)
+        debugLog('LiFi Bridge', 'route update received')
 
         // Extract transaction link and hashes
         const internalTxLink = updatedRoute?.steps?.[0]?.execution?.internalTxLink
@@ -157,13 +160,13 @@ export const bridgeHandler: CommandHandler<LiFiBridgeRequestData> = async (data,
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       acceptExchangeRateUpdateHook(params: any) {
-        console.log('[LiFi Bridge] Exchange rate update:', params)
+        debugLog('LiFi Bridge', 'exchange rate update received', params)
         // Auto-accept rate updates
         return Promise.resolve(true)
       },
     })
 
-    console.log('[LiFi Bridge] Executed route:', executedRoute)
+    debugLog('LiFi Bridge', 'route executed', { steps: executedRoute?.steps?.length })
 
     // Track bridge transactions in database
     if (txHashes.length > 0) {

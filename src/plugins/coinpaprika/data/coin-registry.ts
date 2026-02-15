@@ -7,6 +7,7 @@
 import type { CoinEntry, CoinSearchOptions } from '../types'
 import type { ICoinRegistry } from './coin-registry.interface'
 import coinsData from './coins.json'
+import { debugLog } from '@/lib/debug'
 
 /**
  * JSON-based implementation of ICoinRegistry
@@ -27,7 +28,7 @@ export class JsonFileCoinRegistry implements ICoinRegistry {
       return // Cache is still valid
     }
 
-    console.log('[CoinRegistry] Loading coins data...')
+    debugLog('CoinRegistry', 'loading coins data')
     const startTime = Date.now()
 
     // Load coins from JSON
@@ -40,8 +41,11 @@ export class JsonFileCoinRegistry implements ICoinRegistry {
     this.lastLoadTime = now
 
     const loadTime = Date.now() - startTime
-    console.log(`[CoinRegistry] Loaded ${this.coins.length} coins in ${loadTime}ms`)
-    console.log(`[CoinRegistry] Symbol index size: ${this.symbolIndex.size}`)
+    debugLog('CoinRegistry', 'loaded coins data', {
+      count: this.coins.length,
+      loadTimeMs: loadTime,
+      symbolIndexSize: this.symbolIndex.size,
+    })
   }
 
   private buildIndexes(): void {

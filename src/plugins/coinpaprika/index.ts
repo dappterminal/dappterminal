@@ -10,6 +10,7 @@ import { createProtocolFiber } from '@/core'
 import type { Plugin } from '@/plugins/types'
 import { coinRegistry } from './data/coin-registry'
 import { cpriceCommand, coinsearchCommand, cchartCommand } from './commands'
+import { debugLog } from '@/lib/debug'
 
 export const coinpaprikaPlugin: Plugin = {
   metadata: {
@@ -32,7 +33,7 @@ export const coinpaprikaPlugin: Plugin = {
   },
 
   async initialize(context: ExecutionContext): Promise<ProtocolFiber> {
-    console.log('[CoinPaprika Plugin] Initializing...')
+    debugLog('CoinPaprika Plugin', 'initializing')
 
     // Create protocol fiber
     const fiber = createProtocolFiber(
@@ -53,14 +54,13 @@ export const coinpaprikaPlugin: Plugin = {
       console.error('[CoinPaprika Plugin] Failed to initialize registry:', error)
     })
 
-    console.log('[CoinPaprika Plugin] Initialized successfully')
-    console.log('[CoinPaprika Plugin] Commands (G_alias): cprice, coinsearch, cchart')
+    debugLog('CoinPaprika Plugin', 'initialized', { commands: ['cprice', 'coinsearch', 'cchart'] })
 
     return fiber
   },
 
   async cleanup(): Promise<void> {
-    console.log('[CoinPaprika Plugin] Cleaning up...')
+    debugLog('CoinPaprika Plugin', 'cleaning up')
     // No cleanup needed for now
   },
 
