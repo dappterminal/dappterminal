@@ -95,6 +95,24 @@ export class CommandRegistry {
   }
 
   /**
+   * Unregister a protocol fiber (M_P) and its namespaced aliases.
+   *
+   * Removes:
+   * - The protocol fiber from the registry
+   * - Any aliases registered as `${protocol}:<alias>`
+   */
+  unregisterProtocolFiber(protocol: ProtocolId): void {
+    this.protocolFibers.delete(protocol)
+
+    const namespacedPrefix = `${protocol}:`
+    for (const alias of Array.from(this.aliases.keys())) {
+      if (alias.startsWith(namespacedPrefix)) {
+        this.aliases.delete(alias)
+      }
+    }
+  }
+
+  /**
    * π (Projection): Maps a command to its protocol namespace
    *
    * π: M → Protocols

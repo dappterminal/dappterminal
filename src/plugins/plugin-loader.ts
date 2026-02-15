@@ -132,11 +132,14 @@ export class PluginLoader {
       await entry.plugin.cleanup(context)
     }
 
-    // Remove from registry
+    // Remove from plugin loader state
     this.plugins.delete(pluginId)
+    this.registry.unregisterProtocolFiber(pluginId)
 
-    // Note: We don't remove from command registry as that could break references
-    // In a production system, you might want to implement command registry cleanup
+    // Clear active protocol if it references the unloaded plugin
+    if (context.activeProtocol === pluginId) {
+      context.activeProtocol = undefined
+    }
   }
 
   /**
