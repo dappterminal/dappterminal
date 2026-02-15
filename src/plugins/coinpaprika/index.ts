@@ -9,6 +9,7 @@ import type { ExecutionContext, ProtocolFiber } from '@/core'
 import { createProtocolFiber } from '@/core'
 import type { Plugin } from '@/plugins/types'
 import { coinRegistry } from './data/coin-registry'
+import { cpriceCommand, coinsearchCommand, cchartCommand } from './commands'
 
 export const coinpaprikaPlugin: Plugin = {
   metadata: {
@@ -21,7 +22,7 @@ export const coinpaprikaPlugin: Plugin = {
   },
 
   defaultConfig: {
-    enabled: true,
+    enabled: false,
     config: {
       cacheEnabled: true,
       cacheTTL: 86400000, // 24 hours
@@ -40,7 +41,11 @@ export const coinpaprikaPlugin: Plugin = {
       'Cryptocurrency data with 56K+ coins'
     )
 
-    // Commands are registered as G_core, so they should not be added to a G_p fiber.
+    // Register command implementations with this protocol fiber.
+    // These commands keep G_alias scope so they are invoked through alias orchestration.
+    fiber.commands.set(cpriceCommand.id, cpriceCommand)
+    fiber.commands.set(coinsearchCommand.id, coinsearchCommand)
+    fiber.commands.set(cchartCommand.id, cchartCommand)
 
     // Preload coin registry (lazy load on first use)
     // This will happen automatically when first command is executed
@@ -49,7 +54,7 @@ export const coinpaprikaPlugin: Plugin = {
     })
 
     console.log('[CoinPaprika Plugin] Initialized successfully')
-    console.log('[CoinPaprika Plugin] Commands (G_core): cprice, coinsearch, cchart')
+    console.log('[CoinPaprika Plugin] Commands (G_alias): cprice, coinsearch, cchart')
 
     return fiber
   },

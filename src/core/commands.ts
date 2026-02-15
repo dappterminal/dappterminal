@@ -7,7 +7,6 @@
 import type { Command, CommandResult, ExecutionContext } from './types'
 import { registry as globalRegistry, type CommandRegistry } from './command-registry'
 import { requestCommand, statusCommand, historyCommand as faucetHistoryCommand } from '@/plugins/faucet'
-import { cpriceCommand, coinsearchCommand, cchartCommand } from '@/plugins/coinpaprika'
 
 function withExecutionMetadata(
   result: CommandResult,
@@ -1228,10 +1227,6 @@ export const coreCommands = [
   requestCommand,
   statusCommand,
   faucetHistoryCommand,
-  // CoinPaprika commands
-  cpriceCommand,
-  coinsearchCommand,
-  cchartCommand,
   // DexScreener commands
   dpriceCommand,
   dpairsCommand,
