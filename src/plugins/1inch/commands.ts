@@ -141,6 +141,100 @@ export const gasCommand: Command = {
 }
 
 /**
+ * Quote command - Get swap quote without execution
+ */
+export const quoteCommand: Command = {
+  id: 'quote',
+  scope: 'G_p',
+  protocol: '1inch',
+  description: 'Get a swap quote using 1inch (no execution)',
+  aliases: ['q', 'estimate'],
+
+  async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
+    try {
+      // Parse arguments: quote <amount> <fromToken> <toToken> [--slippage <percent>]
+      const argsStr = typeof args === 'string' ? args.trim() : ''
+      const parts = argsStr.split(' ')
+
+      if (parts.length < 3) {
+        return {
+          success: false,
+          error: new Error(
+            'Usage: quote <amount> <fromToken> <toToken> [--slippage <percent>]\n' +
+            'Example: quote 0.1 eth usdc --slippage 0.5'
+          ),
+        }
+      }
+
+      const amountInput = parts[0]
+      const fromToken = parts[1]
+      const toToken = parts[2]
+
+      // Parse slippage flag
+      let slippage = 1 // Default 1%
+      const slippageIndex = parts.indexOf('--slippage')
+      if (slippageIndex !== -1 && slippageIndex + 1 < parts.length) {
+        slippage = parseFloat(parts[slippageIndex + 1])
+      }
+
+      const chainId = context.wallet.chainId || 1
+
+      // Resolve token symbols to addresses
+      const srcAddress = resolveTokenAddress(fromToken, chainId)
+      const dstAddress = resolveTokenAddress(toToken, chainId)
+
+      // Convert decimal amount to base units using source token decimals
+      const srcDecimals = getTokenDecimals(fromToken)
+      const { parseUnits, formatUnits } = await import('viem')
+      const amount = parseUnits(amountInput, srcDecimals).toString()
+
+      // Fetch quote
+      const quoteResponse = await fetch(
+        `/api/1inch/swap/classic/quote?chainId=${chainId}&src=${srcAddress}&dst=${dstAddress}&amount=${amount}&slippage=${slippage}`
+      )
+
+      if (!quoteResponse.ok) {
+        const errorData = await quoteResponse.json()
+        return {
+          success: false,
+          error: new Error(errorData.error || 'Failed to get swap quote'),
+        }
+      }
+
+      const quote = await quoteResponse.json()
+      const dstDecimals = Number(quote?.dstToken?.decimals ?? getTokenDecimals(toToken))
+      const amountOutFormatted = formatUnits(BigInt(quote.dstAmount), dstDecimals)
+      const toTokenSymbol = String(quote?.dstToken?.symbol || toToken).toUpperCase()
+
+      return {
+        success: true,
+        value: {
+          quoteRequest: true,
+          fromToken,
+          toToken,
+          amountIn: amountInput,
+          amountInBase: amount,
+          amountOut: quote.dstAmount,
+          amountOutFormatted,
+          toTokenSymbol,
+          gas: quote.gas,
+          slippage,
+          chainId,
+          srcAddress,
+          dstAddress,
+          protocols: quote.protocols,
+        },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
  * Swap command - Execute token swap
  */
 export const swapCommand: Command = {

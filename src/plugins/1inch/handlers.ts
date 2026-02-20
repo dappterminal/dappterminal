@@ -27,6 +27,23 @@ interface SwapRequestData {
 }
 
 /**
+ * Quote Handler Data
+ */
+interface QuoteRequestData {
+  quoteRequest: boolean
+  fromToken: string
+  toToken: string
+  amountIn: string
+  amountInBase: string
+  amountOut: string
+  amountOutFormatted?: string
+  toTokenSymbol?: string
+  gas?: string
+  slippage: number
+  chainId: number
+}
+
+/**
  * Limit Order Handler Data
  */
 interface LimitOrderRequestData {
@@ -181,6 +198,28 @@ export const swapHandler: CommandHandler<SwapRequestData> = async (data, ctx) =>
 }
 
 /**
+ * Quote Command Handler
+ *
+ * Displays a non-executable quote preview from the first step of swap flow.
+ */
+export const quoteHandler: CommandHandler<QuoteRequestData> = async (data, ctx) => {
+  const outputToken = (data.toTokenSymbol || data.toToken).toUpperCase()
+  ctx.updateHistory([
+    `📊 Swap Quote:`,
+    `  ${data.fromToken.toUpperCase()} → ${data.toToken.toUpperCase()}`,
+    `  Input: ${data.amountIn}`,
+    `  Output: ${data.amountOutFormatted || data.amountOut} ${outputToken}`,
+    `  Output (base units): ${data.amountOut}`,
+    `  Gas: ${data.gas || 'estimating...'}`,
+    `  Slippage: ${data.slippage}%`,
+    `  Chain ID: ${data.chainId}`,
+    ``,
+    `This is a quote preview only (no transaction sent).`,
+    `Run \`swap ${data.amountIn} ${data.fromToken} ${data.toToken}\` to execute.`,
+  ])
+}
+
+/**
  * Limit Order Command Handler
  *
  * Handles limit order creation on 1inch orderbook with:
@@ -279,6 +318,7 @@ export const limitOrderHandler: CommandHandler<LimitOrderRequestData> = async (d
  * Handler Registry for 1inch Protocol
  */
 export const oneInchHandlers = {
+  quote: quoteHandler,
   swap: swapHandler,
   limitorder: limitOrderHandler,
 }

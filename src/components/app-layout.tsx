@@ -224,7 +224,7 @@ export function AppLayout() {
           <div className="mt-auto flex flex-col items-center space-y-6">
             {/* Docs Icon with Tooltip */}
             <div className="relative group">
-              <a href="https://github.com/dappterminal/dappterminal/blob/main/docs/notes/help.md" target='_blank' rel="noopener noreferrer" className="text-[#737373] hover:text-white block p-2 rounded-lg transition-colors">
+              <a href="https://docs.dappterminal.com" target='_blank' rel="noopener noreferrer" className="text-[#737373] hover:text-white block p-2 rounded-lg transition-colors">
                 <BookOpen className="w-6 h-6" />
               </a>
               <div className="absolute left-full ml-2 px-3 py-1.5 bg-[#1a1a1a] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 border border-[#262626]">
@@ -458,7 +458,7 @@ export function AppLayout() {
                       {menu.id === 'help' && (
                         <>
                           <a
-                            href="https://github.com/dappterminal/dappterminal/blob/main/docs/notes/help.md"
+                            href="https://docs.dappterminal.com"
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={() => setOpenMenu(null)}
