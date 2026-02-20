@@ -35,6 +35,7 @@ interface QuoteRequestData {
   toToken: string
   amountIn: string
   amountInBase: string
+  fromTokenSymbol?: string
   amountOut: string
   amountOutFormatted?: string
   toTokenSymbol?: string
@@ -203,11 +204,13 @@ export const swapHandler: CommandHandler<SwapRequestData> = async (data, ctx) =>
  * Displays a non-executable quote preview from the first step of swap flow.
  */
 export const quoteHandler: CommandHandler<QuoteRequestData> = async (data, ctx) => {
+  const inputToken = (data.fromTokenSymbol || data.fromToken).toUpperCase()
   const outputToken = (data.toTokenSymbol || data.toToken).toUpperCase()
   ctx.updateHistory([
     `📊 Swap Quote:`,
     `  ${data.fromToken.toUpperCase()} → ${data.toToken.toUpperCase()}`,
-    `  Input: ${data.amountIn}`,
+    `  Input: ${data.amountIn} ${inputToken}`,
+    `  Input (base units): ${data.amountInBase}`,
     `  Output: ${data.amountOutFormatted || data.amountOut} ${outputToken}`,
     `  Output (base units): ${data.amountOut}`,
     `  Gas: ${data.gas || 'estimating...'}`,

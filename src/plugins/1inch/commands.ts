@@ -204,6 +204,7 @@ export const quoteCommand: Command = {
       const quote = await quoteResponse.json()
       const dstDecimals = Number(quote?.dstToken?.decimals ?? getTokenDecimals(toToken))
       const amountOutFormatted = formatUnits(BigInt(quote.dstAmount), dstDecimals)
+      const fromTokenSymbol = String(quote?.srcToken?.symbol || fromToken).toUpperCase()
       const toTokenSymbol = String(quote?.dstToken?.symbol || toToken).toUpperCase()
 
       return {
@@ -214,6 +215,7 @@ export const quoteCommand: Command = {
           toToken,
           amountIn: amountInput,
           amountInBase: amount,
+          fromTokenSymbol,
           amountOut: quote.dstAmount,
           amountOutFormatted,
           toTokenSymbol,
