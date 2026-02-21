@@ -16,7 +16,7 @@ import type { TickerResponse } from './types'
  */
 export const cpriceCommand: Command = {
   id: 'cprice',
-  scope: 'G_core',
+  scope: 'G_alias',
   description: 'Get cryptocurrency price from CoinPaprika (56K+ coins)',
 
   async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
@@ -134,7 +134,7 @@ export const cpriceCommand: Command = {
  */
 export const coinsearchCommand: Command = {
   id: 'coinsearch',
-  scope: 'G_core',
+  scope: 'G_alias',
   description: 'Search for cryptocurrencies by name or symbol',
 
   async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
@@ -204,7 +204,7 @@ export const coinsearchCommand: Command = {
  */
 export const cchartCommand: Command = {
   id: 'cchart',
-  scope: 'G_core',
+  scope: 'G_alias',
   description: 'Add CoinPaprika price chart to analytics panel',
 
   async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {

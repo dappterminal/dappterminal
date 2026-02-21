@@ -12,9 +12,9 @@ import { CommandType, RoutePlanner } from '@uniswap/universal-router-sdk'
 import { createPoolKey, getPoolTokenAddress } from './poolUtils'
 import { getUniversalRouterAddress, UNIVERSAL_ROUTER_ABI } from './contracts'
 import { isNativeToken } from './tokens'
+import { debugLog } from '@/lib/debug'
 
-// Debug mode - set to true for detailed logs
-const DEBUG = false
+const DEBUG = process.env.NEXT_PUBLIC_DEBUG_LOGS === 'true'
 
 /**
  * Get V4 currency address
@@ -166,24 +166,24 @@ function encodeV4MultiHopActions(
   const path = encodeMultihopExactInPath(poolKeys, currencyIn, route)
 
   if (DEBUG) {
-    console.log('=== V4 Multi-Hop Swap Config ===')
-    console.log('Route:', route.map(t => t.symbol).join(' → '))
-    console.log('Token In:', tokenIn.symbol, tokenIn.address, '(isNative:', isNativeToken(tokenIn.address), ')')
-    console.log('Token Out:', tokenOut.symbol, tokenOut.address, '(isNative:', isNativeToken(tokenOut.address), ')')
-    console.log('Currency In (for SETTLE_ALL):', currencyIn)
-    console.log('Currency Out (for TAKE_ALL):', currencyOut)
-    console.log('AmountIn:', amountIn.toString())
-    console.log('MinAmountOut:', minAmountOut.toString())
-    console.log('Number of hops:', poolKeys.length)
-    console.log('Pool Keys:')
+    debugLog('=== V4 Multi-Hop Swap Config ===')
+    debugLog('Route:', route.map(t => t.symbol).join(' → '))
+    debugLog('Token In:', tokenIn.symbol, tokenIn.address, '(isNative:', isNativeToken(tokenIn.address), ')')
+    debugLog('Token Out:', tokenOut.symbol, tokenOut.address, '(isNative:', isNativeToken(tokenOut.address), ')')
+    debugLog('Currency In (for SETTLE_ALL):', currencyIn)
+    debugLog('Currency Out (for TAKE_ALL):', currencyOut)
+    debugLog('AmountIn:', amountIn.toString())
+    debugLog('MinAmountOut:', minAmountOut.toString())
+    debugLog('Number of hops:', poolKeys.length)
+    debugLog('Pool Keys:')
     poolKeys.forEach((pk, i) => {
-      console.log(`  Pool ${i}: ${pk.currency0} / ${pk.currency1}, fee: ${pk.fee}, tickSpacing: ${pk.tickSpacing}`)
+      debugLog(`  Pool ${i}: ${pk.currency0} / ${pk.currency1}, fee: ${pk.fee}, tickSpacing: ${pk.tickSpacing}`)
     })
-    console.log('Path Keys:')
+    debugLog('Path Keys:')
     path.forEach((pk, i) => {
-      console.log(`  Path ${i}: intermediateCurrency=${pk.intermediateCurrency}, fee=${pk.fee}, tickSpacing=${pk.tickSpacing}`)
+      debugLog(`  Path ${i}: intermediateCurrency=${pk.intermediateCurrency}, fee=${pk.fee}, tickSpacing=${pk.tickSpacing}`)
     })
-    console.log('Recipient:', recipient)
+    debugLog('Recipient:', recipient)
   }
 
   // Build V4 actions using the official V4Planner SDK
@@ -215,10 +215,10 @@ function encodeV4MultiHopActions(
   routePlanner.addCommand(CommandType.V4_SWAP, [encodedActions])
 
   if (DEBUG) {
-    console.log('=== V4 Multi-Hop Encoding Complete ===')
-    console.log('Action sequence:', 'SWAP_EXACT_IN -> SETTLE_ALL -> TAKE_ALL')
-    console.log('Commands:', routePlanner.commands)
-    console.log('Inputs length:', routePlanner.inputs.length)
+    debugLog('=== V4 Multi-Hop Encoding Complete ===')
+    debugLog('Action sequence:', 'SWAP_EXACT_IN -> SETTLE_ALL -> TAKE_ALL')
+    debugLog('Commands:', routePlanner.commands)
+    debugLog('Inputs length:', routePlanner.inputs.length)
   }
 
   return {
@@ -264,13 +264,13 @@ export function prepareMultiHopSwap(params: MultiHopSwapParams): {
   const value = isNativeToken(tokenIn.address) ? amountIn : BigInt(0)
 
   if (DEBUG) {
-    console.log('=== Universal Router Multi-Hop Transaction ===')
-    console.log('To:', universalRouterAddress)
-    console.log('Value:', value.toString(), 'wei')
-    console.log('Commands:', commands)
-    console.log('Inputs length:', inputs.length)
-    console.log('Deadline:', deadline.toString())
-    console.log('Data length:', data.length)
+    debugLog('=== Universal Router Multi-Hop Transaction ===')
+    debugLog('To:', universalRouterAddress)
+    debugLog('Value:', value.toString(), 'wei')
+    debugLog('Commands:', commands)
+    debugLog('Inputs length:', inputs.length)
+    debugLog('Deadline:', deadline.toString())
+    debugLog('Data length:', data.length)
   }
 
   return {

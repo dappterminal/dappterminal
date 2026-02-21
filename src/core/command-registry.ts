@@ -9,6 +9,7 @@
  */
 
 import type {
+  AutocompleteSuggestion,
   Command,
   CommandScope,
   ProtocolFiber,
@@ -94,6 +95,24 @@ export class CommandRegistry {
   }
 
   /**
+   * Unregister a protocol fiber (M_P) and its namespaced aliases.
+   *
+   * Removes:
+   * - The protocol fiber from the registry
+   * - Any aliases registered as `${protocol}:<alias>`
+   */
+  unregisterProtocolFiber(protocol: ProtocolId): void {
+    this.protocolFibers.delete(protocol)
+
+    const namespacedPrefix = `${protocol}:`
+    for (const alias of Array.from(this.aliases.keys())) {
+      if (alias.startsWith(namespacedPrefix)) {
+        this.aliases.delete(alias)
+      }
+    }
+  }
+
+  /**
    * π (Projection): Maps a command to its protocol namespace
    *
    * π: M → Protocols
@@ -133,6 +152,49 @@ export class CommandRegistry {
    */
   ρ(context: ResolutionContext): ResolvedCommand | undefined {
     const input = context.input.trim()
+
+    // Explicit protocol namespace takes precedence over global alias resolution.
+    const namespacedMatch = input.match(/^([^:]+):(.+)$/)
+    if (namespacedMatch) {
+      const [, protocol, scopedInput] = namespacedMatch
+
+      // If we're in a fiber and trying to access a different fiber, block it.
+      if (
+        context.executionContext.activeProtocol &&
+        protocol !== context.executionContext.activeProtocol
+      ) {
+        return undefined
+      }
+
+      const fiber = this.σ(protocol)
+      if (!fiber) {
+        return undefined
+      }
+
+      // Try direct command ID first, then protocol-local alias resolution.
+      const directCommand = fiber.commands.get(scopedInput)
+      if (directCommand) {
+        return {
+          command: directCommand,
+          protocol,
+          resolutionMethod: 'protocol-scoped',
+        }
+      }
+
+      const protocolAlias = this.aliases.get(`${protocol}:${scopedInput}`)
+      if (protocolAlias) {
+        const aliasedCommand = fiber.commands.get(protocolAlias)
+        if (aliasedCommand) {
+          return {
+            command: aliasedCommand,
+            protocol,
+            resolutionMethod: 'protocol-scoped',
+          }
+        }
+      }
+
+      return undefined
+    }
 
     // Check if input is a protocol name - if so, treat it as 'use <protocol>'
     if (this.protocolFibers.has(input)) {
@@ -182,30 +244,6 @@ export class CommandRegistry {
     }
 
     // 3. Check protocol-scoped commands (G_p)
-
-    // FIBER ISOLATION: When inside a fiber, block cross-fiber access
-    // Check for namespace syntax (protocol:command)
-    const namespacedMatch = input.match(/^([^:]+):(.+)$/)
-    if (namespacedMatch) {
-      const [, protocol, commandId] = namespacedMatch
-
-      // If we're in a fiber and trying to access a different fiber, block it
-      if (context.executionContext.activeProtocol &&
-          protocol !== context.executionContext.activeProtocol) {
-        // Cross-fiber access blocked
-        return undefined
-      }
-
-      const fiber = this.σ(protocol)
-      const command = fiber?.commands.get(commandId)
-      if (command) {
-        return {
-          command,
-          protocol,
-          resolutionMethod: 'protocol-scoped',
-        }
-      }
-    }
 
     // First try explicit protocol from flag (only if not in a fiber)
     if (context.explicitProtocol && !context.executionContext.activeProtocol) {
@@ -402,6 +440,219 @@ export class CommandRegistry {
     }
 
     return matrix[b.length][a.length]
+  }
+
+  /**
+   * Get autocomplete suggestions with prefix-priority matching
+   *
+   * Prioritizes matches in order:
+   * 1. Exact matches (confidence = 1.0)
+   * 2. Prefix matches (confidence = 0.9 + length bonus)
+   * 3. Fuzzy matches (Levenshtein-based)
+   *
+   * Fiber isolation: When activeProtocol is set, only suggests commands
+   * from that fiber + global commands.
+   */
+  getAutocompleteSuggestions(
+    context: ResolutionContext,
+    threshold: number = 0.3
+  ): AutocompleteSuggestion[] {
+    try {
+      // Guard against null/undefined context
+      if (!context || !context.executionContext) {
+        return []
+      }
+
+      const input = context.input?.trim().toLowerCase()
+
+      if (!input) {
+        return []
+      }
+
+    const suggestions: AutocompleteSuggestion[] = []
+    const seenIds = new Set<string>()
+
+    // Helper to calculate Levenshtein-based similarity
+    const similarity = (a: string, b: string): number => {
+      const longer = a.length > b.length ? a : b
+      const shorter = a.length > b.length ? b : a
+
+      if (longer.length === 0) return 1.0
+
+      const editDistance = this.levenshteinDistance(longer, shorter)
+      return (longer.length - editDistance) / longer.length
+    }
+
+    // Helper to add a suggestion (deduplicates by id)
+    const addSuggestion = (
+      id: string,
+      command: Command,
+      matchType: 'exact' | 'prefix' | 'fuzzy',
+      confidence: number,
+      protocol?: ProtocolId
+    ) => {
+      // Create unique key including protocol for deduplication
+      const uniqueKey = protocol ? `${protocol}:${id}` : id
+
+      if (seenIds.has(uniqueKey)) return
+      seenIds.add(uniqueKey)
+
+      suggestions.push({
+        id,
+        description: command.description,
+        aliases: command.aliases,
+        protocol,
+        confidence,
+        matchType,
+      })
+    }
+
+    // Collect all commands respecting fiber isolation
+    const allCommands: Array<{ id: string; command: Command; protocol?: ProtocolId }> = []
+
+    // Add core commands (always available)
+    for (const [id, command] of this.coreCommands) {
+      allCommands.push({ id, command })
+    }
+
+    // Add aliased commands (if not in a fiber)
+    if (!context.executionContext.activeProtocol) {
+      for (const [id, command] of this.aliasedCommands) {
+        const protocol = this.resolveProtocol(id, context)
+        allCommands.push({ id, command, protocol })
+      }
+    }
+
+    // Add protocol commands - respecting fiber isolation
+    if (context.executionContext.activeProtocol) {
+      // Inside a fiber: only show current fiber's commands
+      const activeFiber = this.σ(context.executionContext.activeProtocol)
+      if (activeFiber) {
+        for (const [id, command] of activeFiber.commands) {
+          // Skip identity command from suggestions
+          if (id !== 'identity') {
+            allCommands.push({ id, command, protocol: context.executionContext.activeProtocol })
+          }
+        }
+      }
+    } else {
+      // In M_G: show all protocol commands
+      for (const [protocolId, fiber] of this.protocolFibers) {
+        for (const [id, command] of fiber.commands) {
+          // Skip identity commands from suggestions
+          if (id !== 'identity') {
+            allCommands.push({ id, command, protocol: protocolId })
+          }
+        }
+      }
+    }
+
+    // Add protocol names as suggestions (typing a protocol name = "use <protocol>")
+    // Only show when not inside a fiber
+    if (!context.executionContext.activeProtocol) {
+      for (const [protocolId, fiber] of this.protocolFibers) {
+        // Add protocol name as a suggestion with minimal command info
+        allCommands.push({
+          id: protocolId,
+          command: {
+            id: protocolId,
+            scope: 'G_core',
+            description: fiber.description || `Enter ${fiber.name || protocolId} protocol`,
+            aliases: [],
+            run: async () => ({ success: true, value: null }),
+          },
+        })
+      }
+    }
+
+    // Check each command for matches
+    // Match priority: exact ID > prefix ID > exact alias > prefix alias > fuzzy
+    // This ensures "transfer" beats "status" (via alias "track") when user types "tr"
+    for (const { id, command, protocol } of allCommands) {
+      // Skip invalid entries
+      if (!id || !command) continue
+
+      const idLower = id.toLowerCase()
+
+      // Track the best match for this command
+      // matchPriority: 0 = exact ID, 1 = prefix ID, 2 = exact alias, 3 = prefix alias, 4 = fuzzy
+      let matchPriority = 5 // No match
+      let bestConfidence = 0
+      let bestMatchType: 'exact' | 'prefix' | 'fuzzy' = 'fuzzy'
+
+      // Check main command ID first (highest priority)
+      if (idLower === input) {
+        matchPriority = 0
+        bestMatchType = 'exact'
+        bestConfidence = 1.0
+      } else if (idLower.startsWith(input)) {
+        matchPriority = 1
+        bestMatchType = 'prefix'
+        // Confidence based on how much we've typed, but prioritize ID matches
+        bestConfidence = 0.95 + (input.length / idLower.length) * 0.04
+      }
+
+      // Check aliases (only if we don't have an ID match)
+      if (matchPriority > 1 && command.aliases) {
+        for (const alias of command.aliases) {
+          const aliasLower = alias.toLowerCase()
+
+          if (aliasLower === input && matchPriority > 2) {
+            matchPriority = 2
+            bestMatchType = 'exact'
+            bestConfidence = 0.89 // Slightly lower than prefix ID match
+          } else if (aliasLower.startsWith(input) && matchPriority > 3) {
+            matchPriority = 3
+            bestMatchType = 'prefix'
+            // Alias prefix matches get lower confidence than ID prefix matches
+            bestConfidence = 0.8 + (input.length / aliasLower.length) * 0.08
+          }
+        }
+      }
+
+      // If no exact/prefix match found, try fuzzy
+      if (matchPriority > 3) {
+        // Try fuzzy on command ID
+        const fuzzyConfidence = similarity(input, idLower)
+        if (fuzzyConfidence >= threshold && fuzzyConfidence > bestConfidence) {
+          matchPriority = 4
+          bestMatchType = 'fuzzy'
+          bestConfidence = fuzzyConfidence
+        }
+
+        // Also try fuzzy on aliases
+        if (command.aliases) {
+          for (const alias of command.aliases) {
+            const aliasConfidence = similarity(input, alias.toLowerCase())
+            if (aliasConfidence >= threshold && aliasConfidence > bestConfidence) {
+              matchPriority = 4
+              bestMatchType = 'fuzzy'
+              bestConfidence = aliasConfidence
+            }
+          }
+        }
+      }
+
+      // Add suggestion if we found any match
+      if (matchPriority < 5) {
+        addSuggestion(id, command, bestMatchType, bestConfidence, protocol)
+      }
+    }
+
+    // Sort: exact > prefix > fuzzy, then by confidence within each group
+    return suggestions.sort((a, b) => {
+      // Priority by match type
+      const typeOrder = { exact: 0, prefix: 1, fuzzy: 2 }
+      const typeDiff = typeOrder[a.matchType] - typeOrder[b.matchType]
+      if (typeDiff !== 0) return typeDiff
+
+      // Within same type, sort by confidence (higher first)
+      return b.confidence - a.confidence
+    })
+    } catch (error) {
+      console.error('Error in getAutocompleteSuggestions:', error)
+      return []
+    }
   }
 
   /**

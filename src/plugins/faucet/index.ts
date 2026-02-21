@@ -6,7 +6,7 @@
 
 import type { Plugin, PluginConfig } from '@/plugins'
 import type { ProtocolFiber, ExecutionContext } from '@/core'
-import { createProtocolFiber, addCommandToFiber } from '@/core'
+import { createProtocolFiber } from '@/core'
 import { requestCommand, statusCommand, historyCommand } from './commands'
 import { faucetHandlers } from './handlers'
 
@@ -38,10 +38,7 @@ export const faucetPlugin: Plugin = {
       'Request testnet tokens for development'
     )
 
-    // Add commands to the fiber
-    addCommandToFiber(fiber, requestCommand as any)
-    addCommandToFiber(fiber, statusCommand as any)
-    addCommandToFiber(fiber, historyCommand as any)
+    // Commands are registered as G_core, so they should not be added to a G_p fiber.
 
     return fiber
   },

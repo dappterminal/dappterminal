@@ -5,9 +5,41 @@
  */
 
 import type { Command, CommandResult, ExecutionContext } from './types'
-import { registry } from './command-registry'
+import { registry as globalRegistry, type CommandRegistry } from './command-registry'
 import { requestCommand, statusCommand, historyCommand as faucetHistoryCommand } from '@/plugins/faucet'
-import { cpriceCommand, coinsearchCommand, cchartCommand } from '@/plugins/coinpaprika'
+import { debugLog } from '@/lib/debug'
+
+function withExecutionMetadata(
+  result: CommandResult,
+  executedProtocol: string,
+  executedCommandId: string
+): CommandResult {
+  if (!result.success) {
+    return result
+  }
+
+  if (typeof result.value !== 'object' || result.value === null || Array.isArray(result.value)) {
+    return result
+  }
+
+  return {
+    success: true,
+    value: {
+      ...(result.value as Record<string, unknown>),
+      executedProtocol,
+      executedCommandId,
+    },
+  }
+}
+
+function getRegistry(context: ExecutionContext): CommandRegistry {
+  const scopedRegistry = context.globalState?.commandRegistry
+  if (scopedRegistry && typeof scopedRegistry === 'object') {
+    return scopedRegistry as CommandRegistry
+  }
+
+  return globalRegistry
+}
 
 /**
  * Help command - displays available commands
@@ -23,6 +55,7 @@ export const helpCommand: Command = {
     try {
       // If in a protocol fiber (M_p), show only that fiber's commands + essential globals
       if (context.activeProtocol) {
+        const registry = getRegistry(context)
         const fiber = registry.σ(context.activeProtocol)
 
         if (!fiber) {
@@ -66,6 +99,7 @@ export const helpCommand: Command = {
       }
 
       // In global context (M_G), show all commands
+      const registry = getRegistry(context)
       const allCommands = registry.getAllCommands()
 
       const coreCommands = allCommands.filter(cmd => cmd.scope === 'G_core')
@@ -123,6 +157,7 @@ export const listProtocolsCommand: Command = {
 
   async run(_args: unknown, _context: ExecutionContext): Promise<CommandResult> {
     try {
+      const registry = getRegistry(_context)
       const protocols = registry.getProtocols()
       const protocolInfo = protocols.map(protocolId => {
         const fiber = registry.σ(protocolId)
@@ -158,6 +193,7 @@ export const useProtocolCommand: Command = {
 
   async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
     try {
+      const registry = getRegistry(context)
       const protocolId = typeof args === 'string' ? args : (args as any)?.protocol
 
       if (!protocolId) {
@@ -181,7 +217,7 @@ export const useProtocolCommand: Command = {
 
       // Update context
       context.activeProtocol = protocolId
-      console.log('[use command] Set activeProtocol to:', protocolId, 'context:', context)
+      debugLog('Core:use', 'set active protocol', { protocolId })
 
       return {
         success: true,
@@ -223,7 +259,7 @@ export const exitProtocolCommand: Command = {
 
       // Clear active protocol
       context.activeProtocol = undefined
-      console.log('[exit command] Cleared activeProtocol, was:', previousProtocol)
+      debugLog('Core:exit', 'cleared active protocol', { previousProtocol })
 
       return {
         success: true,
@@ -473,6 +509,7 @@ export const transferCommand: Command = {
  *   chart eth --line - Add ETH price chart (line mode)
  *   chart btc --protocol coinpaprika - Add BTC chart from CoinPaprika
  *   chart pepe --protocol 1inch - Add PEPE chart from 1inch
+ *   chart pepe --protocol dexscreener - Add PEPE chart from DexScreener
  *   chart performance - Add performance metrics chart
  *   chart network - Add network graph chart
  *   chart portfolio [address] [chainIds] - Add portfolio pie chart
@@ -607,6 +644,7 @@ export const chartCommand: Command = {
 
       // If token is not in valid charts and --protocol coinpaprika is specified, route to cchart
       if (!validCharts.includes(chartType) && explicitProtocol === 'coinpaprika') {
+        const registry = getRegistry(context)
         const allCommands = registry.getAllCommands()
         const cchartCmd = allCommands.find((cmd: Command) => cmd.id === 'cchart')
 
@@ -618,6 +656,54 @@ export const chartCommand: Command = {
           return {
             success: false,
             error: new Error('CoinPaprika plugin not loaded. Please ensure coinpaprika plugin is enabled.'),
+          }
+        }
+      }
+
+      // If token is not in valid charts and --protocol dexscreener is specified, fetch pair data
+      if (!validCharts.includes(chartType) && explicitProtocol === 'dexscreener') {
+        try {
+          const searchUrl = `/api/dexscreener/pairs?q=${encodeURIComponent(chartType)}`
+          const response = await fetch(searchUrl)
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+            return {
+              success: false,
+              error: new Error(errorData.error || `Failed to search for token '${chartType}'`),
+            }
+          }
+
+          const data = await response.json()
+
+          if (!data.pairs || data.pairs.length === 0) {
+            return {
+              success: false,
+              error: new Error(`No DEX pairs found for '${chartType}' on DexScreener`),
+            }
+          }
+
+          // Pick the highest-liquidity pair
+          const pair = data.pairs.reduce((best: any, p: any) =>
+            (p.liquidity?.usd || 0) > (best.liquidity?.usd || 0) ? p : best
+          , data.pairs[0])
+
+          return {
+            success: true,
+            value: {
+              addChart: true,
+              chartType: pair.baseToken?.address || chartType,
+              symbol: pair.baseToken?.symbol || chartType.toUpperCase(),
+              name: pair.baseToken?.name,
+              chartMode: isLineMode ? 'line' : 'candlestick',
+              protocol: 'dexscreener',
+              dexscreenerPair: pair,
+            },
+          }
+        } catch (error) {
+          return {
+            success: false,
+            error: new Error(`Failed to search DexScreener: ${error instanceof Error ? error.message : String(error)}`),
           }
         }
       }
@@ -663,7 +749,7 @@ export const chartCommand: Command = {
       if (!validCharts.includes(chartType)) {
         return {
           success: false,
-          error: new Error(`Invalid chart type: ${chartType}\nValid types: ${validCharts.join(', ')}\nOr use --protocol <1inch|coinpaprika> to search for any token`),
+          error: new Error(`Invalid chart type: ${chartType}\nValid types: ${validCharts.join(', ')}\nOr use --protocol <1inch|coinpaprika|dexscreener> to search for any token`),
         }
       }
 
@@ -729,6 +815,7 @@ export const swapAliasCommand: Command = {
       addProtocol(context.protocolPreferences?.swap)
       addProtocol('uniswap-v4')
       addProtocol('1inch')
+      const registry = getRegistry(context)
       for (const protocolId of registry.getProtocols()) {
         addProtocol(protocolId)
       }
@@ -741,7 +828,8 @@ export const swapAliasCommand: Command = {
 
         const swapCommand = fiber.commands.get('swap')
         if (swapCommand) {
-          return await swapCommand.run(sanitizedArgs, context)
+          const result = await swapCommand.run(sanitizedArgs, context)
+          return withExecutionMetadata(result, protocol, swapCommand.id)
         }
       }
 
@@ -803,6 +891,7 @@ export const bridgeAliasCommand: Command = {
       addProtocol('wormhole')
       addProtocol('lifi')
       addProtocol('stargate')
+      const registry = getRegistry(context)
       for (const protocolId of registry.getProtocols()) {
         addProtocol(protocolId)
       }
@@ -815,7 +904,8 @@ export const bridgeAliasCommand: Command = {
 
         const bridgeCommand = fiber.commands.get('bridge')
         if (bridgeCommand) {
-          return await bridgeCommand.run(sanitizedArgs, context)
+          const result = await bridgeCommand.run(sanitizedArgs, context)
+          return withExecutionMetadata(result, protocol, bridgeCommand.id)
         }
       }
 
@@ -839,7 +929,7 @@ export const bridgeAliasCommand: Command = {
 export const priceAliasCommand: Command = {
   id: 'price',
   scope: 'G_alias',
-  description: 'Get token price (use --protocol <1inch|coinpaprika> to specify)',
+  description: 'Get token price (use --protocol <1inch|coinpaprika|dexscreener> to specify)',
   aliases: ['p'],
 
   async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
@@ -884,15 +974,29 @@ export const priceAliasCommand: Command = {
       addProtocol(context.protocolPreferences?.price)
       addProtocol('1inch')
       addProtocol('coinpaprika')
+      addProtocol('dexscreener')
 
       // Try each protocol in order
+      const registry = getRegistry(context)
       for (const protocol of candidateProtocols) {
         // For coinpaprika, use the cprice command directly
         if (protocol === 'coinpaprika') {
           const allCommands = registry.getAllCommands()
           const cpriceCmd = allCommands.find(cmd => cmd.id === 'cprice')
           if (cpriceCmd) {
-            return await cpriceCmd.run(sanitizedArgs, context)
+            const result = await cpriceCmd.run(sanitizedArgs, context)
+            return withExecutionMetadata(result, protocol, cpriceCmd.id)
+          }
+          continue
+        }
+
+        // For dexscreener, use the dprice command directly
+        if (protocol === 'dexscreener') {
+          const allCommands = registry.getAllCommands()
+          const dpriceCmd = allCommands.find(cmd => cmd.id === 'dprice')
+          if (dpriceCmd) {
+            const result = await dpriceCmd.run(sanitizedArgs, context)
+            return withExecutionMetadata(result, protocol, dpriceCmd.id)
           }
           continue
         }
@@ -905,7 +1009,8 @@ export const priceAliasCommand: Command = {
 
         const priceCommand = fiber.commands.get('price')
         if (priceCommand) {
-          return await priceCommand.run(sanitizedArgs, context)
+          const result = await priceCommand.run(sanitizedArgs, context)
+          return withExecutionMetadata(result, protocol, priceCommand.id)
         }
       }
 
@@ -917,6 +1022,187 @@ export const priceAliasCommand: Command = {
       return {
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  },
+}
+
+/**
+ * DexScreener price command - Get DEX token price
+ *
+ * Usage: dprice <symbol>
+ * Example: dprice ETH
+ */
+export const dpriceCommand: Command = {
+  id: 'dprice',
+  scope: 'G_core',
+  description: 'Get DEX token price from DexScreener',
+
+  async run(args: unknown, _context: ExecutionContext): Promise<CommandResult> {
+    try {
+      const argsStr = typeof args === 'string' ? args.trim() : ''
+      const symbol = argsStr.split(' ')[0]
+
+      if (!symbol) {
+        return {
+          success: false,
+          error: new Error(
+            'Usage: dprice <symbol>\nExample: dprice ETH\n         dprice PEPE'
+          ),
+        }
+      }
+
+      const response = await fetch(`/api/dexscreener/pairs?q=${encodeURIComponent(symbol)}`)
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      if (!data.pairs || data.pairs.length === 0) {
+        return {
+          success: false,
+          error: new Error(
+            `No DEX pairs found for '${symbol.toUpperCase()}'.\n\nTry searching: dpairs ${symbol}`
+          ),
+        }
+      }
+
+      // Pick the highest-liquidity pair
+      const pair = data.pairs.reduce((best: any, p: any) =>
+        (p.liquidity?.usd || 0) > (best.liquidity?.usd || 0) ? p : best
+      , data.pairs[0])
+
+      const price = parseFloat(pair.priceUsd) || 0
+      const change24h = pair.priceChange?.h24 || 0
+      const volume24h = pair.volume?.h24 || 0
+      const liquidity = pair.liquidity?.usd || 0
+
+      const formatNumber = (num: number): string => {
+        if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`
+        if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`
+        if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`
+        if (num >= 1e3) return `$${(num / 1e3).toFixed(2)}K`
+        return `$${num.toFixed(2)}`
+      }
+
+      const formatPrice = (p: number): string => {
+        if (p >= 1) return `$${p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        if (p >= 0.01) return `$${p.toFixed(4)}`
+        if (p >= 0.0001) return `$${p.toFixed(6)}`
+        return `$${p.toExponential(4)}`
+      }
+
+      const changeSign = change24h >= 0 ? '+' : ''
+
+      return {
+        success: true,
+        value: {
+          message: [
+            `${change24h >= 0 ? '📈' : '📉'} ${pair.baseToken?.name || symbol.toUpperCase()} (${pair.baseToken?.symbol || symbol.toUpperCase()})`,
+            ``,
+            `  Price: ${formatPrice(price)}`,
+            `  24h Change: ${changeSign}${change24h.toFixed(2)}%`,
+            `  Volume (24h): ${formatNumber(volume24h)}`,
+            `  Liquidity: ${formatNumber(liquidity)}`,
+            `  DEX: ${pair.dexId} | Chain: ${pair.chainId}`,
+            `  Pair: ${pair.baseToken?.symbol}/${pair.quoteToken?.symbol}`,
+            ``,
+            `  Source: DexScreener`,
+          ].join('\n'),
+          pair,
+        },
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      return {
+        success: false,
+        error: new Error(`Failed to fetch DEX price: ${errorMsg}`),
+      }
+    }
+  },
+}
+
+/**
+ * DexScreener pairs search command - Search DEX pairs
+ *
+ * Usage: dpairs <symbol>
+ * Example: dpairs PEPE
+ */
+export const dpairsCommand: Command = {
+  id: 'dpairs',
+  scope: 'G_core',
+  description: 'Search DEX pairs on DexScreener',
+
+  async run(args: unknown, _context: ExecutionContext): Promise<CommandResult> {
+    try {
+      const argsStr = typeof args === 'string' ? args.trim() : ''
+      const query = argsStr.split(' ')[0]
+
+      if (!query) {
+        return {
+          success: false,
+          error: new Error(
+            'Usage: dpairs <symbol>\nExample: dpairs PEPE\n         dpairs ETH'
+          ),
+        }
+      }
+
+      const response = await fetch(`/api/dexscreener/pairs?q=${encodeURIComponent(query)}`)
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      if (!data.pairs || data.pairs.length === 0) {
+        return {
+          success: false,
+          error: new Error(
+            `No DEX pairs found for '${query}'.\n\nTry a different search term.`
+          ),
+        }
+      }
+
+      const formatNumber = (num: number): string => {
+        if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`
+        if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`
+        if (num >= 1e3) return `$${(num / 1e3).toFixed(2)}K`
+        return `$${num.toFixed(2)}`
+      }
+
+      // Show top 10 pairs
+      const pairs = data.pairs.slice(0, 10)
+      const formattedPairs = pairs.map((pair: any, index: number) => {
+        const price = parseFloat(pair.priceUsd) || 0
+        const vol = pair.volume?.h24 || 0
+        const liq = pair.liquidity?.usd || 0
+        const priceStr = price >= 1 ? `$${price.toFixed(2)}` : price >= 0.0001 ? `$${price.toFixed(6)}` : `$${price.toExponential(2)}`
+        return `  ${index + 1}. ${pair.baseToken?.symbol}/${pair.quoteToken?.symbol} on ${pair.dexId} (${pair.chainId})\n     Price: ${priceStr} | Vol: ${formatNumber(vol)} | Liq: ${formatNumber(liq)}`
+      })
+
+      return {
+        success: true,
+        value: {
+          message: [
+            `🔍 DEX pairs for '${query}' (top ${pairs.length}):`,
+            ``,
+            ...formattedPairs,
+            ``,
+            `💡 Use 'dprice <symbol>' to get detailed price data`,
+          ].join('\n'),
+          pairs,
+        },
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      return {
+        success: false,
+        error: new Error(`Failed to search DEX pairs: ${errorMsg}`),
       }
     }
   },
@@ -942,10 +1228,9 @@ export const coreCommands = [
   requestCommand,
   statusCommand,
   faucetHistoryCommand,
-  // CoinPaprika commands
-  cpriceCommand,
-  coinsearchCommand,
-  cchartCommand,
+  // DexScreener commands
+  dpriceCommand,
+  dpairsCommand,
 ]
 
 /**
@@ -960,7 +1245,7 @@ export const aliasCommands = [
 /**
  * Register all core commands with the registry
  */
-export function registerCoreCommands(): void {
+export function registerCoreCommands(registry: CommandRegistry = globalRegistry): void {
   for (const command of coreCommands) {
     registry.registerCoreCommand(command as Command<unknown, unknown>)
   }

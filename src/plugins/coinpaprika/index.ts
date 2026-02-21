@@ -6,10 +6,11 @@
  */
 
 import type { ExecutionContext, ProtocolFiber } from '@/core'
-import { createProtocolFiber, addCommandToFiber } from '@/core'
+import { createProtocolFiber } from '@/core'
 import type { Plugin } from '@/plugins/types'
-import { cpriceCommand, coinsearchCommand, cchartCommand } from './commands'
 import { coinRegistry } from './data/coin-registry'
+import { cpriceCommand, coinsearchCommand, cchartCommand } from './commands'
+import { debugLog } from '@/lib/debug'
 
 export const coinpaprikaPlugin: Plugin = {
   metadata: {
@@ -22,7 +23,7 @@ export const coinpaprikaPlugin: Plugin = {
   },
 
   defaultConfig: {
-    enabled: true,
+    enabled: false,
     config: {
       cacheEnabled: true,
       cacheTTL: 86400000, // 24 hours
@@ -32,7 +33,7 @@ export const coinpaprikaPlugin: Plugin = {
   },
 
   async initialize(context: ExecutionContext): Promise<ProtocolFiber> {
-    console.log('[CoinPaprika Plugin] Initializing...')
+    debugLog('CoinPaprika Plugin', 'initializing')
 
     // Create protocol fiber
     const fiber = createProtocolFiber(
@@ -41,10 +42,11 @@ export const coinpaprikaPlugin: Plugin = {
       'Cryptocurrency data with 56K+ coins'
     )
 
-    // Add commands to fiber
-    addCommandToFiber(fiber, cpriceCommand as any)
-    addCommandToFiber(fiber, coinsearchCommand as any)
-    addCommandToFiber(fiber, cchartCommand as any)
+    // Register command implementations with this protocol fiber.
+    // These commands keep G_alias scope so they are invoked through alias orchestration.
+    fiber.commands.set(cpriceCommand.id, cpriceCommand)
+    fiber.commands.set(coinsearchCommand.id, coinsearchCommand)
+    fiber.commands.set(cchartCommand.id, cchartCommand)
 
     // Preload coin registry (lazy load on first use)
     // This will happen automatically when first command is executed
@@ -52,14 +54,13 @@ export const coinpaprikaPlugin: Plugin = {
       console.error('[CoinPaprika Plugin] Failed to initialize registry:', error)
     })
 
-    console.log('[CoinPaprika Plugin] Initialized successfully')
-    console.log('[CoinPaprika Plugin] Commands: cprice, coinsearch, cchart')
+    debugLog('CoinPaprika Plugin', 'initialized', { commands: ['cprice', 'coinsearch', 'cchart'] })
 
     return fiber
   },
 
   async cleanup(): Promise<void> {
-    console.log('[CoinPaprika Plugin] Cleaning up...')
+    debugLog('CoinPaprika Plugin', 'cleaning up')
     // No cleanup needed for now
   },
 
