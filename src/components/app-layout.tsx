@@ -501,6 +501,7 @@ export function AppLayout() {
                     defaultSize={{ width: 1000, height: 640 }}
                     minSize={{ width: 640, height: 420 }}
                     showChrome={false}
+                    dragHandleSelector="[data-window-tabs]"
                   >
                     <CLI isFullWidth={!hasVisibleCharts} onAddChart={handleAddChart} />
                   </DraggableWindow>

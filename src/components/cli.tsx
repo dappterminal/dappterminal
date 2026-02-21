@@ -43,6 +43,7 @@ interface TerminalTab {
     pluginLoader: PluginLoader
   }
   currentInput: string
+  isProcessing: boolean
   commandHistory: string[]
   historyIndex: number
 }
@@ -410,6 +411,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
 
   // Get tab-specific input values
   const currentInput = activeTab?.currentInput ?? ""
+  const isProcessing = activeTab?.isProcessing ?? false
   const commandHistory = activeTab?.commandHistory ?? []
   const historyIndex = activeTab?.historyIndex ?? -1
 
@@ -536,6 +538,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         executionContext: context,
         runtime,
         currentInput: "",
+        isProcessing: false,
         commandHistory: loadedHistory,
         historyIndex: -1
       }
@@ -576,6 +579,13 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       inputRef.current.focus()
     }
   }, [])
+
+  // Re-focus input after command finishes (disabled state removes focus)
+  useEffect(() => {
+    if (!isProcessing) {
+      inputRef.current?.focus()
+    }
+  }, [isProcessing])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -689,6 +699,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       executionContext: newContext,
       runtime,
       currentInput: "",
+      isProcessing: false,
       commandHistory: [],
       historyIndex: -1
     }
@@ -721,6 +732,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       executionContext: newContext,
       runtime,
       currentInput: "",
+      isProcessing: false,
       commandHistory: [],
       historyIndex: -1
     }
@@ -776,8 +788,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     queue.push({ input: trimmedInput })
     commandQueueRef.current.set(tabId, queue)
 
-    // Clear input and fuzzy matches immediately so user can type next command
-    updateTabInput("")
+    // Keep input visible while processing so users can see the active command.
     setFuzzyMatches([])
     setSelectedMatchIndex(0)
 
@@ -805,6 +816,9 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   const processQueue = async (tabId: string) => {
     if (processingRef.current.has(tabId)) return
     processingRef.current.add(tabId)
+    setTabs(prevTabs => prevTabs.map(tab =>
+      tab.id === tabId ? { ...tab, isProcessing: true } : tab
+    ))
     if (tabId === activeTabId) setQueueCount(commandQueueRef.current.get(tabId)?.length ?? 0)
 
     try {
@@ -815,11 +829,17 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         const entry = queue.shift()!
         commandQueueRef.current.set(tabId, queue)
         if (tabId === activeTabId) setQueueCount(queue.length)
+        setTabs(prevTabs => prevTabs.map(tab =>
+          tab.id === tabId ? { ...tab, currentInput: entry.input } : tab
+        ))
 
         await executeCommandForTab(entry.input, tabId)
       }
     } finally {
       processingRef.current.delete(tabId)
+      setTabs(prevTabs => prevTabs.map(tab =>
+        tab.id === tabId ? { ...tab, isProcessing: false, currentInput: "" } : tab
+      ))
       if (tabId === activeTabId) setQueueCount(0)
     }
   }
@@ -1252,6 +1272,11 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (isProcessing) {
+      e.preventDefault()
+      return
+    }
+
     // Handle fuzzy match navigation
     if (fuzzyMatches.length > 0) {
       if (e.key === "ArrowUp") {
@@ -1514,12 +1539,16 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                       value={currentInput}
                       onChange={(e) => updateTabInput(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono outline-none caret-gray-400 font-bold"
+                      disabled={isProcessing}
+                      className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono outline-none caret-gray-400 font-bold disabled:text-gray-400"
                       style={{ fontSize: `${fontSize}px` }}
                       autoFocus
                       spellCheck={false}
                       autoComplete="off"
                     />
+                    {isProcessing && (
+                      <span className="text-xs text-blue-300 font-mono ml-2 whitespace-nowrap">[running]</span>
+                    )}
                     {queueCount > 0 && (
                       <span className="text-xs text-yellow-400 font-mono ml-2 whitespace-nowrap">[{queueCount} queued]</span>
                     )}
