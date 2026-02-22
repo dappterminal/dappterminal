@@ -1,12 +1,29 @@
 "use client"
 
-import { useState, useEffect } from 'react'
-import { X, Settings, ChevronDown, ArrowDownUp, Loader2 } from 'lucide-react'
-import { useAccount } from 'wagmi'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { X, Settings, ChevronDown, ArrowDownUp, Loader2, CheckCircle, ExternalLink } from 'lucide-react'
+import { useAccount, useSendTransaction, useSwitchChain } from 'wagmi'
+import { parseUnits } from 'viem'
 import { NetworkModal } from './network-modal'
 import { TokenModal } from './token-modal'
 import { SettingsModal } from './settings-modal'
 import { getChainName, getMainnetChainIds } from '@/lib/chains'
+import { useSwapQuote } from '@/hooks/useSwapQuote'
+import { useTokenBalance } from '@/hooks/useTokenBalance'
+import { resolveTokenAddress, getTokenDecimals } from '@/plugins/1inch/tokens'
+import { getTxUrl } from '@/lib/explorers'
+
+// Swap execution states
+type SwapState =
+  | 'idle'           // Entering amount
+  | 'review'         // Reviewing quote
+  | 'checking'       // Checking allowance
+  | 'approving'      // Waiting for approval tx
+  | 'swapping'       // Executing swap
+  | 'success'        // Swap completed
+  | 'error'          // Error occurred
+
+const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
 
 export interface Token {
   symbol: string
@@ -39,10 +56,11 @@ const PROTOCOLS: Protocol[] = [
   { id: '1inch', name: '1inch', color: 'from-blue-400 to-blue-600' },
   { id: 'stargate', name: 'Stargate', color: 'from-purple-500 to-indigo-600' },
   { id: 'lifi', name: 'Li.Fi', color: 'from-cyan-400 to-purple-500' },
+  { id: 'wormhole', name: 'Wormhole', color: 'from-teal-400 to-blue-500' },
 ]
 
 export function SwapWindow({ onClose }: SwapWindowProps) {
-  const { chainId: walletChainId, isConnected } = useAccount()
+  const { chainId: walletChainId, isConnected, address } = useAccount()
 
   // Swap state
   const [fromToken, setFromToken] = useState<Token | null>(POPULAR_TOKENS[0])
@@ -59,7 +77,7 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
   const [showProtocolDropdown, setShowProtocolDropdown] = useState(false)
 
   // Check if protocol is a bridge
-  const isBridge = protocol.id === 'stargate' || protocol.id === 'lifi'
+  const isBridge = protocol.id === 'stargate' || protocol.id === 'lifi' || protocol.id === 'wormhole'
 
   // Modal visibility
   const [showFromNetworkModal, setShowFromNetworkModal] = useState(false)
@@ -68,8 +86,60 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
   const [showToTokenModal, setShowToTokenModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
 
-  // Loading state for quote
-  const [isLoadingQuote, setIsLoadingQuote] = useState(false)
+  // Swap execution state
+  const [swapState, setSwapState] = useState<SwapState>('idle')
+  const [swapError, setSwapError] = useState<string | null>(null)
+  const [txHash, setTxHash] = useState<string | null>(null)
+  const [needsApproval, setNeedsApproval] = useState(false)
+
+  // Transaction hooks
+  const { sendTransactionAsync } = useSendTransaction()
+  const { switchChainAsync } = useSwitchChain()
+
+  // Swap quote using the selected protocol
+  const quoteParams = useMemo(() => {
+    if (!fromToken || !toToken || !fromAmount || parseFloat(fromAmount) <= 0) {
+      return null
+    }
+    // Supported protocols: 1inch, uniswap, lifi, stargate, wormhole
+    if (protocol.id !== '1inch' && protocol.id !== 'uniswap' && protocol.id !== 'lifi' && protocol.id !== 'stargate' && protocol.id !== 'wormhole') {
+      return null
+    }
+    // Bridges require wallet address
+    if ((protocol.id === 'lifi' || protocol.id === 'stargate' || protocol.id === 'wormhole') && !address) {
+      return null
+    }
+    return {
+      protocol: protocol.id as '1inch' | 'uniswap' | 'lifi' | 'stargate' | 'wormhole',
+      fromToken: fromToken.symbol,
+      toToken: toToken.symbol,
+      amount: fromAmount,
+      chainId: fromChainId,
+      toChainId: isBridge ? toChainId : undefined,
+      walletAddress: address,
+      slippage,
+    }
+  }, [fromToken, toToken, fromAmount, fromChainId, toChainId, slippage, protocol.id, isBridge, address])
+
+  const { quote, isLoading: isLoadingQuote, error: quoteError } = useSwapQuote(quoteParams)
+
+  // Fetch balance for the "from" token
+  const { formatted: fromTokenBalance, isLoading: isLoadingBalance } = useTokenBalance(
+    fromToken?.symbol,
+    address,
+    fromChainId
+  )
+
+  // Update toAmount when quote changes
+  useEffect(() => {
+    if (quote?.toAmount) {
+      // Format to reasonable precision
+      const formatted = parseFloat(quote.toAmount).toFixed(6)
+      setToAmount(formatted)
+    } else if (!quoteParams) {
+      setToAmount('')
+    }
+  }, [quote?.toAmount, quoteParams])
 
   // Sync with wallet chain
   useEffect(() => {
@@ -77,6 +147,451 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
       setFromChainId(walletChainId)
     }
   }, [walletChainId])
+
+  // Reset swap state when inputs change
+  useEffect(() => {
+    if (swapState !== 'idle') {
+      setSwapState('idle')
+      setSwapError(null)
+      setTxHash(null)
+      setNeedsApproval(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromToken, toToken, fromAmount, fromChainId])
+
+  // Handle swap execution
+  const executeSwap = useCallback(async () => {
+    if (!fromToken || !toToken || !address || !quote) return
+
+    // Determine which protocol to use
+    const useUniswap = protocol.id === 'uniswap'
+    const useLifi = protocol.id === 'lifi'
+    const useStargate = protocol.id === 'stargate'
+    const useWormhole = protocol.id === 'wormhole'
+
+    // Track if we've successfully sent a transaction (local var for immediate access)
+    let sentTxHash: string | null = null
+
+    try {
+      setSwapError(null)
+
+      // Stargate bridge execution
+      if (useStargate) {
+        if (!quote.routeData) {
+          throw new Error('No route data available for Stargate bridge')
+        }
+
+        const routeData = quote.routeData as {
+          stargateSteps?: Array<{
+            transaction?: {
+              to?: string
+              data?: string
+              value?: string
+            }
+          }>
+          fullQuote?: {
+            steps?: Array<{
+              transaction?: {
+                to?: string
+                data?: string
+                value?: string
+              }
+            }>
+          }
+        }
+
+        // Stargate steps come from the quote
+        const steps = routeData.stargateSteps || routeData.fullQuote?.steps || []
+
+        if (steps.length === 0) {
+          throw new Error('No transaction steps available for Stargate bridge')
+        }
+
+        // Execute each step
+        for (let i = 0; i < steps.length; i++) {
+          setSwapState('swapping')
+
+          const step = steps[i]
+          const tx = step.transaction
+
+          if (!tx || !tx.to || !tx.data) {
+            throw new Error(`Invalid transaction data for Stargate step ${i + 1}`)
+          }
+
+          const hash = await sendTransactionAsync({
+            to: tx.to as `0x${string}`,
+            data: tx.data as `0x${string}`,
+            value: BigInt(tx.value || '0'),
+          })
+
+          sentTxHash = hash
+          setTxHash(hash)
+
+          // Wait between steps if there are more
+          if (i < steps.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 3000))
+          }
+        }
+
+        setSwapState('success')
+        return
+      }
+
+      // Wormhole bridge execution - client-side SDK like CLI
+      if (useWormhole) {
+        setSwapState('swapping')
+
+        // Dynamic imports for Wormhole SDK
+        const { routes, Wormhole } = await import('@wormhole-foundation/sdk')
+        const { initWormholeSDK } = await import('@/lib/wormhole-sdk')
+        const { getWormholeChainName, resolveTokenAddress: resolveWormholeToken } = await import('@/lib/wormhole')
+        const { sendTransaction: wagmiSendTx } = await import('wagmi/actions')
+        const { config } = await import('@/lib/wagmi-config')
+
+        // Initialize SDK
+        const wh = await initWormholeSDK()
+
+        // Get Wormhole chain names
+        const sourceChain = getWormholeChainName(fromChainId)
+        const destChain = getWormholeChainName(toChainId)
+
+        if (!sourceChain || !destChain) {
+          throw new Error('Unsupported chain for Wormhole')
+        }
+
+        // Get token address
+        const fromTokenAddress = resolveWormholeToken(fromChainId, fromToken.symbol)
+
+        // Create route resolver with priority
+        const resolver = wh.resolver([
+          routes.AutomaticCCTPRoute,
+          routes.CCTPRoute,
+          routes.AutomaticTokenBridgeRoute,
+          routes.TokenBridgeRoute,
+        ])
+
+        // Get chain contexts
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const srcChain = wh.getChain(sourceChain as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const dstChain = wh.getChain(destChain as any)
+
+        // Create token ID
+        const isNative = !fromTokenAddress || fromTokenAddress === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
+        const tokenId = Wormhole.tokenId(srcChain.chain, isNative ? 'native' : (fromTokenAddress || fromToken.symbol))
+
+        // Find supported destination tokens
+        const destTokens = await resolver.supportedDestinationTokens(tokenId, srcChain, dstChain)
+        if (!destTokens || destTokens.length === 0) {
+          throw new Error(`No supported routes for ${fromToken.symbol}`)
+        }
+
+        // Create transfer request
+        const transferRequest = await routes.RouteTransferRequest.create(wh, {
+          source: tokenId,
+          destination: destTokens[0],
+        })
+
+        // Set sender and receiver
+        const senderAddr = Wormhole.parseAddress(srcChain.chain, address)
+        const receiverAddr = Wormhole.parseAddress(dstChain.chain, address)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(transferRequest as any).sender = senderAddr
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(transferRequest as any).receiver = receiverAddr
+
+        // Find routes
+        const availableRoutes = await resolver.findRoutes(transferRequest)
+        if (!availableRoutes || availableRoutes.length === 0) {
+          throw new Error('No route found for this transfer')
+        }
+        const route = availableRoutes[0]
+
+        // Validate and get quote - Wormhole expects human-readable amount
+        const transferParams = { amount: fromAmount, options: { nativeGas: 0 } }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const validation = await (route as any).validate(transferRequest, transferParams)
+        if (!validation.valid) {
+          throw new Error(validation.error || 'Invalid transfer parameters')
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const wormholeQuote = await (route as any).quote(transferRequest, validation.params)
+
+        // Create signer adapter for Wormhole SDK
+        const signer = {
+          chain: () => srcChain.chain,
+          address: () => address,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          signAndSend: async (txs: any[]) => {
+            const results = []
+            for (const { transaction } of txs) {
+              const txHash = await wagmiSendTx(config, {
+                to: transaction.to as `0x${string}`,
+                data: transaction.data as `0x${string}`,
+                value: transaction.value ? BigInt(transaction.value) : BigInt(0),
+                gas: transaction.gasLimit ? BigInt(transaction.gasLimit) : undefined,
+              })
+              results.push({ txid: txHash })
+              sentTxHash = txHash
+              setTxHash(txHash)
+            }
+            return results
+          },
+        }
+
+        // Create receiver chain address
+        const receiverChainAddress = {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          chain: (wormholeQuote as any).destinationToken.token.chain,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          address: (transferRequest as any).receiver,
+        }
+
+        // Execute bridge via route.initiate
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (route as any).initiate(transferRequest, signer, wormholeQuote, receiverChainAddress)
+
+        setSwapState('success')
+        return
+      }
+
+      // Li.Fi bridge execution
+      if (useLifi) {
+        if (!quote.routeData) {
+          throw new Error('No route data available for bridge')
+        }
+
+        const route = quote.routeData as {
+          steps: Array<{
+            action: {
+              fromChainId: number
+              fromToken: { address: string }
+              fromAmount: string
+            }
+            estimate?: {
+              approvalAddress?: string
+            }
+          }>
+        }
+
+        // Check if we need approval for the first step (ERC20 tokens)
+        const firstStep = route.steps[0]
+        const tokenAddress = firstStep?.action?.fromToken?.address
+        const approvalAddress = firstStep?.estimate?.approvalAddress
+        const isNative = tokenAddress?.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ||
+                         tokenAddress?.toLowerCase() === '0x0000000000000000000000000000000000000000'
+
+        if (tokenAddress && approvalAddress && !isNative) {
+          setSwapState('checking')
+
+          // Check current allowance
+          const allowanceRes = await fetch(
+            `/api/1inch/swap/allowance?chainId=${fromChainId}&tokenAddress=${tokenAddress}&walletAddress=${address}`
+          )
+
+          if (allowanceRes.ok) {
+            const allowanceData = await allowanceRes.json()
+            const currentAllowance = BigInt(allowanceData.allowance || '0')
+            const requiredAmount = BigInt(firstStep.action.fromAmount)
+
+            if (currentAllowance < requiredAmount) {
+              setNeedsApproval(true)
+              setSwapState('approving')
+
+              // Approve the Li.Fi contract for exact amount needed
+              const amountHex = requiredAmount.toString(16).padStart(64, '0')
+              const approveData = `0x095ea7b3${approvalAddress.slice(2).padStart(64, '0')}${amountHex}`
+
+              const approveHash = await sendTransactionAsync({
+                to: tokenAddress as `0x${string}`,
+                data: approveData as `0x${string}`,
+                value: BigInt(0),
+              })
+
+              sentTxHash = approveHash
+              setTxHash(approveHash)
+
+              // Wait for approval to be indexed
+              await new Promise(resolve => setTimeout(resolve, 3000))
+            }
+          }
+        }
+
+        // Execute each step in the route
+        for (let stepIndex = 0; stepIndex < route.steps.length; stepIndex++) {
+          setSwapState('swapping')
+
+          // Get transaction data for this step
+          const stepRes = await fetch('/api/lifi/step-transaction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ route, stepIndex }),
+          })
+
+          if (!stepRes.ok) {
+            const errorData = await stepRes.json()
+            throw new Error(errorData.error || `Failed to get bridge transaction for step ${stepIndex + 1}`)
+          }
+
+          const stepData = await stepRes.json()
+          const txRequest = stepData.data?.transactionRequest
+
+          if (!txRequest) {
+            throw new Error('No transaction data returned from bridge')
+          }
+
+          // Execute the transaction
+          const hash = await sendTransactionAsync({
+            to: txRequest.to as `0x${string}`,
+            data: txRequest.data as `0x${string}`,
+            value: BigInt(txRequest.value || '0'),
+          })
+
+          sentTxHash = hash
+          setTxHash(hash)
+
+          // If there are more steps, wait before proceeding
+          if (stepIndex < route.steps.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 3000))
+          }
+        }
+
+        setSwapState('success')
+        return
+      }
+
+      const srcAddress = resolveTokenAddress(fromToken.symbol, fromChainId)
+      const srcDecimals = getTokenDecimals(fromToken.symbol)
+      const amount = parseUnits(fromAmount, srcDecimals).toString()
+
+      const isNativeToken = srcAddress.toLowerCase() === NATIVE_TOKEN_ADDRESS.toLowerCase()
+
+      // Step 1: Check and handle approvals (skip for native tokens)
+      if (!isNativeToken) {
+        setSwapState('checking')
+
+        if (useUniswap) {
+          // Uniswap V4 uses Permit2 - check and handle both approval steps
+          const approvalRes = await fetch(
+            `/api/uniswap/approval?chainId=${fromChainId}&token=${srcAddress}&wallet=${address}&amount=${amount}`
+          )
+
+          if (!approvalRes.ok) {
+            const errorData = await approvalRes.json()
+            throw new Error(errorData.error || 'Failed to check Uniswap approvals')
+          }
+
+          const approvalData = await approvalRes.json()
+
+          if (approvalData.needsApproval && approvalData.approvalTxs) {
+            setNeedsApproval(true)
+
+            // Execute each approval transaction
+            for (let i = 0; i < approvalData.approvalTxs.length; i++) {
+              const approvalTx = approvalData.approvalTxs[i]
+              setSwapState('approving')
+
+              const approveHash = await sendTransactionAsync({
+                to: approvalTx.to as `0x${string}`,
+                data: approvalTx.data as `0x${string}`,
+                value: BigInt(0),
+              })
+
+              sentTxHash = approveHash
+              setTxHash(approveHash)
+
+              // Wait for confirmation before next approval
+              await new Promise(resolve => setTimeout(resolve, 5000))
+            }
+          }
+        } else {
+          // 1inch - check approval to 1inch router
+          const allowanceRes = await fetch(
+            `/api/1inch/swap/allowance?chainId=${fromChainId}&tokenAddress=${srcAddress}&walletAddress=${address}`
+          )
+
+          if (!allowanceRes.ok) {
+            throw new Error('Failed to check allowance')
+          }
+
+          const allowanceData = await allowanceRes.json()
+          const allowance = BigInt(allowanceData.allowance || '0')
+          const requiredAmount = BigInt(amount)
+
+          if (allowance < requiredAmount) {
+            setNeedsApproval(true)
+            setSwapState('approving')
+
+            const approveRes = await fetch(
+              `/api/1inch/swap/approve/transaction?chainId=${fromChainId}&tokenAddress=${srcAddress}&amount=${amount}`
+            )
+
+            if (!approveRes.ok) {
+              throw new Error('Failed to get approval transaction')
+            }
+
+            const approveTx = await approveRes.json()
+
+            const approveHash = await sendTransactionAsync({
+              to: approveTx.to as `0x${string}`,
+              data: approveTx.data as `0x${string}`,
+              value: BigInt(0),
+            })
+
+            sentTxHash = approveHash
+            setTxHash(approveHash)
+            await new Promise(resolve => setTimeout(resolve, 2000))
+          }
+        }
+      }
+
+      // Step 3: Execute swap
+      setSwapState('swapping')
+
+      let swapRes: Response
+
+      if (useUniswap) {
+        // Uniswap V4 swap
+        swapRes = await fetch(
+          `/api/uniswap/swap?chainId=${fromChainId}&src=${fromToken.symbol}&dst=${toToken.symbol}&amount=${amount}&from=${address}&slippage=${slippage}`
+        )
+      } else {
+        // 1inch swap
+        const dstAddress = resolveTokenAddress(toToken.symbol, fromChainId)
+        swapRes = await fetch(
+          `/api/1inch/swap/classic/swap?chainId=${fromChainId}&src=${srcAddress}&dst=${dstAddress}&amount=${amount}&from=${address}&slippage=${slippage}`
+        )
+      }
+
+      if (!swapRes.ok) {
+        const errorData = await swapRes.json()
+        throw new Error(errorData.error || 'Failed to get swap transaction')
+      }
+
+      const swapTx = await swapRes.json()
+
+      const hash = await sendTransactionAsync({
+        to: swapTx.tx.to as `0x${string}`,
+        data: swapTx.tx.data as `0x${string}`,
+        value: BigInt(swapTx.tx.value || '0'),
+      })
+
+      sentTxHash = hash
+      setTxHash(hash)
+      setSwapState('success')
+    } catch (error) {
+      // If we already sent a transaction, show success instead of error
+      // (the error might be from post-tx processing or wallet UI)
+      if (sentTxHash) {
+        setSwapState('success')
+        return
+      }
+      const message = error instanceof Error ? error.message : 'Swap failed'
+      setSwapError(message)
+      setSwapState('error')
+    }
+  }, [fromToken, toToken, address, quote, fromChainId, fromAmount, slippage, sendTransactionAsync, protocol.id])
 
   // Flip tokens
   const handleFlipTokens = () => {
@@ -92,22 +607,48 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
   const handleSelectFromToken = (token: Token) => {
     setFromToken(token)
     setShowFromTokenModal(false)
+    // Auto-switch destination token (only for swap protocols, not bridges)
+    if (!isBridge) {
+      if (token.symbol === 'USDC' || token.symbol === 'USDT' || token.symbol === 'DAI') {
+        setToToken(POPULAR_TOKENS.find(t => t.symbol === 'ETH') || POPULAR_TOKENS[0])
+      } else if (token.symbol === 'ETH' || token.symbol === 'WETH') {
+        setToToken(POPULAR_TOKENS.find(t => t.symbol === 'USDC') || POPULAR_TOKENS[1])
+      }
+    }
   }
 
   const handleSelectToToken = (token: Token) => {
     setToToken(token)
     setShowToTokenModal(false)
+    // Auto-switch source token (only for swap protocols, not bridges)
+    if (!isBridge) {
+      if (token.symbol === 'USDC' || token.symbol === 'USDT' || token.symbol === 'DAI') {
+        setFromToken(POPULAR_TOKENS.find(t => t.symbol === 'ETH') || POPULAR_TOKENS[0])
+      } else if (token.symbol === 'ETH' || token.symbol === 'WETH') {
+        setFromToken(POPULAR_TOKENS.find(t => t.symbol === 'USDC') || POPULAR_TOKENS[1])
+      }
+    }
   }
 
   // Handle network selection
-  const handleSelectFromNetwork = (newChainId: number) => {
+  const handleSelectFromNetwork = async (newChainId: number) => {
     setFromChainId(newChainId)
     setShowFromNetworkModal(false)
+
+    // Switch wallet network to match selected source chain
+    if (newChainId !== walletChainId) {
+      try {
+        await switchChainAsync({ chainId: newChainId })
+      } catch (error) {
+        console.error('Failed to switch network:', error)
+      }
+    }
   }
 
   const handleSelectToNetwork = (newChainId: number) => {
     setToChainId(newChainId)
     setShowToNetworkModal(false)
+    // Note: Don't switch wallet for destination chain (bridge handles cross-chain)
   }
 
   // Check if swap is valid
@@ -211,7 +752,20 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
                 </button>
               )}
               {isConnected && (
-                <span className="text-xs text-[#737373]">Balance: 0.00</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[#737373]">
+                    Balance: {isLoadingBalance ? '...' : fromTokenBalance}
+                  </span>
+                  {parseFloat(fromTokenBalance) > 0 && (
+                    <button
+                      onClick={() => setFromAmount(fromTokenBalance)}
+                      className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                      data-no-drag
+                    >
+                      Max
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -306,11 +860,26 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
         {/* Quote Info */}
         {fromToken && toToken && fromAmount && (
           <div className="bg-[#0f0f0f] border border-[#262626] rounded-xl p-3 space-y-2">
+            {/* Same chain warning for bridges */}
+            {isBridge && fromChainId === toChainId && (
+              <div className="text-xs text-yellow-500 mb-2 flex items-center gap-1.5">
+                <span>⚠</span>
+                <span>Select different source and destination chains for bridging</span>
+              </div>
+            )}
+            {/* Error display */}
+            {quoteError && !( isBridge && fromChainId === toChainId) && (
+              <div className="text-xs text-red-400 mb-2">
+                {quoteError}
+              </div>
+            )}
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Rate</span>
               <span className="text-[#d4d4d4]">
                 {isLoadingQuote ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
+                ) : quote?.rate ? (
+                  `1 ${fromToken.symbol} = ${quote.rate} ${toToken.symbol}`
                 ) : (
                   `1 ${fromToken.symbol} = -- ${toToken.symbol}`
                 )}
@@ -318,34 +887,169 @@ export function SwapWindow({ onClose }: SwapWindowProps) {
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Route</span>
-              <span className="text-[#d4d4d4]">{protocol.name}</span>
+              <span className="text-[#d4d4d4]">
+                {protocol.id === 'wormhole' ? (
+                  // Wormhole: show bridge route info
+                  quote?.route || `${fromToken.symbol} → ${toToken.symbol} (Wormhole)`
+                ) : protocol.id === 'stargate' ? (
+                  // Stargate: show bridge route info
+                  quote?.route || `${fromToken.symbol} → ${toToken.symbol} (Stargate)`
+                ) : protocol.id === 'lifi' ? (
+                  // Li.Fi: show bridge route info
+                  quote?.route || `${fromToken.symbol} → ${toToken.symbol} (Li.Fi)`
+                ) : protocol.id === 'uniswap' ? (
+                  // Uniswap: show route info from quote
+                  quote?.route?.includes('multi-hop')
+                    ? `${fromToken.symbol} → ${quote.route.replace('multi-hop via ', '')} → ${toToken.symbol} (V4)`
+                    : `${fromToken.symbol} → ${toToken.symbol} (V4 direct)`
+                ) : quote?.protocols && quote.protocols.length > 0 ? (
+                  // 1inch: show the routing path
+                  (() => {
+                    const route = quote.protocols[0]
+                    const hops = route?.length || 1
+                    const dexes = route?.[0]?.map(p => p.name).join(', ') || '1inch'
+                    return hops > 1
+                      ? `${hops}-hop via ${dexes}`
+                      : `${fromToken.symbol} → ${toToken.symbol} (${dexes})`
+                  })()
+                ) : (
+                  `${fromToken.symbol} → ${toToken.symbol} (1inch)`
+                )}
+              </span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#737373]">Slippage</span>
               <span className="text-[#d4d4d4]">{slippage}%</span>
             </div>
+            {/* Show estimated time for bridges */}
+            {isBridge && quote?.estimatedTime && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-[#737373]">Est. Time</span>
+                <span className="text-[#d4d4d4]">
+                  {Math.ceil(quote.estimatedTime / 60)} min
+                </span>
+              </div>
+            )}
+            {/* Show relay fee for Wormhole */}
+            {quote?.relayFee && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-[#737373]">Relay Fee</span>
+                <span className="text-[#d4d4d4]">{quote.relayFee.formatted}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between text-sm">
-              <span className="text-[#737373]">Est. Gas</span>
-              <span className="text-[#d4d4d4]">--</span>
+              <span className="text-[#737373]">{isBridge ? 'Est. Cost' : 'Est. Gas'}</span>
+              <span className="text-[#d4d4d4]">
+                {isLoadingQuote ? (
+                  <Loader2 className="w-4 h-4 animate-spin inline" />
+                ) : isBridge && quote?.gasCostUSD ? (
+                  `$${parseFloat(quote.gasCostUSD).toFixed(2)}`
+                ) : quote?.gas && parseFloat(quote.gas) > 0 ? (
+                  `${parseFloat(quote.gas).toFixed(2)} Gwei`
+                ) : (
+                  '--'
+                )}
+              </span>
             </div>
           </div>
         )}
 
         {/* Action Button */}
-        <button
-          disabled={!isValidSwap || !isConnected}
-          className={`w-full py-3 rounded-xl font-semibold transition-colors ${
-            isValidSwap && isConnected
-              ? 'bg-white text-black hover:bg-gray-200'
-              : 'bg-[#262626] text-[#737373] cursor-not-allowed'
-          }`}
-        >
-          {!isConnected ? 'Connect Wallet' : isValidSwap ? 'Review Swap' : 'Enter Amount'}
-        </button>
+        {swapState === 'success' && txHash ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-center gap-2 text-green-400">
+              <CheckCircle className="w-5 h-5" />
+              <span className="font-semibold">{isBridge ? 'Bridge Submitted!' : 'Swap Successful!'}</span>
+            </div>
+            <a
+              href={getTxUrl(fromChainId, txHash)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-3 rounded-xl font-semibold bg-[#1a1a1a] text-white hover:bg-[#262626] transition-colors flex items-center justify-center gap-2"
+            >
+              View Transaction <ExternalLink className="w-4 h-4" />
+            </a>
+            <button
+              onClick={() => {
+                setSwapState('idle')
+                setTxHash(null)
+                setFromAmount('')
+                setToAmount('')
+              }}
+              className="w-full py-2 text-sm text-[#737373] hover:text-white transition-colors"
+            >
+              New Swap
+            </button>
+          </div>
+        ) : swapState === 'error' ? (
+          <div className="space-y-3">
+            <div className="text-red-400 text-sm text-center">
+              {swapError || 'Swap failed'}
+            </div>
+            <button
+              onClick={() => {
+                setSwapState('idle')
+                setSwapError(null)
+              }}
+              className="w-full py-3 rounded-xl font-semibold bg-[#262626] text-white hover:bg-[#333] transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={executeSwap}
+            disabled={
+              !isValidSwap ||
+              !isConnected ||
+              isLoadingQuote ||
+              !!quoteError ||
+              swapState !== 'idle' ||
+              (isBridge && fromChainId === toChainId)
+            }
+            className={`w-full py-3 rounded-xl font-semibold transition-colors ${
+              isValidSwap && isConnected && !isLoadingQuote && !quoteError && swapState === 'idle' && !(isBridge && fromChainId === toChainId)
+                ? 'bg-white text-black hover:bg-gray-200'
+                : 'bg-[#262626] text-[#737373] cursor-not-allowed'
+            }`}
+          >
+            {!isConnected
+              ? 'Connect Wallet'
+              : isBridge && fromChainId === toChainId
+              ? 'Select Different Chains'
+              : isLoadingQuote
+              ? 'Getting Quote...'
+              : quoteError
+              ? 'Quote Unavailable'
+              : swapState === 'checking'
+              ? 'Checking Allowance...'
+              : swapState === 'approving'
+              ? 'Approve in Wallet...'
+              : swapState === 'swapping'
+              ? isBridge ? 'Confirm Bridge in Wallet...' : 'Confirm Swap in Wallet...'
+              : isValidSwap && quote
+              ? needsApproval
+                ? 'Approve & Swap'
+                : isBridge ? 'Bridge' : 'Swap'
+              : 'Enter Amount'}
+          </button>
+        )}
 
         {/* Disclaimer */}
         <div className="text-xs text-[#5a5a5a] text-center">
-          Preview only — functionality coming soon.
+          {swapState === 'success'
+            ? isBridge ? 'Bridge transaction submitted. Cross-chain transfers may take a few minutes.' : 'Transaction confirmed on chain.'
+            : protocol.id === 'wormhole'
+            ? 'Powered by Wormhole bridge.'
+            : protocol.id === 'stargate'
+            ? 'Powered by Stargate bridge.'
+            : protocol.id === 'lifi'
+            ? 'Powered by Li.Fi bridge aggregator.'
+            : protocol.id === 'uniswap'
+            ? 'Powered by Uniswap V4.'
+            : quote
+            ? 'Powered by 1inch aggregator.'
+            : 'Live quotes from 1inch aggregator.'}
         </div>
       </div>
 

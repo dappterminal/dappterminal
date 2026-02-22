@@ -6,7 +6,7 @@
 
 import type { CommandHandler } from '@/core'
 import { getTxUrl } from '@/lib/explorers'
-import { trackSwapTransaction } from '@/lib/tracking/swaps'
+import { trackSwap } from '@/lib/tracking/track-client'
 
 /**
  * Stargate Transaction Step
@@ -126,7 +126,7 @@ export const bridgeHandler: CommandHandler<BridgeRequestData> = async (data, ctx
     if (txHashes.length > 0) {
       // Track the main bridge transaction (last tx is typically the bridge)
       const bridgeTxHash = txHashes[txHashes.length - 1]
-      trackSwapTransaction({
+      trackSwap({
         txHash: bridgeTxHash,
         chainId: data.fromChain,
         protocol: 'stargate',
@@ -143,7 +143,7 @@ export const bridgeHandler: CommandHandler<BridgeRequestData> = async (data, ctx
           steps: stargateSteps.map(s => s.type),
           txHashes,
         },
-      }).catch(err => console.error('Failed to track Stargate bridge:', err))
+      })
     }
 
     // Update with final success

@@ -10,6 +10,7 @@ import { createPoolKey, getZeroForOne, getPoolTokenAddress } from './poolUtils'
 import { getUniversalRouterAddress, UNIVERSAL_ROUTER_ABI } from './contracts'
 import { isNativeToken } from './tokens'
 import { V4Planner, Actions } from '@uniswap/v4-sdk'
+import { debugLog } from '@/lib/debug'
 
 const V4_SWAP_COMMAND = 0x10
 
@@ -48,9 +49,9 @@ function encodeV4SwapActions(
 ): { commands: Hex; inputs: Hex[] } {
   const { tokenIn, tokenOut, amountIn, minAmountOut, recipient } = params
 
-  console.log('=== V4 Swap Config ===')
-  console.log('Token In:', tokenIn.symbol, tokenIn.address, '(isNative:', isNativeToken(tokenIn.address), ')')
-  console.log('Token Out:', tokenOut.symbol, tokenOut.address, '(isNative:', isNativeToken(tokenOut.address), ')')
+  debugLog('=== V4 Swap Config ===')
+  debugLog('Token In:', tokenIn.symbol, tokenIn.address, '(isNative:', isNativeToken(tokenIn.address), ')')
+  debugLog('Token Out:', tokenOut.symbol, tokenOut.address, '(isNative:', isNativeToken(tokenOut.address), ')')
 
   // Validate recipient address
   if (!isAddress(recipient)) {
@@ -90,14 +91,14 @@ function encodeV4SwapActions(
     poolKeyCurrency1 = '0x0000000000000000000000000000000000000000'
   }
 
-  console.log('PoolKey currency0:', poolKeyCurrency0)
-  console.log('PoolKey currency1:', poolKeyCurrency1)
-  console.log('Zero for One:', zeroForOne)
-  console.log('Currency In (for SETTLE):', currencyIn)
-  console.log('Currency Out (for TAKE):', currencyOut)
-  console.log('AmountIn:', amountIn.toString())
-  console.log('MinAmountOut:', minAmountOut.toString())
-  console.log('Recipient:', recipient)
+  debugLog('PoolKey currency0:', poolKeyCurrency0)
+  debugLog('PoolKey currency1:', poolKeyCurrency1)
+  debugLog('Zero for One:', zeroForOne)
+  debugLog('Currency In (for SETTLE):', currencyIn)
+  debugLog('Currency Out (for TAKE):', currencyOut)
+  debugLog('AmountIn:', amountIn.toString())
+  debugLog('MinAmountOut:', minAmountOut.toString())
+  debugLog('Recipient:', recipient)
 
   // Build V4 actions using the V4Planner SDK
   const planner = new V4Planner()
@@ -129,11 +130,11 @@ function encodeV4SwapActions(
   const commands = `0x${V4_SWAP_COMMAND.toString(16).padStart(2, '0')}` as Hex
   const inputs: Hex[] = [v4Input]
 
-  console.log('=== V4 Encoding Complete ===')
-  console.log('Action sequence:', 'SWAP_EXACT_IN_SINGLE -> SETTLE -> TAKE')
-  console.log('Commands:', commands)
-  console.log('Inputs length:', inputs.length)
-  console.log('Inputs[0] length:', inputs[0].length)
+  debugLog('=== V4 Encoding Complete ===')
+  debugLog('Action sequence:', 'SWAP_EXACT_IN_SINGLE -> SETTLE -> TAKE')
+  debugLog('Commands:', commands)
+  debugLog('Inputs length:', inputs.length)
+  debugLog('Inputs[0] length:', inputs[0].length)
 
   return { commands, inputs }
 }
@@ -170,13 +171,13 @@ export function prepareSingleHopSwap(params: SingleHopSwapParams): {
   // Calculate value (only if swapping native ETH)
   const value = isNativeToken(tokenIn.address) ? amountIn : BigInt(0)
 
-  console.log('=== Universal Router Transaction ===')
-  console.log('To:', universalRouterAddress)
-  console.log('Value:', value.toString(), 'wei')
-  console.log('Commands:', commands)
-  console.log('Inputs length:', inputs.length)
-  console.log('Deadline:', deadline.toString())
-  console.log('Data length:', data.length)
+  debugLog('=== Universal Router Transaction ===')
+  debugLog('To:', universalRouterAddress)
+  debugLog('Value:', value.toString(), 'wei')
+  debugLog('Commands:', commands)
+  debugLog('Inputs length:', inputs.length)
+  debugLog('Deadline:', deadline.toString())
+  debugLog('Data length:', data.length)
 
   return {
     to: universalRouterAddress,

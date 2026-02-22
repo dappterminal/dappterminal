@@ -52,6 +52,9 @@ export interface ExecutionContext {
   /** Wallet connection state */
   wallet: WalletState
 
+  /** Optional RPC registry (mirrors globalState.rpcRegistry) */
+  rpcRegistry?: RpcRegistry
+
   /** Global state shared across all commands */
   globalState: Record<string, unknown>
 
@@ -61,6 +64,22 @@ export interface ExecutionContext {
   /** Command execution history */
   history: CommandExecution[]
 }
+
+/**
+ * RPC registry entry
+ */
+export interface RpcRegistryEntry {
+  chainId: number
+  source: 'wallet' | 'custom'
+  customRpcUrl?: string
+  customProviderName?: string
+  updatedAt?: string
+}
+
+/**
+ * RPC registry (per-chain)
+ */
+export type RpcRegistry = Record<number, RpcRegistryEntry>
 
 /**
  * Command execution record
@@ -208,4 +227,27 @@ export interface ResolvedCommand {
 
   /** When a protocol name is used as a command (e.g., 'wormhole' instead of 'use wormhole') */
   protocolNameAsCommand?: string
+}
+
+/**
+ * Autocomplete suggestion for CLI dropdown
+ */
+export interface AutocompleteSuggestion {
+  /** Command identifier */
+  id: string
+
+  /** Human-readable description */
+  description?: string
+
+  /** Command aliases */
+  aliases?: string[]
+
+  /** Protocol this command belongs to (for G_p commands) */
+  protocol?: ProtocolId
+
+  /** Match confidence (0-1), higher is better */
+  confidence: number
+
+  /** How the match was made */
+  matchType: 'exact' | 'prefix' | 'fuzzy'
 }

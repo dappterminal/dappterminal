@@ -6,7 +6,7 @@
 
 import type { CommandHandler } from '@/core'
 import { getTxUrl } from '@/lib/explorers'
-import { trackSwapTransaction } from '@/lib/tracking/swaps'
+import { trackSwap } from '@/lib/tracking/track-client'
 
 /**
  * Swap Handler Data
@@ -24,6 +24,24 @@ interface SwapRequestData {
   amount: string
   chainId: number
   walletAddress: string
+}
+
+/**
+ * Quote Handler Data
+ */
+interface QuoteRequestData {
+  quoteRequest: boolean
+  fromToken: string
+  toToken: string
+  amountIn: string
+  amountInBase: string
+  fromTokenSymbol?: string
+  amountOut: string
+  amountOutFormatted?: string
+  toTokenSymbol?: string
+  gas?: string
+  slippage: number
+  chainId: number
 }
 
 /**
@@ -147,7 +165,7 @@ export const swapHandler: CommandHandler<SwapRequestData> = async (data, ctx) =>
     })
 
     // Track swap transaction in database
-    trackSwapTransaction({
+    trackSwap({
       txHash: hash,
       chainId: data.chainId,
       protocol: '1inch',
@@ -159,7 +177,7 @@ export const swapHandler: CommandHandler<SwapRequestData> = async (data, ctx) =>
       amountIn: data.amount,
       amountOut: swapTx.dstAmount || '0',
       gasUsed: swapTx.tx.gas,
-    }).catch(err => console.error('Failed to track 1inch swap:', err))
+    })
 
     // Update with success
     ctx.updateHistory([
@@ -178,6 +196,30 @@ export const swapHandler: CommandHandler<SwapRequestData> = async (data, ctx) =>
     const errorMsg = error instanceof Error ? error.message : String(error)
     ctx.updateHistory([`❌ Swap failed: ${errorMsg}`])
   }
+}
+
+/**
+ * Quote Command Handler
+ *
+ * Displays a non-executable quote preview from the first step of swap flow.
+ */
+export const quoteHandler: CommandHandler<QuoteRequestData> = async (data, ctx) => {
+  const inputToken = (data.fromTokenSymbol || data.fromToken).toUpperCase()
+  const outputToken = (data.toTokenSymbol || data.toToken).toUpperCase()
+  ctx.updateHistory([
+    `📊 Swap Quote:`,
+    `  ${data.fromToken.toUpperCase()} → ${data.toToken.toUpperCase()}`,
+    `  Input: ${data.amountIn} ${inputToken}`,
+    `  Input (base units): ${data.amountInBase}`,
+    `  Output: ${data.amountOutFormatted || data.amountOut} ${outputToken}`,
+    `  Output (base units): ${data.amountOut}`,
+    `  Gas: ${data.gas || 'estimating...'}`,
+    `  Slippage: ${data.slippage}%`,
+    `  Chain ID: ${data.chainId}`,
+    ``,
+    `This is a quote preview only (no transaction sent).`,
+    `Run \`swap ${data.amountIn} ${data.fromToken} ${data.toToken}\` to execute.`,
+  ])
 }
 
 /**
@@ -279,6 +321,7 @@ export const limitOrderHandler: CommandHandler<LimitOrderRequestData> = async (d
  * Handler Registry for 1inch Protocol
  */
 export const oneInchHandlers = {
+  quote: quoteHandler,
   swap: swapHandler,
   limitorder: limitOrderHandler,
 }

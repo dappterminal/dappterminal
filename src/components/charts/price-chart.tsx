@@ -4,7 +4,7 @@
  * Price chart component with candlestick and line chart modes
  */
 
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import type { EChartsOption } from 'echarts'
 import { BaseChart } from './base-chart'
 import type { OHLCData, PricePoint, ChartType, TimeRange, DataSource } from '@/types/charts'
@@ -60,6 +60,8 @@ export function PriceChart({
   const [showDropdown, setShowDropdown] = useState(false)
   const [apiData, setApiData] = useState<OHLCData[] | PricePoint[] | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [lastRefresh, setLastRefresh] = useState<number | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Cache for API data to avoid refetching
@@ -95,49 +97,37 @@ export function PriceChart({
     }
   }, [showDropdown])
 
-  // Fetch data from APIs
-  useEffect(() => {
-    if ((dataSource !== '1inch' && dataSource !== 'CoinGecko') || data) {
-      setApiData(null)
+  // Extracted fetch function so it can be called by both the initial effect and the polling interval
+  const fetchChartData = useCallback(async (skipClientCache = false) => {
+    if ((dataSource !== '1inch' && dataSource !== 'CoinGecko' && dataSource !== 'DexScreener') || data) {
       return
     }
 
-    const fetchChartData = async () => {
-      // Create cache key based on chart parameters
-      const cacheKey = `${symbol}-${chartType}-${timeRange}-${dataSource}`
+    // Create cache key based on chart parameters
+    const cacheKey = `${symbol}-${chartType}-${timeRange}-${dataSource}`
 
-      // Check if data is already cached
+    // Check if data is already cached (skip on polling refreshes)
+    if (!skipClientCache) {
       const cachedData = cacheRef.current.get(cacheKey)
       if (cachedData) {
-        console.log('Using cached chart data for:', cacheKey)
         setApiData(cachedData)
         return
       }
+    }
 
-      setIsLoading(true)
+    setIsLoading(true)
       try {
         // Handle CoinGecko data source
         if (dataSource === 'CoinGecko') {
           // Parse symbol (e.g., "ETH/USDC" -> base=ETH)
           const [baseSymbol] = symbol.split('/').map(s => s.trim())
 
-          // Map common symbols to CoinGecko IDs
-          const symbolToCoinId: Record<string, string> = {
-            'BTC': 'bitcoin',
-            'ETH': 'ethereum',
-            'USDC': 'usd-coin',
-            'USDT': 'tether',
-            'DAI': 'dai',
-            'WBTC': 'wrapped-bitcoin',
-            'WETH': 'weth',
-            'MATIC': 'matic-network',
-            'LINK': 'chainlink',
-            'UNI': 'uniswap',
-            'AAVE': 'aave',
+          // Resolve symbol to CoinGecko coin ID via server endpoint
+          const resolveRes = await fetch(`/api/coingecko/resolve?symbol=${encodeURIComponent(baseSymbol)}`)
+          if (!resolveRes.ok) {
+            throw new Error(`Could not resolve "${baseSymbol}" to a CoinGecko coin`)
           }
-
-          // Try to resolve symbol to coin ID
-          const coinId = symbolToCoinId[baseSymbol.toUpperCase()] || baseSymbol.toLowerCase()
+          const { id: coinId } = await resolveRes.json() as { id: string }
 
           // Map time range to days for CoinGecko
           const timeRangeToDays: Record<TimeRange, number | 'max'> = {
@@ -184,6 +174,62 @@ export function PriceChart({
             console.log('Transformed CoinGecko data sample:', transformedData.slice(0, 3))
             cacheRef.current.set(cacheKey, transformedData)
             setApiData(transformedData)
+          }
+
+          setIsLoading(false)
+          return
+        }
+
+        // Handle DexScreener data source
+        if (dataSource === 'DexScreener') {
+          const [baseSymbol] = symbol.split('/').map(s => s.trim())
+
+          const response = await fetch(`/api/dexscreener/pairs?q=${encodeURIComponent(baseSymbol)}`)
+          if (!response.ok) {
+            throw new Error('Failed to fetch DexScreener data')
+          }
+
+          const data = await response.json()
+
+          if (data.pairs && data.pairs.length > 0) {
+            // Pick the highest-liquidity pair
+            const pair = data.pairs.reduce((best: any, p: any) =>
+              (p.liquidity?.usd || 0) > (best.liquidity?.usd || 0) ? p : best
+            , data.pairs[0])
+
+            const price = parseFloat(pair.priceUsd) || 0
+            const now = Date.now()
+
+            // DexScreener provides price change percentages but no OHLCV history.
+            // Construct price points from available change data to show a basic trend.
+            const changes: { offset: number; pctKey: string }[] = [
+              { offset: 5 * 60_000, pctKey: 'm5' },
+              { offset: 60 * 60_000, pctKey: 'h1' },
+              { offset: 6 * 60 * 60_000, pctKey: 'h6' },
+              { offset: 24 * 60 * 60_000, pctKey: 'h24' },
+            ]
+
+            const points: PricePoint[] = []
+
+            // Build historical price estimates from percent changes
+            for (const { offset, pctKey } of changes) {
+              const pct = pair.priceChange?.[pctKey]
+              if (pct !== undefined && pct !== null) {
+                const historicalPrice = price / (1 + pct / 100)
+                points.push({ timestamp: now - offset, price: historicalPrice })
+              }
+            }
+
+            // Add current price
+            points.push({ timestamp: now, price })
+
+            // Sort by timestamp
+            points.sort((a, b) => a.timestamp - b.timestamp)
+
+            if (points.length > 0) {
+              cacheRef.current.set(cacheKey, points)
+              setApiData(points)
+            }
           }
 
           setIsLoading(false)
@@ -295,34 +341,63 @@ export function PriceChart({
         setApiData(null)
       } finally {
         setIsLoading(false)
+        setLastRefresh(Date.now())
       }
-    }
-
-    fetchChartData()
   }, [symbol, chartType, timeRange, dataSource, data])
+
+  // Initial fetch + refetch when parameters change
+  useEffect(() => {
+    if ((dataSource !== '1inch' && dataSource !== 'CoinGecko' && dataSource !== 'DexScreener') || data) {
+      setApiData(null)
+      return
+    }
+    fetchChartData()
+  }, [fetchChartData])
+
+  // Auto-refresh polling — invalidates client cache so we get fresh server data
+  useEffect(() => {
+    if (!autoRefresh) return
+
+    // Refresh interval based on time range — shorter ranges get faster updates
+    const intervalMs = ['1m', '5m', '15m'].includes(timeRange) ? 15_000
+      : ['1h', '4h'].includes(timeRange) ? 30_000
+      : 60_000
+
+    const id = setInterval(() => {
+      // Clear the client cache entry so we actually hit the server
+      const cacheKey = `${symbol}-${chartType}-${timeRange}-${dataSource}`
+      cacheRef.current.delete(cacheKey)
+      fetchChartData(true)
+    }, intervalMs)
+
+    return () => clearInterval(id)
+  }, [autoRefresh, fetchChartData, symbol, chartType, timeRange, dataSource])
 
   // Generate mock data if not provided
   const mockOHLCData = useMemo(() => generateMockOHLCData(100, 2000, 0.02), [])
   const mockLineData = useMemo(() => generateMockPricePoints(100, 2000, 0.02), [])
 
   // Prepare chart data
-  const chartData = useMemo(() => {
+  const { chartData, isMockData } = useMemo(() => {
     // Priority: provided data > API data > mock data
     if (data) {
       // Use provided data
       if (chartType === 'candlestick' && 'open' in data[0]) {
-        return data as OHLCData[]
+        return { chartData: data as OHLCData[], isMockData: false }
       } else if (chartType === 'line' && 'price' in data[0]) {
-        return data as PricePoint[]
+        return { chartData: data as PricePoint[], isMockData: false }
       }
     }
 
     if (apiData && apiData.length > 0) {
-      return apiData
+      return { chartData: apiData, isMockData: false }
     }
 
     // Use mock data as fallback
-    return chartType === 'candlestick' ? mockOHLCData : mockLineData
+    return {
+      chartData: chartType === 'candlestick' ? mockOHLCData : mockLineData,
+      isMockData: true,
+    }
   }, [data, apiData, chartType, mockOHLCData, mockLineData])
 
   // Build ECharts option
@@ -619,9 +694,6 @@ export function PriceChart({
     }
   }, [chartType, chartData, symbol, timeRange, isLoading])
 
-  const timeRanges: TimeRange[] = ['1m', '5m', '15m', '1h', '4h', '12h', '24h', '1w', '1M', '1Y', 'ALL']
-  const dataSources: DataSource[] = ['1inch', 'CoinGecko', 'Coinbase', 'Kraken', 'Mock']
-
   return (
     <div className={`relative ${className}`}>
       {/* Loading Spinner */}
@@ -634,28 +706,62 @@ export function PriceChart({
         </div>
       )}
 
-      {/* Chart type toggle - Simple inline controls */}
-      <div className="absolute top-2 right-2 z-10 flex gap-0.5 rounded bg-[#262626] p-0.5">
+      {/* Chart controls - top right */}
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+        {/* Auto-refresh toggle */}
         <button
-          onClick={() => setChartType('candlestick')}
-          className={`px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors ${
-            chartType === 'candlestick'
-              ? 'bg-[#404040] text-[#E5E5E5]'
-              : 'text-[#737373] hover:text-[#E5E5E5]'
+          onClick={() => setAutoRefresh(prev => !prev)}
+          title={autoRefresh ? 'Disable auto-refresh' : 'Enable auto-refresh'}
+          className={`px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors flex items-center gap-1 ${
+            autoRefresh
+              ? 'bg-[#10B981]/20 text-[#10B981] border border-[#10B981]/30'
+              : 'bg-[#262626] text-[#737373] hover:text-[#E5E5E5]'
           }`}
         >
-          Candle
+          <span className={`inline-block w-1.5 h-1.5 rounded-full ${autoRefresh ? 'bg-[#10B981] animate-pulse' : 'bg-[#404040]'}`} />
+          Live
         </button>
-        <button
-          onClick={() => setChartType('line')}
-          className={`px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors ${
-            chartType === 'line'
-              ? 'bg-[#404040] text-[#E5E5E5]'
-              : 'text-[#737373] hover:text-[#E5E5E5]'
-          }`}
-        >
-          Line
-        </button>
+        {/* Chart type toggle */}
+        <div className="flex gap-0.5 rounded bg-[#262626] p-0.5">
+          <button
+            onClick={() => setChartType('candlestick')}
+            className={`px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors ${
+              chartType === 'candlestick'
+                ? 'bg-[#404040] text-[#E5E5E5]'
+                : 'text-[#737373] hover:text-[#E5E5E5]'
+            }`}
+          >
+            Candle
+          </button>
+          <button
+            onClick={() => setChartType('line')}
+            className={`px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors ${
+              chartType === 'line'
+                ? 'bg-[#404040] text-[#E5E5E5]'
+                : 'text-[#737373] hover:text-[#E5E5E5]'
+            }`}
+          >
+            Line
+          </button>
+        </div>
+      </div>
+
+      {/* Bottom status bar */}
+      <div className="absolute bottom-2 left-2 right-2 z-10 flex items-center justify-between pointer-events-none">
+        {/* Mock data indicator (left) */}
+        {(isMockData || dataSource === 'Mock') && !isLoading ? (
+          <div className="px-1.5 py-0.5 rounded bg-[#F59E0B]/15 border border-[#F59E0B]/30">
+            <span className="text-[10px] font-medium text-[#F59E0B]">MOCK DATA</span>
+          </div>
+        ) : <div />}
+        {/* Last updated timestamp (right) */}
+        {lastRefresh && !isLoading && !isMockData && (
+          <div className="px-1.5 py-0.5 rounded bg-[#262626]/80">
+            <span className="text-[9px] text-[#737373]">
+              Updated {new Date(lastRefresh).toLocaleTimeString()}
+            </span>
+          </div>
+        )}
       </div>
 
       <BaseChart option={option} height={height} resizeKey={resizeKey} />
@@ -681,7 +787,8 @@ export function PriceChartDropdown({
   onToggleDropdown,
 }: PriceChartDropdownProps) {
   const timeRanges: TimeRange[] = ['1m', '5m', '15m', '1h', '4h', '12h', '24h', '1w', '1M', '1Y', 'ALL']
-  const dataSources: DataSource[] = ['1inch', 'CoinGecko', 'Coinbase', 'Kraken', 'Mock']
+  const dataSources: DataSource[] = ['1inch', 'CoinGecko', 'DexScreener', 'Coinbase', 'Kraken', 'Mock']
+  const availableSources: Set<DataSource> = new Set(['1inch', 'CoinGecko', 'DexScreener', 'Mock'])
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -736,21 +843,28 @@ export function PriceChartDropdown({
       <div>
         <div className="text-[11px] text-[#737373] font-medium mb-1.5">Data Source</div>
         <div className="flex flex-col gap-1">
-          {dataSources.map((source) => (
-            <button
-              key={source}
-              onClick={() => {
-                onDataSourceChange(source)
-              }}
-              className={`px-2.5 py-1 text-[11px] font-medium rounded transition-colors text-left ${
-                dataSource === source
-                  ? 'bg-[#404040] text-[#E5E5E5]'
-                  : 'text-[#737373] hover:text-[#E5E5E5] hover:bg-[#262626]'
-              }`}
-            >
-              {source}
-            </button>
-          ))}
+          {dataSources.map((source) => {
+            const isAvailable = availableSources.has(source)
+            return (
+              <button
+                key={source}
+                onClick={() => {
+                  if (isAvailable) onDataSourceChange(source)
+                }}
+                disabled={!isAvailable}
+                className={`px-2.5 py-1 text-[11px] font-medium rounded transition-colors text-left ${
+                  !isAvailable
+                    ? 'text-[#404040] cursor-not-allowed'
+                    : dataSource === source
+                    ? 'bg-[#404040] text-[#E5E5E5]'
+                    : 'text-[#737373] hover:text-[#E5E5E5] hover:bg-[#262626]'
+                }`}
+                title={!isAvailable ? 'Coming soon' : undefined}
+              >
+                {source}{!isAvailable && ' (coming soon)'}
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>

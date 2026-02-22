@@ -26,6 +26,7 @@ export function NetworkGraph({
   resizeKey,
 }: NetworkGraphProps) {
   // Generate mock data if not provided
+  const isMockData = !data
   const graphData = useMemo(() => data || generateMockNetworkGraph(), [data])
 
   // Build ECharts option
@@ -138,7 +139,13 @@ export function NetworkGraph({
   }, [graphData, title])
 
   return (
-    <div className={`flex min-h-0 flex-col ${className}`}>
+    <div className={`relative flex min-h-0 flex-col ${className}`}>
+      {/* Mock data indicator */}
+      {isMockData && (
+        <div className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded bg-[#F59E0B]/15 border border-[#F59E0B]/30">
+          <span className="text-[10px] font-medium text-[#F59E0B]">MOCK DATA</span>
+        </div>
+      )}
       <BaseChart option={option} height={height} className="flex-1 min-h-0" resizeKey={resizeKey} />
 
       {/* Legend info */}

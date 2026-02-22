@@ -5,15 +5,18 @@ import { Plus, X, ChevronDown } from "lucide-react"
 import { useAccount, useEnsName } from 'wagmi'
 import { mainnet } from 'wagmi/chains'
 import { formatUnits } from 'viem'
-import { registry, registerCoreCommands, createExecutionContext, updateExecutionContext } from "@/core"
+import { registerCoreCommands, createExecutionContext, updateExecutionContext, setRpcRegistry } from "@/core"
 import type { ExecutionContext, CommandResult, TransactionRequest, TypedDataPayload } from "@/core"
-import { pluginLoader } from "@/plugins/plugin-loader"
+import { CommandRegistry } from "@/core/command-registry"
+import { PluginLoader } from "@/plugins/plugin-loader"
 import { oneInchPlugin } from "@/plugins/1inch"
 import { stargatePlugin } from "@/plugins/stargate"
 import { wormholePlugin } from "@/plugins/wormhole"
 import { lifiPlugin } from "@/plugins/lifi"
 import { aaveV3Plugin } from "@/plugins/aave-v3"
 import { uniswapV4Plugin } from "@/plugins/uniswap-v4"
+import { loadRpcRegistry } from '@/lib/rpc-registry'
+import { debugLog } from '@/lib/debug'
 
 interface OutputSegment {
   text: string
@@ -35,12 +38,26 @@ interface TerminalTab {
   name: string
   history: HistoryItem[]
   executionContext: ExecutionContext
+  runtime: {
+    registry: CommandRegistry
+    pluginLoader: PluginLoader
+  }
   currentInput: string
+  isProcessing: boolean
   commandHistory: string[]
   historyIndex: number
 }
 
 const MAX_COMMAND_HISTORY = 1000 // Maximum commands to keep in history
+
+const pluginsToLoad = [
+  { name: '1inch', plugin: oneInchPlugin },
+  { name: 'Stargate', plugin: stargatePlugin },
+  { name: 'Wormhole', plugin: wormholePlugin },
+  { name: 'LiFi', plugin: lifiPlugin },
+  { name: 'Aave v3', plugin: aaveV3Plugin },
+  { name: 'Uniswap V4', plugin: uniswapV4Plugin },
+]
 
 // Protocol color mapping
 const PROTOCOL_COLORS: Record<string, string> = {
@@ -366,12 +383,19 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   const [fontSize, setFontSize] = useState(18)
   const [fuzzyMatches, setFuzzyMatches] = useState<string[]>([])
   const [selectedMatchIndex, setSelectedMatchIndex] = useState(0)
-  const [isExecuting, setIsExecuting] = useState(false)
+  const [queueCount, setQueueCount] = useState(0)
   const [pluginsLoading, setPluginsLoading] = useState(true)
   const [loadedPlugins, setLoadedPlugins] = useState<string[]>([])
   const terminalRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
+
+  // Per-tab FIFO command queue infrastructure
+  interface QueueEntry { input: string }
+  const commandQueueRef = useRef<Map<string, QueueEntry[]>>(new Map())
+  const processingRef = useRef<Set<string>>(new Set())
+  const tabsRef = useRef(tabs)
+  useEffect(() => { tabsRef.current = tabs }, [tabs])
 
   // Get wallet state from wagmi
   const { address, chainId, isConnected, isConnecting } = useAccount()
@@ -383,9 +407,11 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   // Get active tab and its execution context
   const activeTab = tabs.find(tab => tab.id === activeTabId)
   const executionContext = activeTab?.executionContext ?? null
+  const activeRuntime = activeTab?.runtime ?? null
 
   // Get tab-specific input values
   const currentInput = activeTab?.currentInput ?? ""
+  const isProcessing = activeTab?.isProcessing ?? false
   const commandHistory = activeTab?.commandHistory ?? []
   const historyIndex = activeTab?.historyIndex ?? -1
 
@@ -415,134 +441,151 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
   const activeProtocol = executionContext?.activeProtocol
   const prompt = formatPrompt(ensName, address, activeProtocol)
 
-  // Debug: log active protocol changes
-  useEffect(() => {
-    if (activeProtocol) {
-      console.log('Active protocol changed to:', activeProtocol)
-    }
-  }, [activeProtocol])
-
-  // Debug: log active tab changes
-  useEffect(() => {
-    console.log('[Tab State] activeTabId changed to:', activeTabId)
-    console.log('[Tab State] Available tabs:', tabs.map(t => ({ id: t.id, name: t.name })))
-    console.log('[Tab State] Active tab found:', !!activeTab)
-    console.log('[Tab State] Active tab details:', activeTab ? { id: activeTab.id, name: activeTab.name } : 'none')
-  }, [activeTabId, tabs, activeTab])
-
   // Update active tab name when protocol changes
   useEffect(() => {
-    console.log('[Tab Update Effect] Triggered - activeProtocol:', activeProtocol, 'activeTabId:', activeTabId)
+    debugLog('CLI:TabUpdate', 'active protocol update', { activeProtocol, activeTabId })
     if (activeTabId) {
       const newTabName = activeProtocol || 'defi'
-      console.log('[Tab Update Effect] Updating tab name to:', newTabName, 'for tab:', activeTabId)
       setTabs(prevTabs => {
-        console.log('[Tab Update Effect] Current tabs:', prevTabs)
         const updatedTabs = prevTabs.map(tab =>
           tab.id === activeTabId
             ? { ...tab, name: newTabName }
             : tab
         )
-        console.log('[Tab Update Effect] Updated tabs:', updatedTabs)
         return updatedTabs
       })
     }
   }, [activeProtocol, activeTabId])
 
-  useEffect(() => {
-    setMounted(true)
+  const createTabRuntime = async (context: ExecutionContext) => {
+    const registry = new CommandRegistry()
+    const tabPluginLoader = new PluginLoader(registry)
+    registerCoreCommands(registry)
 
-    // Register core commands
-    registerCoreCommands()
+    context.globalState = {
+      ...context.globalState,
+      commandRegistry: registry,
+    }
 
-    // Create execution context
-    const context = createExecutionContext()
-
-    // Track plugin loading
-    const pluginsToLoad = [
-      { name: '1inch', plugin: oneInchPlugin },
-      { name: 'Stargate', plugin: stargatePlugin },
-      { name: 'Wormhole', plugin: wormholePlugin },
-      { name: 'LiFi', plugin: lifiPlugin },
-      { name: 'Aave v3', plugin: aaveV3Plugin },
-      { name: 'Uniswap V4', plugin: uniswapV4Plugin },
-    ]
-
-    const loadedPluginNames: string[] = []
-
-    // Load all plugins
-    Promise.all(
-      pluginsToLoad.map(({ name, plugin }) =>
-        pluginLoader.loadPlugin(plugin, undefined, context).then(result => {
-          if (result.success) {
-            console.log(`${name} plugin loaded successfully`)
-            loadedPluginNames.push(name)
-            setLoadedPlugins(prev => [...prev, name])
-          } else {
-            console.error(`Failed to load ${name} plugin:`, result.error)
-          }
-          return result
-        })
-      )
-    ).then(() => {
-      setPluginsLoading(false)
-      console.log('All plugins loaded')
-    })
-
-    // Load command history from localStorage
-    const savedHistory = localStorage.getItem('defi-terminal-command-history')
-    let loadedHistory: string[] = []
-    if (savedHistory) {
-      try {
-        const parsed = JSON.parse(savedHistory)
-        if (Array.isArray(parsed)) {
-          // Apply sliding window in case saved history exceeds limit
-          loadedHistory = parsed.length > MAX_COMMAND_HISTORY
-            ? parsed.slice(-MAX_COMMAND_HISTORY)
-            : parsed
+    const loadedNames: string[] = []
+    await Promise.all(
+      pluginsToLoad.map(async ({ name, plugin }) => {
+        const result = await tabPluginLoader.loadPlugin(plugin, undefined, context)
+        if (result.success) {
+          loadedNames.push(name)
+        } else {
+          console.error(`Failed to load ${name} plugin:`, result.error)
         }
-      } catch {
-        // Invalid JSON, ignore
+      })
+    )
+
+    return {
+      runtime: {
+        registry,
+        pluginLoader: tabPluginLoader,
+      },
+      loadedNames,
+    }
+  }
+
+  useEffect(() => {
+    const initialize = async () => {
+      setMounted(true)
+
+      // Create execution context
+      let context = createExecutionContext()
+      const initialRegistry = loadRpcRegistry()
+      context = setRpcRegistry(context, initialRegistry)
+      setPluginsLoading(true)
+
+      const { runtime, loadedNames } = await createTabRuntime(context)
+      setLoadedPlugins(loadedNames)
+      setPluginsLoading(false)
+
+      // Load command history from localStorage
+      const savedHistory = localStorage.getItem('defi-terminal-command-history')
+      let loadedHistory: string[] = []
+      if (savedHistory) {
+        try {
+          const parsed = JSON.parse(savedHistory)
+          if (Array.isArray(parsed)) {
+            // Apply sliding window in case saved history exceeds limit
+            loadedHistory = parsed.length > MAX_COMMAND_HISTORY
+              ? parsed.slice(-MAX_COMMAND_HISTORY)
+              : parsed
+          }
+        } catch {
+          // Invalid JSON, ignore
+        }
+      }
+
+      const initialTab: TerminalTab = {
+        id: "1",
+        name: "defi",
+        history: [
+          {
+            command: "welcome",
+            output: [
+              "Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.2.0). Use at your own risk.",
+              "",
+              "⏳ Loading protocols...",
+              "",
+              "Type 'help' to see available commands."
+            ],
+            timestamp: new Date()
+          }
+        ],
+        executionContext: context,
+        runtime,
+        currentInput: "",
+        isProcessing: false,
+        commandHistory: loadedHistory,
+        historyIndex: -1
+      }
+      setTabs([initialTab])
+      setActiveTabId("1")
+
+      // Load fontSize from localStorage
+      const savedFontSize = localStorage.getItem('defi-terminal-font-size')
+      if (savedFontSize) {
+        setFontSize(Number(savedFontSize))
       }
     }
-
-    const initialTab: TerminalTab = {
-      id: "1",
-      name: "defi",
-      history: [
-        {
-          command: "welcome",
-          output: [
-            "Welcome to dApp Terminal. This is an experimental snapshot release (alpha 0.2.0). Use at your own risk.",
-            "",
-            "⏳ Loading protocols...",
-            "",
-            "Type 'help' to see available commands."
-          ],
-          timestamp: new Date()
-        }
-      ],
-      executionContext: context,
-      currentInput: "",
-      commandHistory: loadedHistory,
-      historyIndex: -1
-    }
-    setTabs([initialTab])
-    setActiveTabId("1")
-
-    // Load fontSize from localStorage
-    const savedFontSize = localStorage.getItem('defi-terminal-font-size')
-    if (savedFontSize) {
-      setFontSize(Number(savedFontSize))
-    }
+    void initialize()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // NOTE: Disabled global rpc-registry sync. If needed later, re-enable to
+  // broadcast Node Provider changes into each tab's executionContext.
+  // useEffect(() => {
+  //   const handleRegistryUpdate = (event: Event) => {
+  //     const customEvent = event as CustomEvent
+  //     const registry = customEvent.detail
+  //     if (!registry) return
+  //     setTabs(prevTabs => prevTabs.map(tab => ({
+  //       ...tab,
+  //       executionContext: setRpcRegistry(tab.executionContext, registry),
+  //     })))
+  //   }
+  //
+  //   window.addEventListener('rpc-registry-updated', handleRegistryUpdate as EventListener)
+  //   return () => {
+  //     window.removeEventListener('rpc-registry-updated', handleRegistryUpdate as EventListener)
+  //   }
+  // }, [])
 
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus()
     }
   }, [])
+
+  // Re-focus input after command finishes (disabled state removes focus)
+  useEffect(() => {
+    if (!isProcessing) {
+      inputRef.current?.focus()
+    }
+  }, [isProcessing])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -634,21 +677,14 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     }
   }, [address, chainId, isConnected, isConnecting, activeTabId])
 
-  const addNewTab = () => {
+  const addNewTab = async () => {
     const newId = Date.now().toString()
-    console.log('[Add Tab] Creating new tab with id:', newId)
-    console.log('[Add Tab] Current tabs before add:', tabs.map(t => ({ id: t.id, name: t.name })))
+    debugLog('CLI:Tabs', 'creating tab', { id: newId, currentCount: tabs.length })
 
     // Create a new execution context for this tab
-    const newContext = createExecutionContext()
-
-    // Load plugins for the new context
-    pluginLoader.loadPlugin(oneInchPlugin, undefined, newContext)
-    pluginLoader.loadPlugin(stargatePlugin, undefined, newContext)
-    pluginLoader.loadPlugin(wormholePlugin, undefined, newContext)
-    pluginLoader.loadPlugin(lifiPlugin, undefined, newContext)
-    pluginLoader.loadPlugin(aaveV3Plugin, undefined, newContext)
-    pluginLoader.loadPlugin(uniswapV4Plugin, undefined, newContext)
+    let newContext = createExecutionContext()
+    newContext = setRpcRegistry(newContext, loadRpcRegistry())
+    const { runtime } = await createTabRuntime(newContext)
 
     const newTab: TerminalTab = {
       id: newId,
@@ -661,29 +697,24 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         }
       ],
       executionContext: newContext,
+      runtime,
       currentInput: "",
+      isProcessing: false,
       commandHistory: [],
       historyIndex: -1
     }
-    setTabs([...tabs, newTab])
-    console.log('[Add Tab] New tab created, setting active to:', newId)
+    setTabs(prevTabs => [...prevTabs, newTab])
     setActiveTabId(newId)
   }
 
-  const createProtocolTab = (protocolId: string) => {
+  const createProtocolTab = async (protocolId: string) => {
     const newId = Date.now().toString()
-    console.log('[Add Protocol Tab] Creating new tab for protocol:', protocolId, 'with id:', newId)
+    debugLog('CLI:Tabs', 'creating protocol tab', { protocolId, id: newId })
 
     // Create a new execution context for this tab
-    const newContext = createExecutionContext()
-
-    // Load plugins for the new context
-    pluginLoader.loadPlugin(oneInchPlugin, undefined, newContext)
-    pluginLoader.loadPlugin(stargatePlugin, undefined, newContext)
-    pluginLoader.loadPlugin(wormholePlugin, undefined, newContext)
-    pluginLoader.loadPlugin(lifiPlugin, undefined, newContext)
-    pluginLoader.loadPlugin(aaveV3Plugin, undefined, newContext)
-    pluginLoader.loadPlugin(uniswapV4Plugin, undefined, newContext)
+    let newContext = createExecutionContext()
+    newContext = setRpcRegistry(newContext, loadRpcRegistry())
+    const { runtime } = await createTabRuntime(newContext)
 
     // Set the active protocol in the context
     newContext.activeProtocol = protocolId
@@ -699,47 +730,41 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         }
       ],
       executionContext: newContext,
+      runtime,
       currentInput: "",
+      isProcessing: false,
       commandHistory: [],
       historyIndex: -1
     }
-    setTabs([...tabs, newTab])
-    console.log('[Add Protocol Tab] New protocol tab created, setting active to:', newId)
+    setTabs(prevTabs => [...prevTabs, newTab])
     setActiveTabId(newId)
     setShowSettings(false) // Close settings menu
   }
 
   const closeTab = (tabId: string) => {
-    console.log('[Close Tab] Attempting to close tab:', tabId)
-    console.log('[Close Tab] Current tabs:', tabs.map(t => ({ id: t.id, name: t.name })))
-    console.log('[Close Tab] Current activeTabId:', activeTabId)
+    debugLog('CLI:Tabs', 'closing tab', { tabId, activeTabId, tabCount: tabs.length })
 
     if (tabs.length === 1) {
-      console.log('[Close Tab] Cannot close last tab')
       return // Don't close last tab
     }
 
+    commandQueueRef.current.delete(tabId)
+
     const newTabs = tabs.filter(tab => tab.id !== tabId)
-    console.log('[Close Tab] New tabs after filter:', newTabs.map(t => ({ id: t.id, name: t.name })))
     setTabs(newTabs)
 
     if (activeTabId === tabId) {
-      console.log('[Close Tab] Closed tab was active, switching to:', newTabs[0].id)
       setActiveTabId(newTabs[0].id)
-    } else {
-      console.log('[Close Tab] Closed tab was not active, keeping activeTabId:', activeTabId)
     }
   }
 
-  const executeCommand = async (input: string) => {
+  // Enqueue a command for the active tab and kick off processing
+  const enqueueCommand = (input: string) => {
     const trimmedInput = input.trim()
+    if (!trimmedInput) return
 
-    if (!trimmedInput || !executionContext) return
-
-    // Prevent executing multiple commands simultaneously
-    if (isExecuting) {
-      return
-    }
+    const tabId = activeTabId
+    if (!tabId) return
 
     // Prevent execution while plugins are still loading
     if (pluginsLoading) {
@@ -750,7 +775,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         prompt: String(prompt)
       }
       setTabs(prevTabs => prevTabs.map(tab =>
-        tab.id === activeTabId
+        tab.id === tabId
           ? { ...tab, history: [...tab.history, warningItem] }
           : tab
       ))
@@ -758,12 +783,80 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       return
     }
 
-    // Set executing state to disable input and clear fuzzy matches
-    setIsExecuting(true)
+    // Push to queue
+    const queue = commandQueueRef.current.get(tabId) || []
+    queue.push({ input: trimmedInput })
+    commandQueueRef.current.set(tabId, queue)
+
+    // Keep input visible while processing so users can see the active command.
     setFuzzyMatches([])
     setSelectedMatchIndex(0)
 
-    // Ensure lock is always released using try-finally
+    // If already processing, show queued indicator
+    if (processingRef.current.has(tabId)) {
+      const queuedItem: HistoryItem = {
+        command: trimmedInput,
+        output: ['[queued]'],
+        timestamp: new Date(),
+        prompt: String(prompt)
+      }
+      setTabs(prevTabs => prevTabs.map(tab =>
+        tab.id === tabId
+          ? { ...tab, history: [...tab.history, queuedItem] }
+          : tab
+      ))
+      setQueueCount(queue.length)
+    }
+
+    // Kick off processing (no-ops if already running)
+    processQueue(tabId)
+  }
+
+  // Process queued commands sequentially for a given tab
+  const processQueue = async (tabId: string) => {
+    if (processingRef.current.has(tabId)) return
+    processingRef.current.add(tabId)
+    setTabs(prevTabs => prevTabs.map(tab =>
+      tab.id === tabId ? { ...tab, isProcessing: true } : tab
+    ))
+    if (tabId === activeTabId) setQueueCount(commandQueueRef.current.get(tabId)?.length ?? 0)
+
+    try {
+      while (true) {
+        const queue = commandQueueRef.current.get(tabId)
+        if (!queue || queue.length === 0) break
+
+        const entry = queue.shift()!
+        commandQueueRef.current.set(tabId, queue)
+        if (tabId === activeTabId) setQueueCount(queue.length)
+        setTabs(prevTabs => prevTabs.map(tab =>
+          tab.id === tabId ? { ...tab, currentInput: entry.input } : tab
+        ))
+
+        await executeCommandForTab(entry.input, tabId)
+      }
+    } finally {
+      processingRef.current.delete(tabId)
+      setTabs(prevTabs => prevTabs.map(tab =>
+        tab.id === tabId ? { ...tab, isProcessing: false, currentInput: "" } : tab
+      ))
+      if (tabId === activeTabId) setQueueCount(0)
+    }
+  }
+
+  // Execute a single command targeting a specific tab
+  const executeCommandForTab = async (input: string, tabId: string) => {
+    const trimmedInput = input.trim()
+
+    // Look up tab state fresh from ref
+    const tab = tabsRef.current.find(t => t.id === tabId)
+    if (!tab || !tab.executionContext || !tab.runtime) return
+
+    const tabExecutionContext = tab.executionContext
+    const tabRuntime = tab.runtime
+    const tabCommandHistory = tab.commandHistory ?? []
+    const tabPrompt = formatPrompt(ensName, address, tabExecutionContext.activeProtocol)
+
     try {
 
     // Parse command and arguments
@@ -776,14 +869,14 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     const explicitProtocol = protocolMatch ? protocolMatch[1] : undefined
 
     // Resolve command using ρ (exact resolver)
-    const resolved = registry.ρ({
+    const resolved = tabRuntime.registry.ρ({
       input: commandName,
       explicitProtocol,
       preferences: {
-        defaults: executionContext.protocolPreferences,
+        defaults: tabExecutionContext.protocolPreferences,
         priority: [],
       },
-      executionContext,
+      executionContext: tabExecutionContext,
     })
 
     let output: string[] = []
@@ -795,7 +888,19 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         // Execute command
         // If protocolNameAsCommand is set, use it as the argument instead
         const commandArgs = resolved.protocolNameAsCommand || args
-        const result = await resolved.command.run(commandArgs, executionContext)
+        const result = await resolved.command.run(commandArgs, tabExecutionContext)
+        let executedProtocol: string | undefined
+        let executedCommandId: string | undefined
+
+        if (result.success && typeof result.value === 'object' && result.value !== null && !Array.isArray(result.value)) {
+          const metadata = result.value as { executedProtocol?: unknown; executedCommandId?: unknown }
+          if (typeof metadata.executedProtocol === 'string') {
+            executedProtocol = metadata.executedProtocol
+          }
+          if (typeof metadata.executedCommandId === 'string') {
+            executedCommandId = metadata.executedCommandId
+          }
+        }
 
         // Handle special client-side commands
         if (result.success && typeof result.value === 'object' && result.value !== null) {
@@ -853,13 +958,13 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
               command: trimmedInput,
               output,
               timestamp: transferTimestamp,
-              prompt: String(prompt)
+              prompt: String(tabPrompt)
             }
 
-            setTabs(prevTabs => prevTabs.map(tab =>
-              tab.id === activeTabId
-                ? { ...tab, history: [...tab.history, tempHistoryItem] }
-                : tab
+            setTabs(prevTabs => prevTabs.map(t =>
+              t.id === tabId
+                ? { ...t, history: [...t.history, tempHistoryItem] }
+                : t
             ))
 
             // Send transaction using wagmi
@@ -881,43 +986,41 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
               successLines.push(`  To: ${valueData.toAddress}`)
               successLines.push(`  Tx Hash: ${hash}`)
 
-              setTabs(prevTabs => prevTabs.map(tab => {
-                if (tab.id === activeTabId) {
-                  const updatedHistory = tab.history.map(item =>
+              setTabs(prevTabs => prevTabs.map(t => {
+                if (t.id === tabId) {
+                  const updatedHistory = t.history.map(item =>
                     item.timestamp === transferTimestamp
                       ? { ...item, output: successLines }
                       : item
                   )
-                  return { ...tab, history: updatedHistory }
+                  return { ...t, history: updatedHistory }
                 }
-                return tab
+                return t
               }))
             } catch (error) {
               // Update with error
               const errorMsg = error instanceof Error ? error.message : String(error)
-              setTabs(prevTabs => prevTabs.map(tab => {
-                if (tab.id === activeTabId) {
-                  const updatedHistory = tab.history.map(item =>
+              setTabs(prevTabs => prevTabs.map(t => {
+                if (t.id === tabId) {
+                  const updatedHistory = t.history.map(item =>
                     item.timestamp === transferTimestamp
                       ? { ...item, output: [`Error sending transaction: ${errorMsg}`] }
                       : item
                   )
-                  return { ...tab, history: updatedHistory }
+                  return { ...t, history: updatedHistory }
                 }
-                return tab
+                return t
               }))
             }
 
             // Add to command history and return early
-            updateTabHistory((() => {
-              const newHistory = [...commandHistory, trimmedInput]
-              if (newHistory.length > MAX_COMMAND_HISTORY) {
-                return newHistory.slice(-MAX_COMMAND_HISTORY)
+            setTabs(prevTabs => prevTabs.map(t => {
+              if (t.id === tabId) {
+                const newHistory = [...(t.commandHistory || []), trimmedInput]
+                return { ...t, commandHistory: newHistory.length > MAX_COMMAND_HISTORY ? newHistory.slice(-MAX_COMMAND_HISTORY) : newHistory, historyIndex: -1 }
               }
-              return newHistory
-            })())
-            updateTabInput("")
-            updateTabHistoryIndex(-1)
+              return t
+            }))
             return
           }
           // Handle balance command - fetch balance client-side
@@ -933,13 +1036,13 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
               command: trimmedInput,
               output,
               timestamp: balanceTimestamp,
-              prompt: String(prompt)
+              prompt: String(tabPrompt)
             }
 
-            setTabs(prevTabs => prevTabs.map(tab =>
-              tab.id === activeTabId
-                ? { ...tab, history: [...tab.history, tempHistoryItem] }
-                : tab
+            setTabs(prevTabs => prevTabs.map(t =>
+              t.id === tabId
+                ? { ...t, history: [...t.history, tempHistoryItem] }
+                : t
             ))
 
             // Fetch balance using wagmi (we'll need to import the config)
@@ -956,52 +1059,53 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
               balanceLines.push(`Balance on Chain ${valueData.chainId}:`)
               balanceLines.push(`  ${formatUnits(balance.value, balance.decimals)} ${balance.symbol}`)
 
-              setTabs(prevTabs => prevTabs.map(tab => {
-                if (tab.id === activeTabId) {
-                  const updatedHistory = tab.history.map(item =>
+              setTabs(prevTabs => prevTabs.map(t => {
+                if (t.id === tabId) {
+                  const updatedHistory = t.history.map(item =>
                     item.timestamp === balanceTimestamp
                       ? { ...item, output: balanceLines }
                       : item
                   )
-                  return { ...tab, history: updatedHistory }
+                  return { ...t, history: updatedHistory }
                 }
-                return tab
+                return t
               }))
             } catch (error) {
               // Update with error using timestamp to find the correct item
-              setTabs(prevTabs => prevTabs.map(tab => {
-                if (tab.id === activeTabId) {
-                  const updatedHistory = tab.history.map(item =>
+              setTabs(prevTabs => prevTabs.map(t => {
+                if (t.id === tabId) {
+                  const updatedHistory = t.history.map(item =>
                     item.timestamp === balanceTimestamp
                       ? { ...item, output: [`Error fetching balance: ${error instanceof Error ? error.message : String(error)}`] }
                       : item
                   )
-                  return { ...tab, history: updatedHistory }
+                  return { ...t, history: updatedHistory }
                 }
-                return tab
+                return t
               }))
             }
 
             // Add to command history and return early
-            updateTabHistory((() => {
-              const newHistory = [...commandHistory, trimmedInput]
-              if (newHistory.length > MAX_COMMAND_HISTORY) {
-                return newHistory.slice(-MAX_COMMAND_HISTORY)
+            setTabs(prevTabs => prevTabs.map(t => {
+              if (t.id === tabId) {
+                const newHistory = [...(t.commandHistory || []), trimmedInput]
+                return { ...t, commandHistory: newHistory.length > MAX_COMMAND_HISTORY ? newHistory.slice(-MAX_COMMAND_HISTORY) : newHistory, historyIndex: -1 }
               }
-              return newHistory
-            })())
-            updateTabInput("")
-            updateTabHistoryIndex(-1)
+              return t
+            }))
             return
           }
           // ========================================
           // HANDLER DISPATCH SYSTEM
           // Check if command has a registered handler in its plugin
           // ========================================
-          else if (resolved.protocol) {
+          else if (resolved.protocol || executedProtocol) {
+            const handlerProtocol = executedProtocol || resolved.protocol
+            const handlerCommandId = executedCommandId || resolved.command.id
+
             // Get the plugin for this protocol
-            const pluginEntry = pluginLoader.getPlugin(resolved.protocol)
-            const handler = pluginEntry?.plugin.handlers?.[resolved.command.id]
+            const pluginEntry = handlerProtocol ? tabRuntime.pluginLoader.getPlugin(handlerProtocol) : undefined
+            const handler = pluginEntry?.plugin.handlers?.[handlerCommandId]
 
             if (handler) {
               // Command has a handler - use it!
@@ -1012,54 +1116,54 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                 command: trimmedInput,
                 output: [],
                 timestamp: commandTimestamp,
-                prompt: String(prompt)
+                prompt: String(tabPrompt)
               }
 
-              setTabs(prevTabs => prevTabs.map(tab =>
-                tab.id === activeTabId
-                  ? { ...tab, history: [...tab.history, tempHistoryItem] }
-                  : tab
+              setTabs(prevTabs => prevTabs.map(t =>
+                t.id === tabId
+                  ? { ...t, history: [...t.history, tempHistoryItem] }
+                  : t
               ))
 
               // Create CLI context
               const cliContext = {
                 updateHistory: (lines: string[]) => {
-                  setTabs(prevTabs => prevTabs.map(tab => {
-                    if (tab.id === activeTabId) {
-                      const updatedHistory = tab.history.map(item =>
+                  setTabs(prevTabs => prevTabs.map(t => {
+                    if (t.id === tabId) {
+                      const updatedHistory = t.history.map(item =>
                         item.timestamp === commandTimestamp
                           ? { ...item, output: lines }
                           : item
                       )
-                      return { ...tab, history: updatedHistory }
+                      return { ...t, history: updatedHistory }
                     }
-                    return tab
+                    return t
                   }))
                 },
                 updateStyledHistory: (lines: { text: string; color: string }[][]) => {
-                  setTabs(prevTabs => prevTabs.map(tab => {
-                    if (tab.id === activeTabId) {
-                      const updatedHistory = tab.history.map(item =>
+                  setTabs(prevTabs => prevTabs.map(t => {
+                    if (t.id === tabId) {
+                      const updatedHistory = t.history.map(item =>
                         item.timestamp === commandTimestamp
                           ? { ...item, styledOutput: lines }
                           : item
                       )
-                      return { ...tab, history: updatedHistory }
+                      return { ...t, history: updatedHistory }
                     }
-                    return tab
+                    return t
                   }))
                 },
                 addHistoryLinks: (links: { text: string; url: string }[]) => {
-                  setTabs(prevTabs => prevTabs.map(tab => {
-                    if (tab.id === activeTabId) {
-                      const updatedHistory = tab.history.map(item =>
+                  setTabs(prevTabs => prevTabs.map(t => {
+                    if (t.id === tabId) {
+                      const updatedHistory = t.history.map(item =>
                         item.timestamp === commandTimestamp
                           ? { ...item, links }
                           : item
                       )
-                      return { ...tab, history: updatedHistory }
+                      return { ...t, history: updatedHistory }
                     }
-                    return tab
+                    return t
                   }))
                 },
                 signTransaction: async (tx: TransactionRequest) => {
@@ -1077,24 +1181,22 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                   const { config } = await import('@/lib/wagmi-config')
                   return sendTransaction(config, tx)
                 },
-                activeTabId,
-                walletAddress: executionContext.wallet.address,
-                chainId: executionContext.wallet.chainId || undefined,
+                activeTabId: tabId,
+                walletAddress: tabExecutionContext.wallet.address,
+                chainId: tabExecutionContext.wallet.chainId || undefined,
               }
 
               // Execute the handler
-              await handler(result.value, { ...executionContext, ...cliContext })
+              await handler(result.value, { ...tabExecutionContext, ...cliContext })
 
               // Update command history
-              updateTabHistory((() => {
-                const newHistory = [...commandHistory, trimmedInput]
-                if (newHistory.length > MAX_COMMAND_HISTORY) {
-                  return newHistory.slice(-MAX_COMMAND_HISTORY)
+              setTabs(prevTabs => prevTabs.map(t => {
+                if (t.id === tabId) {
+                  const newHistory = [...(t.commandHistory || []), trimmedInput]
+                  return { ...t, commandHistory: newHistory.length > MAX_COMMAND_HISTORY ? newHistory.slice(-MAX_COMMAND_HISTORY) : newHistory, historyIndex: -1 }
                 }
-                return newHistory
-              })())
-              updateTabInput("")
-              updateTabHistoryIndex(-1)
+                return t
+              }))
               return
             }
           }
@@ -1109,30 +1211,31 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
 
         // Update execution context
         const updatedContext = updateExecutionContext(
-          executionContext,
+          tabExecutionContext,
           resolved.command,
           args,
           result,
-          resolved.protocol
+          executedProtocol || resolved.protocol
         )
-        console.log('[executeCommand] Before update - context.activeProtocol:', executionContext.activeProtocol)
-        console.log('[executeCommand] After update - updatedContext.activeProtocol:', updatedContext.activeProtocol)
-        console.log('[executeCommand] Setting new execution context...')
+        debugLog('CLI:Command', 'updating execution context', {
+          previousProtocol: tabExecutionContext.activeProtocol,
+          nextProtocol: updatedContext.activeProtocol,
+        })
 
-        // Update the active tab's execution context
-        setTabs(prevTabs => prevTabs.map(tab =>
-          tab.id === activeTabId
-            ? { ...tab, executionContext: updatedContext }
-            : tab
+        // Update the tab's execution context
+        setTabs(prevTabs => prevTabs.map(t =>
+          t.id === tabId
+            ? { ...t, executionContext: updatedContext }
+            : t
         ))
 
-        // Handle clear command
+        // Handle clear command - also flush queued commands for this tab
         if (output.length === 0 && result.success && 'cleared' in (result.value as object)) {
-          setTabs(prevTabs => prevTabs.map(tab =>
-            tab.id === activeTabId ? { ...tab, history: [] } : tab
+          commandQueueRef.current.set(tabId, [])
+          if (tabId === activeTabId) setQueueCount(0)
+          setTabs(prevTabs => prevTabs.map(t =>
+            t.id === tabId ? { ...t, history: [], historyIndex: -1 } : t
           ))
-          updateTabInput("")
-          updateTabHistoryIndex(-1)
           return
         }
       } catch (error) {
@@ -1144,34 +1247,36 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
       command: trimmedInput,
       output,
       timestamp: new Date(),
-      prompt: String(prompt) // Ensure we store a string value, not a reference
+      prompt: String(tabPrompt)
     }
 
-    setTabs(prevTabs => prevTabs.map(tab =>
-      tab.id === activeTabId
-        ? { ...tab, history: [...tab.history, newHistoryItem] }
-        : tab
+    setTabs(prevTabs => prevTabs.map(t =>
+      t.id === tabId
+        ? { ...t, history: [...t.history, newHistoryItem] }
+        : t
     ))
 
     // Add to command history with sliding window
-    updateTabHistory((() => {
-      const newHistory = [...commandHistory, trimmedInput]
-      // Keep only the last MAX_COMMAND_HISTORY commands
-      if (newHistory.length > MAX_COMMAND_HISTORY) {
-        return newHistory.slice(-MAX_COMMAND_HISTORY)
+    setTabs(prevTabs => prevTabs.map(t => {
+      if (t.id === tabId) {
+        const newHistory = [...(t.commandHistory || []), trimmedInput]
+        return { ...t, commandHistory: newHistory.length > MAX_COMMAND_HISTORY ? newHistory.slice(-MAX_COMMAND_HISTORY) : newHistory, historyIndex: -1 }
       }
-      return newHistory
-    })())
+      return t
+    }))
 
-    updateTabHistoryIndex(-1)
-    } finally {
-      // Clear input and release the execution lock
-      updateTabInput("")
-      setIsExecuting(false)
+    } catch (error) {
+      // Safety net: log unexpected errors but don't crash the queue
+      console.error('Unexpected error in executeCommandForTab:', error)
     }
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (isProcessing) {
+      e.preventDefault()
+      return
+    }
+
     // Handle fuzzy match navigation
     if (fuzzyMatches.length > 0) {
       if (e.key === "ArrowUp") {
@@ -1188,7 +1293,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         setFuzzyMatches([])
         setSelectedMatchIndex(0)
         if (e.key === "Enter") {
-          executeCommand(fuzzyMatches[selectedMatchIndex])
+          enqueueCommand(fuzzyMatches[selectedMatchIndex])
         }
         return
       } else if (e.key === "Escape") {
@@ -1200,7 +1305,7 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     }
 
     if (e.key === "Enter") {
-      executeCommand(currentInput)
+      enqueueCommand(currentInput)
       setFuzzyMatches([])
       setSelectedMatchIndex(0)
     } else if (e.key === "ArrowUp") {
@@ -1227,14 +1332,14 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
     } else if (e.key === "Tab") {
       e.preventDefault()
 
-      if (!currentInput.trim() || !executionContext) return
+      if (!currentInput.trim() || !executionContext || !activeRuntime) return
 
-      // Use ρ_f (fuzzy resolver) for autocomplete
-      const fuzzyResults = registry.ρ_f(
+      // Use getAutocompleteSuggestions for prefix-prioritized matching
+      const suggestions = activeRuntime.registry.getAutocompleteSuggestions(
         {
           input: currentInput,
           preferences: {
-            defaults: executionContext.protocolPreferences,
+            defaults: executionContext.protocolPreferences || {},
             priority: [],
           },
           executionContext,
@@ -1242,13 +1347,12 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
         0.3 // Lower threshold for more suggestions
       )
 
-      if (fuzzyResults.length === 0) {
+      if (suggestions.length === 0) {
         // No matches
         setFuzzyMatches([])
       } else {
-        // Always show suggestions menu (even for single match)
-        // Deduplicate matches (in case aliases match the same command)
-        const matches = Array.from(new Set(fuzzyResults.map(r => r.command.id)))
+        // Show suggestions menu - extract command IDs
+        const matches = suggestions.map(s => s.id)
         setFuzzyMatches(matches)
         setSelectedMatchIndex(0)
       }
@@ -1302,14 +1406,8 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                       }}
                       data-no-drag
                       onClick={() => {
-                        console.log(`[Tab Switch] Clicked tab ${tab.id} (${tab.name})`)
-                        console.log(`[Tab Switch] Current activeTabId: ${activeTabId}`)
-                        console.log(`[Tab Switch] All tabs:`, tabs.map(t => ({ id: t.id, name: t.name })))
                         if (activeTabId !== tab.id) {
-                          console.log(`[Tab Switch] Switching from ${activeTabId} to ${tab.id}`)
                           setActiveTabId(tab.id)
-                        } else {
-                          console.log(`[Tab Switch] Already on tab ${tab.id}, no action needed`)
                         }
                       }}
                     >
@@ -1321,7 +1419,6 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                       {tabs.length > 1 && (
                         <button
                           onClick={(e) => {
-                            console.log('[Close Button] Clicked close button for tab:', tab.id)
                             e.stopPropagation()
                             closeTab(tab.id)
                           }}
@@ -1421,8 +1518,8 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                 ))}
 
                 {/* Current Input - sticky on mobile */}
-                <div className="relative md:static sticky bottom-0 bg-[#141414] md:bg-transparent backdrop-blur-sm md:backdrop-blur-none -mx-3 md:mx-0 px-3 md:px-0 py-2 md:py-0">
-                  <div className={`flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded ${isExecuting ? 'opacity-60' : ''}`}>
+                <div className="relative sticky bottom-0 bg-[#141414] md:bg-transparent backdrop-blur-sm md:backdrop-blur-none -mx-3 md:mx-0 px-3 md:px-0 py-2 md:py-0">
+                  <div className="flex items-center bg-[#1a1a1a] pl-1 pr-2 py-1 rounded">
                     <span className="text-gray-100">
                       {prompt.split('@')[0]}
                       <span className="font-semibold">@</span>
@@ -1442,17 +1539,23 @@ export function CLI({ className = '', isFullWidth = false, onAddChart }: CLIProp
                       value={currentInput}
                       onChange={(e) => updateTabInput(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      disabled={isExecuting}
-                      className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono outline-none caret-gray-400 font-bold disabled:cursor-not-allowed"
+                      disabled={isProcessing}
+                      className="bg-transparent border-none text-gray-100 focus:ring-0 flex-grow ml-2 p-0 font-mono outline-none caret-gray-400 font-bold disabled:text-gray-400"
                       style={{ fontSize: `${fontSize}px` }}
                       autoFocus
                       spellCheck={false}
                       autoComplete="off"
                     />
+                    {isProcessing && (
+                      <span className="text-xs text-blue-300 font-mono ml-2 whitespace-nowrap">[running]</span>
+                    )}
+                    {queueCount > 0 && (
+                      <span className="text-xs text-yellow-400 font-mono ml-2 whitespace-nowrap">[{queueCount} queued]</span>
+                    )}
                   </div>
 
-                  {/* Fuzzy match suggestions - only show when not executing */}
-                  {!isExecuting && fuzzyMatches.length > 0 && (
+                  {/* Fuzzy match suggestions */}
+                  {fuzzyMatches.length > 0 && (
                     <div className="absolute bottom-full left-0 mb-1 bg-[#1a1a1a] border border-[#262626] rounded-md shadow-lg max-h-48 overflow-y-auto z-10">
                       {fuzzyMatches.map((match, index) => (
                         <div

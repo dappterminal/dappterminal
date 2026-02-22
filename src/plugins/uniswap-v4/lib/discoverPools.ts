@@ -8,6 +8,7 @@ import { PublicClient } from 'viem'
 import { poolExists, poolKeyToId } from './poolState'
 import { createPoolKey, getAllFeeTiers } from './poolUtils'
 import type { Token, PoolKey } from '../types'
+import { debugLog } from '@/lib/debug'
 
 export interface DiscoveredPool {
   poolKey: PoolKey
@@ -29,19 +30,19 @@ export async function findExistingPoolForPair(
 ): Promise<DiscoveredPool | null> {
   const feeTiers = getAllFeeTiers()
 
-  console.log(`[Pool Discovery] Checking ${token0.symbol}/${token1.symbol} on all fee tiers...`)
+  debugLog(`[Pool Discovery] Checking ${token0.symbol}/${token1.symbol} on all fee tiers...`)
 
   for (const fee of feeTiers) {
     try {
       const poolKey = createPoolKey(token0, token1, fee)
       const poolId = poolKeyToId(poolKey)
 
-      console.log(`  Trying fee ${fee} (${fee / 10000}%)...`)
+      debugLog(`  Trying fee ${fee} (${fee / 10000}%)...`)
 
       const exists = await poolExists(poolId, chainId, client)
 
       if (exists) {
-        console.log(`  ✓ Found pool at fee tier ${fee}!`)
+        debugLog(`  ✓ Found pool at fee tier ${fee}!`)
         return {
           poolKey,
           poolId,
@@ -51,14 +52,14 @@ export async function findExistingPoolForPair(
           fee,
         }
       } else {
-        console.log(`  ✗ No pool at fee tier ${fee}`)
+        debugLog(`  ✗ No pool at fee tier ${fee}`)
       }
     } catch (error) {
-      console.log(`  ✗ Error checking fee tier ${fee}:`, error)
+      debugLog(`  ✗ Error checking fee tier ${fee}:`, error)
     }
   }
 
-  console.log(`[Pool Discovery] No pools found for ${token0.symbol}/${token1.symbol}`)
+  debugLog(`[Pool Discovery] No pools found for ${token0.symbol}/${token1.symbol}`)
   return null
 }
 
