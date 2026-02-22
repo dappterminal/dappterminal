@@ -4,7 +4,10 @@
 
 **Last Updated:** 2026-02-21
 
-A composable, modular terminal interface for interacting with DeFi protocols across multiple blockchains. Built on a **fibered monoid** architecture that provides protocol isolation, type-safe command composition, and extensible plugin system.
+**Documentation:** [docs.dappterminal.com](https://docs.dappterminal.com)
+
+
+A composable, modular terminal interface for interacting with DeFi protocols & executing trades across multiple blockchains. Built on a command line interface,  **fibered monoid** architecture that provides protocol isolation, type-safe command composition, and extensible plugin system.
 
 ## Overview
 
