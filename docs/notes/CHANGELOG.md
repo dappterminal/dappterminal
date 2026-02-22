@@ -5,6 +5,10 @@ All notable changes to The DeFi Terminal will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to algebraic versioning based on the fibered monoid specification.
 
+
+x
+
+
 ---
 
 ## [Unreleased]

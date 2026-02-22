@@ -1,6 +1,6 @@
 # Notes Index Help
 
-These notes are rough and sometimes outdated. Use this page to find the right file fast.
+Use [docs.dappterminal.com](https://docs.dappterminal.com) For a cleaner overview of documentation. These are notes made by me the maintainer as I am developing the app. These notes are rough and sometimes (usually) outdated. Use this page to find the right file fast.
 
 ## Start Here
 - `docs/notes/ARCHITECTURE.md` - High-level system overview.

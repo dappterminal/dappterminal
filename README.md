@@ -1,10 +1,13 @@
 # dappterminal.com
 
-**Version:** 0.2.1 (changelog coming soon)
+**Version:** 0.2.4 (changelog coming soon)
 
-**Last Updated:** 2026-01-26
+**Last Updated:** 2026-02-21
 
-A composable, modular terminal interface for interacting with DeFi protocols across multiple blockchains. Built on a **fibered monoid** architecture that provides protocol isolation, type-safe command composition, and extensible plugin system.
+**Documentation:** [docs.dappterminal.com](https://docs.dappterminal.com)
+
+
+A composable, modular terminal interface for interacting with DeFi protocols & executing trades across multiple blockchains. Built on a command line interface,  **fibered monoid** architecture that provides protocol isolation, type-safe command composition, and extensible plugin system.
 
 ## Overview
 
@@ -17,13 +20,13 @@ The DeFi Terminal implements a mathematically rigorous command system where:
 
 ### Key Features
 
-- ✅ **Multi-protocol support**: 1inch, Wormhole, Stargate, LiFi, and more
-- ✅ **Wallet integration**: RainbowKit + wagmi for seamless wallet connection
-- ✅ **Type-safe composition**: Commands can be chained with compile-time safety
-- ✅ **Fuzzy search**: Levenshtein distance-based command matching
-- ✅ **Protocol isolation**: Each protocol operates in its own algebraic fiber
-- ✅ **Cross-chain bridging**: Native support for Wormhole, Stargate, and LiFi bridges
-- ✅ **Tabbed interface**: Multiple terminal sessions with independent contexts
+- **Multi-protocol support**: 1inch, Wormhole, Stargate, LiFi, and more
+- **Wallet integration**: RainbowKit + wagmi for seamless wallet connection
+- **Type-safe composition**: Commands can be chained with compile-time safety
+- **Fuzzy search**: Levenshtein distance-based command matching
+- **Protocol isolation**: Each protocol operates in its own algebraic fiber
+- **Cross-chain bridging**: Native support for Wormhole, Stargate, and LiFi bridges
+- **Tabbed interface**: Multiple terminal sessions with independent contexts
 
 ## Architecture
 
