@@ -12,7 +12,7 @@ These notes are rough and sometimes outdated. Use this page to find the right fi
 - `docs/notes/FAUCET_SUMMARY.md` - Faucet behavior summary.
 
 ## Drafts
-- `docs/notes/draft-docs/` - Scratch notes and early drafts, more rougher documentation.
+- `docs/notes/draft-notes/` - Scratch notes and early drafts, rough documentation.
 
 ## How To Use These Notes/Docs
 - Treat as pointers, not source of truth.

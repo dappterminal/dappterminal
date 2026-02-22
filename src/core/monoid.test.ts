@@ -8,7 +8,6 @@
  * - Composition preserves protocol
  */
 
-import { describe, it, expect } from '@jest/globals'
 import {
   identityCommand,
   composeCommands,
@@ -19,7 +18,15 @@ import {
   verifyAmbientIdentity,
   createExecutionContext,
 } from './monoid'
-import type { Command } from './types'
+import type { Command, CommandResult } from './types'
+
+function assertSuccess<T>(
+  result: CommandResult<T>
+): asserts result is { success: true; value: T } {
+  if (!result.success) {
+    throw result.error
+  }
+}
 
 describe('Monoid Laws', () => {
   const context = createExecutionContext()
@@ -64,10 +71,12 @@ describe('Monoid Laws', () => {
   it('should compose identity with command correctly', async () => {
     const leftComposed = composeCommands(identityCommand as Command<number, number>, doubleCommand)
     const result = await leftComposed.run(5, context)
+    assertSuccess(result)
     expect(result.value).toBe(10) // double(5) = 10
 
     const rightComposed = composeCommands(doubleCommand, identityCommand as Command<number, number>)
     const result2 = await rightComposed.run(5, context)
+    assertSuccess(result2)
     expect(result2.value).toBe(10) // double(5) = 10
   })
 
@@ -84,6 +93,8 @@ describe('Monoid Laws', () => {
 
     const leftResult = await leftAssoc.run(5, context)
     const rightResult = await rightAssoc.run(5, context)
+    assertSuccess(leftResult)
+    assertSuccess(rightResult)
 
     expect(leftResult.value).toBe(rightResult.value)
   })
@@ -198,6 +209,7 @@ describe('Protocol-Specific Identity', () => {
     const composed = composeCommands(protocolIdentity, fiberCommand)
 
     const result = await composed.run(7, context)
+    assertSuccess(result)
     expect(result.value).toBe(21) // multiply by 3
 
     // Composition stays in fiber
@@ -210,6 +222,7 @@ describe('Protocol-Specific Identity', () => {
     const composed = composeCommands(fiberCommand, protocolIdentity)
 
     const result = await composed.run(7, context)
+    assertSuccess(result)
     expect(result.value).toBe(21) // multiply by 3
 
     // Composition stays in fiber
@@ -274,6 +287,7 @@ describe('Cross-Fiber Composition', () => {
     const composed = composeCommands(command1, command2)
     const context = createExecutionContext()
     const result = await composed.run('test', context)
+    assertSuccess(result)
 
     expect(result.value).toBe('p2-p1-test')
   })

@@ -10,6 +10,7 @@ import { Token } from '@uniswap/sdk-core'
 import { getStateViewAddress, STATE_VIEW_ABI } from './contracts'
 import { getPoolTokenAddress, sortTokens } from './poolUtils'
 import type { Token as LocalToken, PoolKey } from '../types'
+import { debugLog } from '@/lib/debug'
 
 /**
  * Pool state returned from StateView contract
@@ -88,7 +89,7 @@ export async function fetchPoolState(
     }
 
     // Log for debugging
-    console.log('[Pool State]', {
+    debugLog('[Pool State]', {
       poolId,
       sqrtPriceX96: poolState.sqrtPriceX96.toString(),
       tick: poolState.tick,
@@ -123,7 +124,7 @@ export function createPoolInstance(
   hooks: Address,
   poolState: PoolState
 ): Pool {
-  console.log('[createPoolInstance] About to create Pool with:', {
+  debugLog('[createPoolInstance] About to create Pool with:', {
     token0: token0.symbol,
     token1: token1.symbol,
     fee,
@@ -205,7 +206,7 @@ export async function fetchAndCreatePool(
   const token0Address = getPoolTokenAddress(token0Local)
   const token1Address = getPoolTokenAddress(token1Local)
 
-  console.log('[fetchAndCreatePool] Input tokens:', {
+  debugLog('[fetchAndCreatePool] Input tokens:', {
     token0: token0Local.symbol,
     token1: token1Local.symbol,
     token0Address,
@@ -221,7 +222,7 @@ export async function fetchAndCreatePool(
   // Calculate pool ID
   const poolId = calculatePoolId(currency0, currency1, fee, tickSpacing, hooks)
 
-  console.log('[fetchAndCreatePool] Pool ID:', poolId)
+  debugLog('[fetchAndCreatePool] Pool ID:', poolId)
 
   // Fetch pool state
   const poolState = await fetchPoolState(poolId, chainId, client)
@@ -233,7 +234,7 @@ export async function fetchAndCreatePool(
       ? [token0SDK, token1SDK]
       : [token1SDK, token0SDK]
 
-  console.log('[fetchAndCreatePool] Creating Pool with:', {
+  debugLog('[fetchAndCreatePool] Creating Pool with:', {
     token0: sortedToken0.symbol,
     token1: sortedToken1.symbol,
     sqrtPriceX96: poolState.sqrtPriceX96.toString(),

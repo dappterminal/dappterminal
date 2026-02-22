@@ -45,23 +45,18 @@ The terminal is built on three core concepts:
    - `ρ` (exact resolver): Deterministic command resolution
    - `ρ_f` (fuzzy resolver): Levenshtein-based matching
 
-See [FIBERED-MONOID-SPEC.md](./FIBERED-MONOID-SPEC.md) for the complete algebraic specification.
+See [docs/notes/FIBERED-MONOID-SPEC.md](./docs/notes/FIBERED-MONOID-SPEC.md) for the complete algebraic specification.
 
-## Current protocols/APIs supported
+## Current Protocols/APIs Supported
 
 - 1inch
 - Stargate (LayerZero)
 - Li.Fi
 - Wormhole
-- Uniswap (V4) (*work in progress*)
-- Aave (V3) (*work in progress*)
-- Hyperliquid (*TODO*)
-- Chainlink (*TODO*)
-- Hyperlane (*TODO*)
-- LayerZero (*TODO*)
-- Yahoo Finance API (*TODO*)
-- Polygon.io API (*TODO*)
-- & more
+- Uniswap (V4)
+- Aave (V3)
+- Faucet (plugin available, not loaded by default)
+- CoinPaprika (plugin available, disabled by default)
 
 ## Getting Started
 
@@ -204,18 +199,18 @@ the-defi-terminal/
 │   │   ├── wormhole/           # Wormhole integration
 │   │   └── stargate/           # Stargate integration
 │   ├── components/             # React components
-│   │   ├── terminal.tsx        # Terminal UI
-│   │   └── command-output.tsx  # Command output rendering
+│   │   ├── app-layout.tsx      # Main application shell
+│   │   └── cli.tsx             # Terminal runtime + command dispatch
 │   └── lib/                    # Shared utilities
-├── FIBERED-MONOID-SPEC.md      # Algebraic specification
-├── ARCHITECTURE.md             # System architecture guide
+├── docs/notes/FIBERED-MONOID-SPEC.md  # Algebraic specification
+├── docs/notes/ARCHITECTURE.md         # System architecture guide
 └── README.md                   # This file
 ```
 
 ## Documentation
 
-- **[FIBERED-MONOID-SPEC.md](./FIBERED-MONOID-SPEC.md)**: Complete algebraic specification and implementation details
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)**: System architecture and design patterns
+- **[docs/notes/FIBERED-MONOID-SPEC.md](./docs/notes/FIBERED-MONOID-SPEC.md)**: Complete algebraic specification and implementation details
+- **[docs/notes/ARCHITECTURE.md](./docs/notes/ARCHITECTURE.md)**: System architecture and design patterns
 - **[src/app/api/README.md](./src/app/api/README.md)**: API routes documentation
 - **[src/plugins/README.md](./src/plugins/README.md)**: Plugin development guide
 - **[src/plugins/wormhole/ARCHITECTURE.md](./src/plugins/wormhole/ARCHITECTURE.md)**: Wormhole integration details
@@ -223,12 +218,16 @@ the-defi-terminal/
 
 ## Supported Protocols
 
-| Protocol | Type | Status | Commands |
-|----------|------|--------|----------|
-| 1inch | DEX Aggregator | ✅ Live | `swap`, `quote`, `chains`, `tokens` |
-| LiFi | Bridge Aggregator | ✅ Live | `health`, `quote`, `routes`, `execute`, `prepare`, `chains`, `status` |
-| Wormhole | Cross-chain Bridge | ✅ Live | `quote`, `routes`, `bridge`, `status` |
-| Stargate | LayerZero Bridge | ✅ Live | `quote`, `bridge`, `chains` |
+| Protocol | Type | Status | Default Load |
+|----------|------|--------|--------------|
+| 1inch | DEX Aggregator | ✅ Active | Yes |
+| LiFi | Bridge Aggregator | ✅ Active | Yes |
+| Wormhole | Cross-chain Bridge | ✅ Active | Yes |
+| Stargate | LayerZero Bridge | ✅ Active | Yes |
+| Uniswap v4 | DEX | ✅ Active | Yes |
+| Aave v3 | Lending | ✅ Active | Yes |
+| Faucet | Utility | ✅ Available | No |
+| CoinPaprika | Market Data | ✅ Available | No (disabled by default) |
 
 ## Development
 
@@ -243,7 +242,7 @@ the-defi-terminal/
 
 3. Create API routes under `src/app/api/your-protocol/`
 
-4. Register the plugin in `src/plugins/index.ts`
+4. Wire the plugin into runtime loading in `src/components/cli.tsx` (`pluginsToLoad`)
 
 See [src/plugins/README.md](./src/plugins/README.md) for detailed instructions.
 

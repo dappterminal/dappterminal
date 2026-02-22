@@ -167,9 +167,9 @@ export function createProtocolFiber(
  *
  * Ensures the command has the correct protocol scope (G_p)
  */
-export function addCommandToFiber(
+export function addCommandToFiber<TArgs = unknown, TResult = unknown>(
   fiber: ProtocolFiber,
-  command: Command
+  command: Command<TArgs, TResult>
 ): void {
   if (command.scope !== 'G_p') {
     throw new Error(
@@ -183,7 +183,7 @@ export function addCommandToFiber(
     )
   }
 
-  fiber.commands.set(command.id, command)
+  fiber.commands.set(command.id, command as Command)
 }
 
 /**

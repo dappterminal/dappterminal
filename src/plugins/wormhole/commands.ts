@@ -3,6 +3,94 @@
  */
 
 import type { Command, CommandResult, ExecutionContext } from '@/core'
+import { getChainIdFromName, resolveTokenAddress } from '@/lib/wormhole'
+
+interface WormholeTokenAmount {
+  amount: string
+  decimals: number
+  symbol: string
+}
+
+interface WormholeQuotePayload {
+  sourceToken?: WormholeTokenAmount | null
+  destinationToken?: WormholeTokenAmount | null
+}
+
+interface WormholeRouteSummary {
+  type: string
+  name: string
+  description: string
+  isAutomatic: boolean
+  eta: string
+  relayFee?: WormholeTokenAmount | null
+  quote?: WormholeQuotePayload
+}
+
+interface WormholeQuoteCache {
+  bestRoute: WormholeRouteSummary
+  allRoutes: WormholeRouteSummary[]
+  sourceChainId: number
+  destChainId: number
+  fromToken: string
+  toToken: string
+  amount: string
+  sourceAddress: string
+  destAddress: string
+  timestamp: number
+}
+
+interface WormholePluginState {
+  lastQuote?: WormholeQuoteCache
+  selectedRouteType?: string
+}
+
+function getWormholeState(context: ExecutionContext): WormholePluginState {
+  const state = context.protocolState?.get('wormhole')
+  if (!state) {
+    return {}
+  }
+  return state as WormholePluginState
+}
+
+function setWormholeState(context: ExecutionContext, state: WormholePluginState): void {
+  if (!context.protocolState) {
+    context.protocolState = new Map()
+  }
+  context.protocolState.set('wormhole', state as unknown as Record<string, unknown>)
+}
+
+function parseFlag(args: string, longFlag: string): string | undefined {
+  const flagIndex = args.indexOf(longFlag)
+  if (flagIndex === -1) {
+    return undefined
+  }
+
+  const raw = args.substring(flagIndex + longFlag.length).trim()
+  const value = raw.split(' ')[0]
+  return value || undefined
+}
+
+function formatAmount(amount?: WormholeTokenAmount | null): string | null {
+  if (!amount) {
+    return null
+  }
+
+  try {
+    const raw = BigInt(amount.amount)
+    const divisor = BigInt(10) ** BigInt(amount.decimals)
+    const integerPart = raw / divisor
+    const fractionPart = raw % divisor
+    const fractionString = fractionPart.toString().padStart(amount.decimals, '0').slice(0, 6)
+    const trimmedFraction = fractionString.replace(/0+$/, '')
+    const numeric = trimmedFraction.length > 0
+      ? `${integerPart.toString()}.${trimmedFraction}`
+      : integerPart.toString()
+
+    return `${numeric} ${amount.symbol.toUpperCase()}`
+  } catch {
+    return `${amount.amount} ${amount.symbol.toUpperCase()}`
+  }
+}
 
 /**
  * Quote command - Get cross-chain transfer quote
@@ -17,7 +105,7 @@ export const quoteCommand: Command = {
   async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
     try {
       const argsStr = typeof args === 'string' ? args.trim() : ''
-      const parts = argsStr.split(' ')
+      const parts = argsStr.split(' ').filter(p => p && !p.startsWith('--'))
 
       if (parts.length < 4) {
         return {
@@ -31,12 +119,102 @@ export const quoteCommand: Command = {
 
       const [fromChain, toChain, token, amount] = parts
 
-      // TODO: Implement actual Wormhole quote logic
+      if (!context.wallet.isConnected || !context.wallet.address) {
+        return {
+          success: false,
+          error: new Error('Wallet not connected. Please connect your wallet first.'),
+        }
+      }
+
+      const sourceChainId = getChainIdFromName(fromChain)
+      const destChainId = getChainIdFromName(toChain)
+
+      if (!sourceChainId || !destChainId) {
+        return {
+          success: false,
+          error: new Error(
+            `Invalid chain input. Supported values include: ethereum, base, arbitrum, optimism, polygon, bsc, avalanche`
+          ),
+        }
+      }
+
+      const destTokenFlag = parseFlag(argsStr, '--dest-token')
+        || parseFlag(argsStr, '--destToken')
+      const fromToken = resolveTokenAddress(sourceChainId, token) || token
+      const toTokenSymbol = destTokenFlag || token
+      const toToken = resolveTokenAddress(destChainId, toTokenSymbol) || toTokenSymbol
+      const receiver = parseFlag(argsStr, '--receiver') || context.wallet.address
+
+      const response = await fetch('/api/wormhole/quote', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sourceChainId,
+          destChainId,
+          fromToken,
+          toToken,
+          amount,
+          sourceAddress: context.wallet.address,
+          destAddress: receiver,
+        }),
+      })
+
+      const result = await response.json().catch(() => ({ success: false, error: 'Invalid response' }))
+      if (!response.ok || !result.success || !result.data) {
+        return {
+          success: false,
+          error: new Error(result.error || `Failed to get Wormhole quote (HTTP ${response.status})`),
+        }
+      }
+
+      const bestRoute = result.data.bestRoute as WormholeRouteSummary
+      const allRoutes = result.data.quotes as WormholeRouteSummary[]
+
+      if (!bestRoute || !Array.isArray(allRoutes) || allRoutes.length === 0) {
+        return {
+          success: false,
+          error: new Error('No valid Wormhole routes found for this transfer'),
+        }
+      }
+
+      const state = getWormholeState(context)
+      state.lastQuote = {
+        bestRoute,
+        allRoutes,
+        sourceChainId,
+        destChainId,
+        fromToken,
+        toToken,
+        amount,
+        sourceAddress: context.wallet.address,
+        destAddress: receiver,
+        timestamp: Date.now(),
+      }
+      state.selectedRouteType = bestRoute.type
+      setWormholeState(context, state)
+
+      const sendAmount = formatAmount(bestRoute.quote?.sourceToken) || `${amount} ${token.toUpperCase()}`
+      const receiveAmount = formatAmount(bestRoute.quote?.destinationToken) || 'Unavailable'
+      const relayFee = bestRoute.relayFee ? formatAmount(bestRoute.relayFee) : null
+
       return {
         success: true,
         value: {
-          message: `Quote requested for ${amount} ${token.toUpperCase()} from ${fromChain} to ${toChain}`,
-          implementation: 'pending',
+          message: [
+            `Best route: ${bestRoute.name} (${bestRoute.type})`,
+            `ETA: ${bestRoute.eta}`,
+            relayFee ? `Relay Fee: ${relayFee}` : null,
+            '',
+            `Send: ${sendAmount} (${fromChain})`,
+            `Receive: ${receiveAmount} (${toChain})`,
+            '',
+            `Found ${allRoutes.length} route(s). Cached for this session.`,
+            `Use \`wormhole:routes\` to inspect/select alternatives.`,
+          ].filter(Boolean).join('\n'),
+          routeCount: allRoutes.length,
+          bestRoute,
         },
       }
     } catch (error) {
@@ -60,12 +238,53 @@ export const routesCommand: Command = {
 
   async run(args: unknown, context: ExecutionContext): Promise<CommandResult> {
     try {
-      // TODO: Implement routes listing
+      const state = getWormholeState(context)
+      const lastQuote = state.lastQuote
+
+      if (!lastQuote) {
+        return {
+          success: false,
+          error: new Error('No cached quote found. Run `wormhole:quote` first.'),
+        }
+      }
+
+      const argsStr = typeof args === 'string' ? args.trim() : ''
+      const selectRaw = parseFlag(argsStr, '--select')
+      if (selectRaw !== undefined) {
+        const index = Number.parseInt(selectRaw, 10)
+        if (!Number.isFinite(index) || index < 0 || index >= lastQuote.allRoutes.length) {
+          return {
+            success: false,
+            error: new Error(`Invalid route index ${selectRaw}. Valid range: 0-${lastQuote.allRoutes.length - 1}`),
+          }
+        }
+        state.selectedRouteType = lastQuote.allRoutes[index].type
+        setWormholeState(context, state)
+      }
+
+      const selectedRouteType = state.selectedRouteType || lastQuote.bestRoute.type
+      const lines = [
+        `Available Wormhole routes (${lastQuote.allRoutes.length}):`,
+        '',
+      ]
+
+      lastQuote.allRoutes.forEach((route, index) => {
+        const selected = route.type === selectedRouteType ? '*' : ' '
+        const relayFee = route.relayFee ? formatAmount(route.relayFee) : 'N/A'
+        lines.push(`${selected} [${index}] ${route.name} (${route.type})`)
+        lines.push(`    ETA: ${route.eta} | Relay Fee: ${relayFee}`)
+      })
+
+      lines.push('')
+      lines.push(`Selected route: ${selectedRouteType}`)
+      lines.push('Use `routes --select <index>` to change selection.')
+
       return {
         success: true,
         value: {
-          message: 'Available routes',
-          implementation: 'pending',
+          message: lines.join('\n'),
+          selectedRouteType,
+          routeCount: lastQuote.allRoutes.length,
         },
       }
     } catch (error) {

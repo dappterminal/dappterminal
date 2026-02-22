@@ -19,6 +19,7 @@ type DraggableWindowProps = {
   defaultSize: { width: number; height: number }
   minSize?: { width: number; height: number }
   showChrome?: boolean
+  dragHandleSelector?: string
   children: ReactNode
 }
 
@@ -43,6 +44,7 @@ export function DraggableWindow({
   defaultSize,
   minSize = { width: 520, height: 320 },
   showChrome = true,
+  dragHandleSelector,
   children,
 }: DraggableWindowProps) {
   const [position, setPosition] = useState(defaultPosition)
@@ -94,7 +96,11 @@ export function DraggableWindow({
 
   const handleDragPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
-    if (!showChrome && isInteractiveElement(event.target)) return
+    if (isInteractiveElement(event.target)) return
+    if (!showChrome && dragHandleSelector) {
+      const target = event.target instanceof Element ? event.target : null
+      if (!target?.closest(dragHandleSelector)) return
+    }
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
     dragStateRef.current = {
